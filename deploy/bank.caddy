@@ -1,0 +1,14 @@
+bank.siruizou.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	request_body {
+		max_size 128KB
+	}
+	reverse_proxy 127.0.0.1:8316
+}

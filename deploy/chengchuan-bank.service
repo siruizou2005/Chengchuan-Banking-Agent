@@ -1,0 +1,32 @@
+[Unit]
+Description=Chengchuan Bank Simulator
+After=network.target
+
+[Service]
+Type=simple
+User=bank-sim
+Group=bank-sim
+WorkingDirectory=/opt/chengchuan-bank/current
+ExecStart=/opt/chengchuan-bank/runtime/bin/node server/index.mjs --production
+Environment=NODE_ENV=production
+Environment=PORT=8316
+Environment=BANK_DB=/var/lib/chengchuan-bank/bank.sqlite
+Environment=PUBLIC_ORIGIN=https://bank.siruizou.com
+Environment=TRUST_PROXY=true
+Environment=SESSION_SECURE=true
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+StateDirectory=chengchuan-bank
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/chengchuan-bank
+MemoryMax=384M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
