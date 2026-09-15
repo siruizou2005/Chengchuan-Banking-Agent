@@ -9,6 +9,13 @@ const { app, bank, maintenance } = createApp(process.env.BANK_DB || resolve('dat
   publicOrigin: process.env.PUBLIC_ORIGIN || '',
 });
 const server = createServer(app);
+// Never allow the development file server to serve local credentials.
+app.use((req, res, next) => {
+  let path;
+  try { path = decodeURIComponent(req.path).replaceAll('\\', '/'); } catch { return res.sendStatus(400); }
+  if (/(^|\/)(api\.txt|\.env[^/]*)(\/|$)/i.test(path)) return res.sendStatus(404);
+  next();
+});
 let vite;
 if (production) {
   const { default: express } = await import('express');
@@ -19,7 +26,7 @@ if (production) {
   vite = await createViteServer({ server: { middlewareMode: true, hmr: { server } }, appType: 'spa' });
   app.use(vite.middlewares);
 }
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || (production ? 3000 : 5173));
 const maintenanceTimer = setInterval(() => { try { maintenance(); } catch (error) { console.error('Bank maintenance error:', error.message); } }, 30000);
 maintenanceTimer.unref();
 server.listen(port, '127.0.0.1', () => console.log(`澄川银行已启动：http://127.0.0.1:${port}`));

@@ -1,6 +1,7 @@
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { createBank, id, now, products, verifyPassword, hashPassword } from './db.mjs';
+import { registerChat } from './chat.mjs';
 
 class BusinessError extends Error {
   constructor(message, status = 400, code = 'VALIDATION_ERROR') { super(message); this.status = status; this.code = code; }
@@ -56,7 +57,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
           req.tokenHash = hash(token);
           expire();
         }
-        handler(req, res);
+        Promise.resolve(handler(req, res)).catch(next);
       } catch (error) { next(error); }
     });
   };
@@ -194,6 +195,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       appointments: all('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC', user.id),
     };
   }
+  registerChat(route, state, options.chat);
   route('get', '/health', '服务健康状态', (_req, res) => res.json({ status: 'ok', simulation: true }), false);
   route('post', '/auth/login', '登录，返回会话 Cookie 与 Bearer Token', (req, res) => {
     const key = `login:${req.ip}`; checkRate(key);
