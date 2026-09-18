@@ -92,9 +92,10 @@ npm start
 | 服务 | `chengchuan-bank.service` |
 | 内部端口 | `127.0.0.1:8316` |
 | 当前程序 | `/opt/chengchuan-bank/current` |
-| 版本目录 | `/opt/chengchuan-bank/releases/20260912-01` |
+| 版本目录 | `/opt/chengchuan-bank/releases/20260918-01`（旧版本 `20260912-01` 保留可回滚） |
 | 独立Node | `/opt/chengchuan-bank/runtime/bin/node` |
 | 持久化数据库 | `/var/lib/chengchuan-bank/bank.sqlite` |
+| 聊天 API 凭据 | `/etc/chengchuan-bank/env`（root 0600，由 systemd `EnvironmentFile` 加载） |
 | Caddy站点 | `/etc/caddy/sites/bank.caddy` |
 
 ```sh
@@ -103,6 +104,6 @@ ssh gcp-hk 'sudo journalctl -u chengchuan-bank -n 80 --no-pager'
 ssh gcp-hk 'sudo systemctl restart chengchuan-bank'
 ```
 
-更新时创建新版本目录、安装依赖、验证后切换 `current` 并重启本服务。保留旧版本以便回滚，**不要覆盖数据库目录**。数据库备份应使用SQLite在线备份接口，不能仅复制运行中的 `.sqlite` 文件而忽略WAL。
+更新流程：本地 `npm run build` 后用 `git ls-files` 加 `dist/` 打包为 `bank-release.tar.gz`，连同可选的 `env` 文件（即本地 `.env` 内容）上传到 `~/chengchuan-bank-upload-<日期>`，然后在服务器执行 `deploy/update-release.sh <版本名> <上传目录>`。脚本会安装依赖、运行测试、写入凭据、原子切换 `current` 并重启，健康检查失败自动回滚。保留旧版本以便回滚，**不要覆盖数据库目录**。数据库备份应使用SQLite在线备份接口，不能仅复制运行中的 `.sqlite` 文件而忽略WAL。
 
 环境变量：`PORT`、`BANK_DB`、`PUBLIC_ORIGIN`、`TRUST_PROXY`、`SESSION_SECURE`。线上配置见 `deploy/chengchuan-bank.service`。
