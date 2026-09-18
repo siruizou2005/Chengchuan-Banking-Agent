@@ -14,6 +14,8 @@ Environment=BANK_DB=/var/lib/chengchuan-bank/bank.sqlite
 Environment=PUBLIC_ORIGIN=https://bank.siruizou.com
 Environment=TRUST_PROXY=true
 Environment=SESSION_SECURE=true
+# 聊天 API 凭据（CHAT_API_KEY / CHAT_BASE_URL / CHAT_MODEL）放在版本目录之外，随发布切换保留。
+EnvironmentFile=-/etc/chengchuan-bank/env
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
