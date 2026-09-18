@@ -4,7 +4,7 @@
 
 Setup: copy `.env.example` to `.env` and fill in `CHAT_API_KEY` locally. The example uses DeepSeek V4.1 Flash (`deepseek-flash`). API credentials, environment files, local databases, and test output are excluded from Git.
 
-智能体是手机银行的一个模块：登录后点击底部导航正中间的「智能体」进入聊天页（`/#assistant`），聊天界面参照 `Interface.png`。信用卡从底部导航移至首页「信用卡还款」和「全部服务」。运行 `npm install` 和 `npm run dev`，打开 `http://127.0.0.1:5173`。同一进程提供前端、银行数据和聊天 API；`npm run build` 检查类型并构建，`npm start` 在默认3000端口启动生产服务。`npm run preview` 仅预览静态前端，不提供聊天或登录 API。
+智能助手是手机银行的一个模块：登录后点击底部导航正中间的「智能助手」进入聊天页（`/#assistant`），聊天界面按银行智能客服样式设计，与其他 tab 同构、不做悬浮入口。信用卡入口在账户页「信用卡」tab、「我的」和「全部服务」。运行 `npm install` 和 `npm run dev`，打开 `http://127.0.0.1:5173`。同一进程提供前端、银行数据和聊天 API；`npm run build` 检查类型并构建，`npm start` 在默认3000端口启动生产服务。`npm run preview` 仅预览静态前端，不提供聊天或登录 API。
 
 支持真实 AI 对话、中文输入法、Shift+Enter 换行、停止回复、失败重试、复制回复及新对话。每次请求读取当前登录用户的最新资料、账户、持仓、贷款、信用卡和有限的最近流水，以及本站服务文档和产品目录。账户卡片使用本次数据库查询结果。切换底部标签不会丢失对话；退出或切换账户会清空对话，刷新后重置，不保存聊天记录。
 
@@ -22,7 +22,7 @@ CHAT_MODEL=deepseek-flash
 
 下方为银行模拟器本身的说明（需 Node.js 24+）。
 
-原创蓝白风格的移动端网页银行，React + TypeScript 前端、Node.js + Express 后端、SQLite 数据库。浏览器操作与 API 共用业务逻辑，可作为银行 Agent 的开发与测试环境。
+界面参照国内民营银行 App（微众银行）的视觉语言：品牌蓝头部叠白色卡片、下划线 tab、自绘面性双色图标（`src/icons.tsx`）、汉字圆标、胶囊按钮、红色利率与收入金额，底部导航为 账户 / 理财 / 智能助手 / 生活 / 我的。React + TypeScript 前端、Node.js + Express 后端、SQLite 数据库。浏览器操作与 API 共用业务逻辑，可作为银行 Agent 的开发与测试环境。
 
 ## 启动
 

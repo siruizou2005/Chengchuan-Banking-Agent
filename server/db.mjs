@@ -16,10 +16,10 @@ export function verifyPassword(value, stored) {
 }
 
 export const products = [
-  { id: 'deposit-90', type: 'deposit', name: '安心存 · 三个月', subtitle: '给小目标，一份确定的积累', rate: 1.35, days: 90, minimum: 5000, risk: '存款', tags: ['50元起存', '到期可取'], description: '人民币整存整取模拟产品。支持提前支取本金；本版本不结算利息。' },
-  { id: 'deposit-365', type: 'deposit', name: '安心存 · 一年期', subtitle: '把今天的积累，留给明年的期待', rate: 1.65, days: 365, minimum: 5000, risk: '存款', tags: ['50元起存', '整存整取'], description: '一年期定期存款模拟产品。支持提前支取本金；本版本不结算利息。' },
-  { id: 'wealth-flex', type: 'wealth', name: '澄享 · 日日盈', subtitle: '闲钱也有自己的安排', rate: 2.18, days: 0, minimum: 10000, risk: 'R1 低风险', tags: ['100元起购', '灵活申赎'], description: '低风险现金管理模拟产品。展示收益率为虚构示例，非收益承诺；申赎按本金结算，不模拟净值波动。' },
-  { id: 'wealth-180', type: 'wealth', name: '澄享 · 稳进180天', subtitle: '为中长期计划，稳稳准备', rate: 3.20, days: 180, minimum: 100000, risk: 'R2 中低风险', tags: ['1,000元起购', '180天持有期'], description: '固定持有期模拟理财。180天内不可赎回；展示收益率为虚构业绩比较基准，非收益承诺。到期按本金结算。' },
+  { id: 'deposit-90', type: 'deposit', name: '安心存三个月', subtitle: '90天整存整取，支持提前支取', rate: 1.35, days: 90, minimum: 5000, risk: '存款', tags: ['50元起存', '到期可取'], description: '人民币整存整取定期存款，存期90天，支持提前支取。演示环境按本金结算，不计付利息。' },
+  { id: 'deposit-365', type: 'deposit', name: '安心存一年期', subtitle: '365天整存整取，支持提前支取', rate: 1.65, days: 365, minimum: 5000, risk: '存款', tags: ['50元起存', '整存整取'], description: '人民币整存整取定期存款，存期一年，支持提前支取。演示环境按本金结算，不计付利息。' },
+  { id: 'wealth-flex', type: 'wealth', name: '澄享日日盈', subtitle: '现金管理类，每日可申赎', rate: 2.18, days: 0, minimum: 10000, risk: 'R1 低风险', tags: ['100元起购', '灵活申赎'], description: '现金管理类理财，主投高流动性固收资产，每个交易日可申赎。展示收益率为演示数据，不构成收益承诺；演示环境按本金结算，不计算净值变动。' },
+  { id: 'wealth-180', type: 'wealth', name: '澄享稳进180天', subtitle: '固定持有期，到期后可赎回', rate: 3.20, days: 180, minimum: 100000, risk: 'R2 中低风险', tags: ['1,000元起购', '180天持有期'], description: '固定持有期理财，持有180天后方可赎回。展示收益率为演示用业绩比较基准，不构成收益承诺；到期按本金结算。' },
 ];
 
 export function createBank(path) {

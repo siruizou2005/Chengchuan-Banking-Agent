@@ -1,21 +1,50 @@
-import { Droplets, Zap, Flame, Smartphone, Wifi, Building2, CalendarDays, Headphones, MapPin, TicketCheck } from 'lucide-react';
 import { useBank } from '../bank';
+import { IcoDrop, IcoBolt, IcoFlame, IcoPhone, IcoWifi, IcoBuilding, IcoCalendar, IcoHeadset, IcoTicket, IcoBell, IcoShield } from '../icons';
 import { formValues, date, yuan } from '../api';
-import { Section, Tile, Row, Field, Amount, AccountSelect, Submit, Notice, Empty } from '../ui';
+import { Card, Tile, Row, Field, Amount, AccountSelect, Submit, Notice, Empty, CircleIcon, type Tone } from '../ui';
 
 export function Life() {
   const { begin, openModal, navigate, data } = useBank();
-  const bills = [{ id: 'water', title: '水费', icon: Droplets }, { id: 'electricity', title: '电费', icon: Zap }, { id: 'gas', title: '燃气费', icon: Flame }, { id: 'mobile', title: '手机充值', icon: Smartphone }, { id: 'broadband', title: '宽带费', icon: Wifi }, { id: 'property', title: '物业费', icon: Building2 }];
-  return <div className="page-content"><div className="life-hero"><span className="eyebrow">把日常，照顾周全</span><h1>生活的小事<br />在这里轻松办</h1><div className="life-hero-label"><MapPin size={15} />澄川生活服务</div></div><Section title="便民缴费"><div className="surface service-grid life-grid">{bills.map(b => <Tile key={b.id} icon={b.icon} label={b.title} onClick={() => openModal(b.title, <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'payment', billType: b.id }); }}><Notice>模拟缴费服务。填写虚拟户号和金额，确认后将从账户扣款并生成缴费记录。</Notice><Field label={b.id === 'mobile' ? '充值手机号' : '缴费户号'}><input name="billNumber" inputMode="numeric" placeholder={b.id === 'mobile' ? '请输入11位手机号' : '请输入6至30位模拟户号'} pattern={b.id === 'mobile' ? '1[0-9]{10}' : '[0-9A-Za-z-]{6,30}'} required /></Field><AccountSelect /><Amount label="缴费金额（元）" /><Submit>下一步，核对缴费</Submit></form>)} />)}</div></Section><Section title="贴心服务"><div className="surface"><Row icon={CalendarDays} title="网点预约" subtitle="提前预约，到店更从容" onClick={() => navigate('appointments')} /><Row icon={Headphones} title="在线客服" subtitle="业务帮助、问题反馈" onClick={() => navigate('support')} /></div></Section><Section title="最近缴费"><div className="surface">{data.transactions.filter(t => t.type === 'payment' && t.status === 'completed').slice(0, 5).map(t => <Row key={t.id} icon={TicketCheck} title={t.title} subtitle={date(t.created_at)} trailing={<strong>¥{yuan(t.amount)}</strong>} />)}{!data.transactions.some(t => t.type === 'payment' && t.status === 'completed') && <Empty title="还没有缴费记录" text="水电燃气、手机充值，都可以在这里模拟办理。" />}</div></Section></div>;
+  const bills: { id: string; title: string; icon: typeof IcoDrop; tone: Tone }[] = [{ id: 'water', title: '水费', icon: IcoDrop, tone: 'blue' }, { id: 'electricity', title: '电费', icon: IcoBolt, tone: 'orange' }, { id: 'gas', title: '燃气费', icon: IcoFlame, tone: 'red' }, { id: 'mobile', title: '手机充值', icon: IcoPhone, tone: 'blue' }, { id: 'broadband', title: '宽带费', icon: IcoWifi, tone: 'blue' }, { id: 'property', title: '物业费', icon: IcoBuilding, tone: 'gold' }];
+  const recent = data.transactions.filter(t => t.type === 'payment' && t.status === 'completed');
+  return <div className="page">
+    <section className="card split inline"><button onClick={() => navigate('appointments')}><CircleIcon icon={IcoCalendar} tone="blue" size={30} glyph={16} /><span>网点预约</span></button><button onClick={() => navigate('support')}><CircleIcon icon={IcoHeadset} tone="orange" size={30} glyph={16} /><span>在线客服</span></button></section>
+    <Card title="便民缴费"><div className="entry-grid three">{bills.map(b => <Tile key={b.id} icon={b.icon} label={b.title} tone={b.tone} onClick={() => openModal(b.title, <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'payment', billType: b.id }); }}><Field label={b.id === 'mobile' ? '充值手机号' : '缴费户号'}><input name="billNumber" inputMode="numeric" placeholder={b.id === 'mobile' ? '请输入11位手机号' : '请输入6至30位户号'} pattern={b.id === 'mobile' ? '1[0-9]{10}' : '[0-9A-Za-z-]{6,30}'} required /></Field><AccountSelect /><Amount label="缴费金额（元）" /><Notice>确认后从付款账户实时扣款并生成缴费记录。</Notice><Submit>下一步</Submit></form>)} />)}</div></Card>
+    <Card title="最近缴费" action={recent.length ? '全部' : undefined} onAction={() => navigate('transactions')}>{recent.slice(0, 5).map(t => <Row key={t.id} icon={IcoTicket} tone="gold" title={t.title} subtitle={date(t.created_at)} trailing={<b className="amount">-{yuan(t.amount)}</b>} />)}{!recent.length && <Empty title="暂无缴费记录" />}</Card>
+    <Card title="更多服务">
+      <Row icon={IcoCalendar} tone="blue" title="网点预约" subtitle="预约后凭手机号到店办理" onClick={() => navigate('appointments')} />
+      <Row icon={IcoHeadset} tone="orange" title="帮助与客服" subtitle="常见问题、问题反馈" onClick={() => navigate('support')} />
+      <Row icon={IcoBell} tone="coral" title="消息中心" subtitle="账户变动与业务通知" onClick={() => navigate('messages')} />
+      <Row icon={IcoShield} tone="gold" title="安全中心" subtitle="密码、限额与银行卡管理" onClick={() => navigate('security')} />
+    </Card>
+  </div>;
 }
 
 export function Appointments() {
   const { data, mutate, openModal, closeModal } = useBank();
   const today = new Date().toISOString().slice(0, 10);
-  return <div className="page-content"><Notice>以下网点与预约均为虚拟演示，不会向真实网点发送预约。</Notice><form className="surface padded stack-form" onSubmit={async e => { const f = formValues(e); await mutate('/appointments', f, '预约成功，可在下方查看'); }}><h2>预约网点服务</h2><Field label="选择网点"><select name="branch"><option>澄川银行 · 城中支行</option><option>澄川银行 · 滨江支行</option><option>澄川银行 · 科创支行</option></select></Field><Field label="办理业务"><select name="service"><option>账户咨询</option><option>银行卡业务</option><option>贷款咨询</option><option>理财咨询</option></select></Field><Field label="预约日期"><input type="date" name="date" min={today} max={new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)} required /></Field><Submit>确认预约</Submit></form><Section title="我的预约"><div className="surface">{data.appointments.map(a => <Row key={a.id} icon={CalendarDays} title={a.branch} subtitle={`${a.date} · ${a.service}`} trailing={<span className={`status ${a.status === 'reserved' ? 'completed' : 'cancelled'}`}>{a.status === 'reserved' ? '已预约' : '已取消'}</span>} onClick={a.status === 'reserved' ? () => openModal('取消预约', <div className="stack-form"><p>确认取消{a.date}在{a.branch}的{a.service}预约？</p><button className="primary full" onClick={async () => { if (await mutate(`/appointments/${a.id}/cancel`, {}, '预约已取消')) closeModal(); }}>确认取消预约</button></div>) : undefined} />)}{!data.appointments.length && <Empty title="暂无预约" text="选择网点、业务和日期即可预约。" />}</div></Section></div>;
+  return <div className="page">
+    <form className="card form-card stack-form" onSubmit={async e => { const f = formValues(e); await mutate('/appointments', f, '预约成功'); }}>
+      <Field label="选择网点"><select name="branch"><option>澄川银行 城中支行</option><option>澄川银行 滨江支行</option><option>澄川银行 科创支行</option></select></Field>
+      <Field label="办理业务"><select name="service"><option>账户咨询</option><option>银行卡业务</option><option>贷款咨询</option><option>理财咨询</option></select></Field>
+      <Field label="预约日期"><input type="date" name="date" min={today} max={new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)} required /></Field>
+      <Submit>确认预约</Submit>
+    </form>
+    <Card title="我的预约">{data.appointments.map(a => <Row key={a.id} icon={IcoCalendar} tone={a.status === 'reserved' ? 'blue' : 'gray'} title={a.branch} subtitle={`${a.date} ${a.service}`} trailing={<span className={`status ${a.status === 'reserved' ? 'completed' : 'cancelled'}`}>{a.status === 'reserved' ? '已预约' : '已取消'}</span>} onClick={a.status === 'reserved' ? () => openModal('取消预约', <div className="stack-form"><p className="body-copy">确认取消 {a.date} 在{a.branch}的{a.service}预约？</p><button className="btn-primary" onClick={async () => { if (await mutate(`/appointments/${a.id}/cancel`, {}, '预约已取消')) closeModal(); }}>确认取消</button></div>) : undefined} />)}{!data.appointments.length && <Empty title="暂无预约" />}</Card>
+  </div>;
 }
 
 export function Support() {
   const { data, mutate } = useBank();
-  return <div className="page-content"><div className="support-head"><span className="large-icon"><Headphones size={32} /></span><h2>你好，有什么可以帮你？</h2><p>常见问题与业务反馈</p></div><Section title="你可能想了解"><div className="surface faq">{[['转账为什么显示“待确认”？', '提交转账后，资金会暂时预留。请在“交易记录”中打开该笔交易，核对收款信息并输入支付密码；15分钟未确认会自动过期并释放预留。'], ['模拟账户的密码是什么？', '两个内置演示账户的初始登录密码均为 Bank123456，支付密码为123456。若你已修改，请使用新密码。新注册用户使用注册时设置的密码。'], ['转账失败了，资金会退回吗？', '交易失败、取消或过期后，预留资金会释放，可用余额恢复。可在交易详情和收支明细中核对。'], ['理财收益和贷款利息如何计算？', '当前版本以本金交易流程为主。产品收益率为虚构示例，存款和理财按本金结算，贷款只模拟本金借还。'], ['可以转到真实银行卡吗？', '不可以。全部交易仅发生在模拟数据库；跨行转账也只是模拟资金流向。']].map(([q, a]) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}</div></Section><form className="surface padded stack-form" onSubmit={async e => { const el = e.currentTarget, f = formValues(e); if (await mutate('/support', f, '工单已保存')) el.reset(); }}><h2>提交问题反馈</h2><Field label="问题类型"><select name="subject"><option>账户与银行卡</option><option>转账与支付</option><option>存款与理财</option><option>贷款与信用卡</option><option>其他问题</option></select></Field><Field label="问题描述"><textarea name="content" rows={4} placeholder="请描述遇到的问题，可附上交易编号" required minLength={5} maxLength={2000} /></Field><Notice>反馈保存为模拟工单，当前没有真人客服或外部消息发送。</Notice><Submit>提交反馈</Submit></form><Section title="我的反馈"><div className="surface">{data.tickets.map(t => <Row key={t.id} icon={TicketCheck} title={t.subject} subtitle={`${date(t.created_at)} · ${t.content}`} trailing={<span className="status pending">已提交</span>} />)}{!data.tickets.length && <Empty title="暂无反馈" text="提交的问题会保存在这里。" />}</div></Section></div>;
+  const faq = [['转账为什么显示“待确认”？', '提交转账后资金会暂时预留。请在“交易进度”中打开该笔交易，核对收款信息并输入支付密码；15分钟未确认会自动过期并释放预留资金。'], ['演示账户的密码是什么？', '两个内置演示账户的初始登录密码均为 Bank123456，支付密码为 123456。若已修改请使用新密码，新注册用户使用注册时设置的密码。'], ['转账失败了，资金会退回吗？', '交易失败、取消或过期后，预留资金会释放，可用余额恢复。可在交易详情和交易记录中核对。'], ['理财收益和贷款利息如何计算？', '当前版本以本金交易流程为主。产品利率为模拟示例，存款和理财按本金结算，贷款只模拟本金借还。'], ['可以转到真实银行卡吗？', '不可以。全部交易仅发生在模拟数据库，跨行转账也只是模拟资金流向。']];
+  return <div className="page">
+    <Card title="常见问题"><div className="faq">{faq.map(([q, a]) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}</div></Card>
+    <form className="card form-card stack-form" onSubmit={async e => { const el = e.currentTarget, f = formValues(e); if (await mutate('/support', f, '反馈已提交')) el.reset(); }}>
+      <h2 className="card-title">问题反馈</h2>
+      <Field label="问题类型"><select name="subject"><option>账户与银行卡</option><option>转账与支付</option><option>存款与理财</option><option>贷款与信用卡</option><option>其他问题</option></select></Field>
+      <Field label="问题描述"><textarea name="content" rows={4} placeholder="请描述遇到的问题，可附上交易编号" required minLength={5} maxLength={2000} /></Field>
+      <Submit>提交</Submit>
+    </form>
+    <Card title="我的反馈">{data.tickets.map(t => <Row key={t.id} icon={IcoTicket} tone="blue" title={t.subject} subtitle={`${date(t.created_at)} ${t.content}`} trailing={<span className="status pending">已提交</span>} />)}{!data.tickets.length && <Empty title="暂无反馈" />}</Card>
+  </div>;
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Home as HomeIcon, ChartNoAxesCombined, Sparkles, Coffee, UserRound, ChevronLeft, Headphones, Check, CircleX, Clock3, LoaderCircle, ArrowUpRight, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Menu, Headphones, Check, CircleX, Clock3, LoaderCircle, Flame, Zap, ShieldCheck, Coins } from 'lucide-react';
+import { NavAccount, NavWealth, NavAssistant, NavLife, NavProfile } from './icons';
 import { api, ApiError, formValues, yuan, date, statusLabel, tail } from './api';
 import { BankContext } from './bank';
-import { Brand, Field, InlineError, Modal, Notice, PinField } from './ui';
+import { Brand, Field, InlineError, Modal, Notice, PinField, Rate } from './ui';
 import { Home, ServiceDirectory } from './pages/Home';
 import { Accounts, LedgerPage, Payees, Receive, Scan, Transactions, Transfer } from './pages/Accounts';
 import { Credit, Loans, Risk, Wealth } from './pages/Wealth';
@@ -11,8 +12,9 @@ import { AgentCenter, Messages, Profile, Security } from './pages/Profile';
 import ChatApp from './chat/ChatApp';
 import type { Snapshot, Transaction } from './types';
 
-const titles: Record<string, string> = { accounts: '我的账户', transfer: '转账汇款', ledger: '收支明细', transactions: '交易记录', payees: '收款人管理', receive: '收付款', scan: '扫一扫', wealth: '财富', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能体', search: '搜索服务', services: '全部服务' };
-const tabs = [{ id: 'home', title: '首页', icon: HomeIcon }, { id: 'wealth', title: '财富', icon: ChartNoAxesCombined }, { id: 'assistant', title: '智能体', icon: Sparkles }, { id: 'life', title: '生活', icon: Coffee }, { id: 'profile', title: '我的', icon: UserRound }];
+const titles: Record<string, string> = { home: '账户', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
+const tabs = [{ id: 'home', title: '账户', icon: NavAccount }, { id: 'wealth', title: '理财', icon: NavWealth }, { id: 'assistant', title: '智能助手', icon: NavAssistant }, { id: 'life', title: '生活', icon: NavLife }, { id: 'profile', title: '我的', icon: NavProfile }];
+const tabPages = ['wealth', 'life', 'profile'];
 
 export default function App() {
   const [data, setData] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [initialError, setInitialError] = useState('');
@@ -23,8 +25,9 @@ export default function App() {
   const [toastState, setToastState] = useState<{ message: string; error: boolean } | null>(null), toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hidden, setHidden] = useState(localStorage.getItem('bank-hide-balances') === 'true');
   const page = route.split('?')[0];
-  // 智能体页首次打开后保持挂载，切换标签不丢失对话；退出登录时随整个应用卸载。
+  // 智能助手页首次打开后保持挂载，切换标签不丢失对话；退出登录时随整个应用卸载。
   const [assistantOpened, setAssistantOpened] = useState(page === 'assistant');
+  const navigated = useRef(false); // 应用内是否发生过路由跳转，决定返回按钮用 history.back 还是回账户页
   useEffect(() => { if (page === 'assistant') setAssistantOpened(true); }, [page]);
   const navigate = useCallback((r: string) => { location.hash = r; }, []);
   const refresh = useCallback(async () => { const snapshot = await api<Snapshot>('/dashboard'); setData(snapshot); }, []);
@@ -36,13 +39,13 @@ export default function App() {
     if (!modal && !tx) toast(message, true);
   }
   useEffect(() => {
-    const sync = () => { setRoute(location.hash.slice(1) || 'home'); window.scrollTo(0, 0); };
+    const sync = () => { navigated.current = true; setRoute(location.hash.slice(1) || 'home'); window.scrollTo(0, 0); };
     addEventListener('hashchange', sync);
     refresh().catch(e => { if (!(e instanceof ApiError && e.status === 401)) setInitialError(e.message); }).finally(() => setLoading(false));
     return () => removeEventListener('hashchange', sync);
   }, [refresh]);
   useEffect(() => { if (!data) return; const timer = setInterval(() => { if (!document.hidden && !busyRef.current) refresh().catch(() => {}); }, 30000); return () => clearInterval(timer); }, [Boolean(data), refresh]);
-  useEffect(() => { document.title = `${titles[page] || '首页'} · 澄川银行`; }, [page]);
+  useEffect(() => { document.title = `${titles[page] || '账户'} · 澄川银行`; }, [page]);
   async function mutate(path: string, body: unknown, success: string, method = 'POST') {
     if (busyRef.current) return false;
     busyRef.current = true; setBusy(true); setFormError(null);
@@ -73,11 +76,21 @@ export default function App() {
   }
   async function logout() { try { await api('/auth/logout', 'POST', {}); setData(null); setTx(null); setModal(null); navigate('home'); } catch (e) { handleError(e); } }
   const toastElement = toastState && <div className={`toast ${toastState.error ? 'error' : ''}`} role={toastState.error ? 'alert' : 'status'}>{toastState.error ? <CircleX size={18} /> : <Check size={18} />}<span>{toastState.message}</span></div>;
-  if (loading) return <div className="app-shell loading-screen"><Brand /><LoaderCircle size={26} className="spin" /><p>正在连接你的模拟银行…</p></div>;
+  if (loading) return <div className="app-shell loading-screen"><Brand /><LoaderCircle size={26} className="spin" /><p>正在加载…</p></div>;
   if (!data) return <><Login initialError={initialError} onLogin={async () => { await refresh(); navigate('home'); }} />{toastElement}</>;
   const pages: Record<string, ReactNode> = { home: <Home />, accounts: <Accounts />, transfer: <Transfer key={route} />, ledger: <LedgerPage />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> };
-  const activeTab = ['deposit', 'risk'].includes(page) ? 'wealth' : ['accounts', 'security', 'messages', 'agent', 'transactions', 'payees'].includes(page) ? 'profile' : ['appointments'].includes(page) ? 'life' : page;
-  return <BankContext.Provider value={{ data, busy, route, hidden, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : ''}`}>{page !== 'home' && <header className="page-header"><button className="icon-button" aria-label="返回首页" onClick={() => navigate('home')}><ChevronLeft size={25} /></button><h1>{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={21} /></button></header>}{assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}><ChatApp key={data.user.id} /></div>}{page !== 'assistant' && (pages[page] || <div className="page-content"><Notice>未找到该页面。</Notice><button className="primary full" onClick={() => navigate('home')}>返回首页</button></div>)}<nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={`${activeTab === t.id ? 'active' : ''}${t.id === 'assistant' ? ' assistant-tab' : ''}`} onClick={() => navigate(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}>{t.id === 'assistant' ? <span className="assistant-tab-icon"><t.icon size={22} strokeWidth={2} /></span> : <t.icon size={23} strokeWidth={activeTab === t.id ? 2.2 : 1.7} />}<span>{t.title}</span></button>)}</nav></div>{modal && <Modal title={modal.title} onClose={() => { if (!busy) setModal(null); }}>{modal.content}</Modal>}{tx && <Modal title={tx.status === 'pending' ? '核对交易信息' : '交易详情'} onClose={() => { if (!busy) setTx(null); }}><div className="receipt"><span className={`receipt-icon ${tx.status}`} aria-hidden="true">{tx.status === 'completed' ? <Check size={32} /> : tx.status === 'pending' ? <Clock3 size={30} /> : <CircleX size={30} />}</span><h3>{tx.title}</h3><div className="receipt-amount">¥ {yuan(tx.amount)}</div><span className={`status ${tx.status}`} data-testid="transaction-status">{statusLabel[tx.status]}</span><dl><dt>交易账户</dt><dd>储蓄卡（{tail(data.accounts.find(a => a.id === tx.account_id)?.number || '')}）</dd>{tx.payload.recipientName && <><dt>收款人</dt><dd>{tx.payload.recipientName}</dd><dt>收款账号</dt><dd className="mono">{tx.payload.recipientAccount}</dd><dt>收款银行</dt><dd>{tx.payload.bank}</dd></>}{tx.payload.billNumber && <><dt>缴费户号</dt><dd>{tx.payload.billNumber}</dd></>}{tx.payload.note && <><dt>附言</dt><dd>{tx.payload.note}</dd></>}{tx.payload.months && <><dt>借款期限</dt><dd>{tx.payload.months}个月</dd></>}<dt>交易编号</dt><dd className="mono" data-testid="transaction-id">{tx.id}</dd><dt>创建时间</dt><dd>{date(tx.created_at)}</dd>{tx.status !== 'pending' && <><dt>更新时间</dt><dd>{date(tx.updated_at)}</dd></>}</dl>{tx.error && <div className="inline-error">{tx.error}</div>}{tx.status === 'pending' ? <form className="stack-form" onSubmit={e => { const f = formValues(e); void confirm(f.pin); }}><Notice>请核对交易信息。有效期至 {date(tx.expires_at)}；演示账户初始支付密码为123456。</Notice><PinField /><button className="primary full" disabled={busy} data-testid="confirm-transaction">{busy && <LoaderCircle size={18} className="spin" />}确认{tx.type === 'loan_draw' ? '借款' : tx.type === 'redeem' ? '赎回' : '交易'}</button><button className="text-button full muted" type="button" disabled={busy} onClick={cancel} data-testid="cancel-transaction">取消本次交易</button></form> : <button className="primary full" onClick={() => { setTx(null); navigate('transactions'); }}>完成</button>}</div></Modal>}{toastElement}</BankContext.Provider>;
+  const activeTab = ['deposit', 'risk', 'loan'].includes(page) ? 'wealth' : ['accounts', 'security', 'messages', 'agent', 'transactions', 'payees', 'credit'].includes(page) ? 'profile' : ['appointments', 'support'].includes(page) ? 'life' : page;
+  const isTabPage = tabPages.includes(page);
+  return <BankContext.Provider value={{ data, busy, route, hidden, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : ''}`}>
+    {page !== 'home' && page !== 'assistant' && <header className="page-header">{isTabPage ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button>}<h1>{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
+    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}><ChatApp key={data.user.id} /></div>}
+    {page !== 'assistant' && (pages[page] || <div className="page"><Notice>未找到该页面。</Notice><button className="btn-primary" onClick={() => navigate('home')}>返回账户</button></div>)}
+    <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} onClick={() => navigate(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon"><t.icon active={activeTab === t.id} /></span><span>{t.title}</span></button>)}</nav>
+  </div>
+    {modal && <Modal title={modal.title} onClose={() => { if (!busy) setModal(null); }}>{modal.content}</Modal>}
+    {tx && <Modal title={tx.status === 'pending' ? '确认交易' : '交易详情'} onClose={() => { if (!busy) setTx(null); }}><div className="receipt"><span className={`receipt-icon ${tx.status}`} aria-hidden="true">{tx.status === 'completed' ? <Check size={30} /> : tx.status === 'pending' ? <Clock3 size={28} /> : <CircleX size={28} />}</span><h3>{tx.title}</h3><div className="receipt-amount">¥{yuan(tx.amount)}</div><span className={`status ${tx.status}`} data-testid="transaction-status">{statusLabel[tx.status]}</span><dl><dt>付款账户</dt><dd>储蓄卡（{tail(data.accounts.find(a => a.id === tx.account_id)?.number || '')}）</dd>{tx.payload.recipientName && <><dt>收款人</dt><dd>{tx.payload.recipientName}</dd><dt>收款账号</dt><dd className="mono">{tx.payload.recipientAccount}</dd><dt>收款银行</dt><dd>{tx.payload.bank}</dd></>}{tx.payload.billNumber && <><dt>缴费户号</dt><dd>{tx.payload.billNumber}</dd></>}{tx.payload.note && <><dt>附言</dt><dd>{tx.payload.note}</dd></>}{tx.payload.months && <><dt>借款期限</dt><dd>{tx.payload.months}个月</dd></>}<dt>交易编号</dt><dd className="mono" data-testid="transaction-id">{tx.id}</dd><dt>创建时间</dt><dd>{date(tx.created_at)}</dd>{tx.status !== 'pending' && <><dt>更新时间</dt><dd>{date(tx.updated_at)}</dd></>}</dl>{tx.error && <div className="inline-error">{tx.error}</div>}{tx.status === 'pending' ? <form className="stack-form" onSubmit={e => { const f = formValues(e); void confirm(f.pin); }}><Notice>请核对交易信息并输入支付密码，本次交易有效期至 {date(tx.expires_at)}。</Notice><PinField /><button className="btn-primary" disabled={busy} data-testid="confirm-transaction">{busy && <LoaderCircle size={18} className="spin" />}确认{tx.type === 'loan_draw' ? '借款' : tx.type === 'redeem' ? '赎回' : '支付'}</button><button className="btn-text" type="button" disabled={busy} onClick={cancel} data-testid="cancel-transaction">取消交易</button></form> : <button className="btn-primary" onClick={() => { setTx(null); navigate('transactions'); }}>完成</button>}</div></Modal>}
+    {toastElement}
+  </BankContext.Provider>;
 }
 
 function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initialError: string }) {
@@ -88,5 +101,25 @@ function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initia
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   }
-  return <div className="app-shell login-page"><header><Brand /><span className="simulation-pill">模拟银行</span></header><main><div className="login-intro"><span className="login-glyph"><ShieldCheck size={47} strokeWidth={1.4} /></span><span className="eyebrow">连接每一天的从容</span><h1>你好，<br />欢迎来到澄川。</h1><p>你的账户、财富与生活，在这里相连。</p></div><div className="login-tabs"><button className={!register ? 'active' : ''} onClick={() => { setRegister(false); setPhone('13800138000'); setPassword('Bank123456'); setError(''); }}>登录</button><button className={register ? 'active' : ''} onClick={() => { setRegister(true); setPhone(''); setPassword(''); setError(''); }}>注册模拟账户</button></div><form className="stack-form login-form" onSubmit={login} data-testid="login-form">{register && <Field label="姓名"><input name="name" placeholder="请填写模拟用户姓名" required minLength={2} maxLength={20} autoComplete="name" /></Field>}<Field label="手机号"><input name="phone" type="tel" autoComplete="username" placeholder="请输入11位手机号" value={phone} onChange={e => setPhone(e.target.value)} required pattern="1[0-9]{10}" /></Field><Field label="登录密码"><input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} placeholder="8位以上，包含字母和数字" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined} onInvalid={e => { e.preventDefault(); setError('请输入8至72位登录密码'); }} required minLength={8} maxLength={72} /></Field>{register && <PinField label="设置支付密码" />}<InlineError message={error} id="login-error" testId="login-error" /><button className="primary full" disabled={busy} data-testid="login-submit">{busy ? <LoaderCircle size={19} className="spin" /> : null}{register ? '开通模拟账户' : '登录模拟银行'}<ArrowUpRight size={19} /></button></form>{!register && <div className="demo-access"><span>选择演示账户</span><div><button className={phone === '13800138000' ? 'active' : ''} onClick={() => { setPhone('13800138000'); setPassword('Bank123456'); }}>林知夏<span>13800138000</span></button><button className={phone === '13900139000' ? 'active' : ''} onClick={() => { setPhone('13900139000'); setPassword('Bank123456'); }}>陈屿<span>13900139000</span></button></div><p>登录密码 Bank123456 · 支付密码 123456</p></div>}<p className="login-note"><ShieldCheck size={15} />模拟演示环境，所有资金与业务均为虚拟</p>{register && <p className="page-footnote">注册无需短信或真实身份资料，新用户将获得虚拟开户资金。</p>}</main><footer>CHENGCHUAN BANK<span>澄澈于心 · 从容于行</span></footer></div>;
+  const demos = [{ name: '林知夏', phone: '13800138000' }, { name: '陈屿', phone: '13900139000' }];
+  return <div className="app-shell login-page">
+    <header className="login-hero"><Brand light sub="手机银行" size={40} /><p className="login-slogan">存款 · 理财 · 贷款 · 生活缴费</p></header>
+    <main className="login-body">
+      <section className="card login-card">
+        <div className="tabs grow"><button role="tab" className={`tab${!register ? ' active' : ''}`} aria-selected={!register} onClick={() => { setRegister(false); setPhone('13800138000'); setPassword('Bank123456'); setError(''); }}>登录</button><button role="tab" className={`tab${register ? ' active' : ''}`} aria-selected={register} onClick={() => { setRegister(true); setPhone(''); setPassword(''); setError(''); }}>注册</button></div>
+        <form className="stack-form" onSubmit={login} data-testid="login-form">
+          {register && <Field label="姓名"><input name="name" placeholder="请输入姓名" required minLength={2} maxLength={20} autoComplete="name" /></Field>}
+          <Field label="手机号"><input name="phone" type="tel" autoComplete="username" placeholder="请输入11位手机号" value={phone} onChange={e => setPhone(e.target.value)} required pattern="1[0-9]{10}" /></Field>
+          <Field label="登录密码"><input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} placeholder="8位以上，包含字母和数字" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined} onInvalid={e => { e.preventDefault(); setError('请输入8至72位登录密码'); }} required minLength={8} maxLength={72} /></Field>
+          {register && <PinField label="设置支付密码" />}
+          <InlineError message={error} id="login-error" testId="login-error" />
+          <button className="btn-primary" disabled={busy} data-testid="login-submit">{busy ? <LoaderCircle size={19} className="spin" /> : null}{register ? '注册并登录' : '登录'}</button>
+        </form>
+        {!register && <div className="demo-access"><span>演示账户</span><div>{demos.map(d => <button key={d.phone} className={`pill small${phone === d.phone ? ' primary' : ''}`} onClick={() => { setPhone(d.phone); setPassword('Bank123456'); }}>{d.name} {d.phone.slice(0, 3)}****{d.phone.slice(-4)}</button>)}</div><p>登录密码 Bank123456，支付密码 123456</p></div>}
+        {register && <p className="footnote">注册无需短信验证，新用户自动获得开户体验金。</p>}
+      </section>
+      <section className="card login-promo"><header className="card-head"><h2 className="card-title">热销产品</h2><span className="card-action"><Flame size={14} />近7天热销</span></header><div className="promo-center"><strong>澄享日日盈</strong><span className="promo-perks"><i><Coins size={13} />1元起购</i><i><Zap size={13} />快速到账</i><i><ShieldCheck size={13} />低风险</i></span><Rate value={2.18} caption="成立以来年化" size="xl" /><button className="pill primary" onClick={() => document.querySelector<HTMLInputElement>('input[name=phone]')?.focus()}>登录后查看</button></div></section>
+      <p className="footnote login-note"><ShieldCheck size={14} />演示环境，所有资金与业务均为虚拟数据</p>
+    </main>
+  </div>;
 }
