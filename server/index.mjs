@@ -23,7 +23,8 @@ if (production) {
   app.get('/{*path}', (_req, res) => res.sendFile(resolve('dist/index.html')));
 } else {
   const { createServer: createViteServer } = await import('vite');
-  vite = await createViteServer({ server: { middlewareMode: true, hmr: { server } }, appType: 'spa' });
+  // Load vite.config.ts in memory; the default bundler writes a temp file that makes `node --watch` restart in a loop.
+  vite = await createViteServer({ configLoader: 'runner', server: { middlewareMode: true, hmr: { server } }, appType: 'spa' });
   app.use(vite.middlewares);
 }
 const port = Number(process.env.PORT || (production ? 3000 : 5173));
