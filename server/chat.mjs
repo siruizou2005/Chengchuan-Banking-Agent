@@ -1,20 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
-export function loadChatConfig(env = process.env, file = resolve('api.txt')) {
-  let saved = {};
-  try {
-    const content = readFileSync(file, 'utf8').trim();
-    if (content.startsWith('{')) saved = JSON.parse(content);
-    else {
-      const match = content.match(/^([\w.-]+)\s*:\s*(\S+)$/);
-      saved = match ? { model: match[1].replaceAll('_', '-'), apiKey: match[2] } : { apiKey: content };
-    }
-  } catch { /* Environment configuration also works without a local file. */ }
-  const model = env.CHAT_MODEL || saved.model || 'deepseek-v4-flash';
+export function loadChatConfig(env = process.env) {
+  const model = env.CHAT_MODEL || 'deepseek-v4-flash';
   return {
-    apiKey: env.CHAT_API_KEY || saved.apiKey || '',
-    baseUrl: env.CHAT_BASE_URL || saved.baseUrl || (model.startsWith('deepseek-') ? 'https://api.deepseek.com' : ''),
+    apiKey: env.CHAT_API_KEY || '',
+    baseUrl: env.CHAT_BASE_URL || (model.startsWith('deepseek-') ? 'https://api.deepseek.com' : ''),
     model,
   };
 }
@@ -64,7 +54,7 @@ export function registerChat(route, snapshotFor, options = {}) {
       return res.status(400).json({ error: { code: 'INVALID_MESSAGES', message: '对话内容过长或格式无效，请开始新对话。' } });
     }
     const config = getConfig();
-    if (!config.apiKey || !config.baseUrl) return res.status(503).json({ error: { code: 'CHAT_NOT_CONFIGURED', message: '请在服务器的 api.txt 中配置聊天 API 密钥、服务地址和模型。' } });
+    if (!config.apiKey || !config.baseUrl) return res.status(503).json({ error: { code: 'CHAT_NOT_CONFIGURED', message: '请在服务器的 .env 中配置 CHAT_API_KEY、CHAT_BASE_URL 和 CHAT_MODEL。' } });
     if (active.has(req.user.id)) return res.status(429).json({ error: { code: 'CHAT_BUSY', message: '上一条回复仍在结束，请稍后重试。' } });
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), options.timeoutMs || 60000);

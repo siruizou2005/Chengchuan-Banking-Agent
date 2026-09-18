@@ -7,6 +7,7 @@ data/
 test-results/
 api.txt
 .env.*
+!.env.example
 *.env
 .venv/
 venv/

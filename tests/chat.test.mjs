@@ -25,7 +25,7 @@ async function fixture(t, provider, extra = {}) {
 const prompt = { messages: [{ role: 'user', content: '我的账户和资料是什么？' }] };
 
 test('non-DeepSeek models require an explicit provider address', () => {
-  const config = loadChatConfig({ CHAT_API_KEY: 'test', CHAT_MODEL: 'gpt-5.6-luna' }, 'nonexistent-config-for-test.txt');
+  const config = loadChatConfig({ CHAT_API_KEY: 'test', CHAT_MODEL: 'gpt-5.6-luna' });
   assert.equal(config.baseUrl, '');
 });
 
