@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, Copy, Landmark, LoaderCircle, Plus, RotateCcw, Square } from 'lucide-react';
+import { ArrowRight, Check, Copy, LoaderCircle, Plus, RotateCcw, Sparkles, Square } from 'lucide-react';
 import { ChatError, liveAdapter, initialMessages, type ChatAdapter, type Message } from './adapter';
 import { api } from '../api';
-import type { User } from '../types';
-import { AccountSession } from './AccountSession';
+import { useBank } from '../bank';
+import './chat.css';
 
-function Mark({ small = false }: { small?: boolean }) {
-  return <span className={`brand-mark${small ? ' small' : ''}`}><Landmark aria-hidden="true" strokeWidth={2.3} /></span>;
+function Avatar() {
+  return <span className="assistant-avatar" aria-hidden="true"><Sparkles size={18} strokeWidth={2.1} /></span>;
 }
 
 function MessageBubble({ message }: { message: Message }) {
@@ -22,7 +22,7 @@ function MessageBubble({ message }: { message: Message }) {
   }
   if (message.role === 'user') return <article className="message user-message"><span className="user-label">你</span><div className="bubble user-bubble">{message.text}</div></article>;
   return <article className="message assistant-message">
-    <Mark small />
+    <Avatar />
     <div className="assistant-content">
       <div className="assistant-heading"><strong>澄川智能助手</strong>{message.welcome && <span>你的模拟银行 Agent</span>}</div>
       <div className="bubble assistant-bubble">
@@ -37,10 +37,11 @@ function MessageBubble({ message }: { message: Message }) {
   </article>;
 }
 
+// 智能体页面：嵌入银行应用，使用当前登录用户。App 在切换标签时保持挂载，对话不会丢失。
 export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapter }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [sessionLoading, setSessionLoading] = useState(true);
-  const [configured, setConfigured] = useState(false);
+  const { data, refresh, logout } = useBank();
+  const user = data.user;
+  const [configured, setConfigured] = useState<boolean | null>(null);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,15 +49,15 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   const [notice, setNotice] = useState('');
   const controller = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const shouldScroll = useRef(false);
   const [startedAt, setStartedAt] = useState(() => new Date());
   useEffect(() => {
     let alive = true;
-    Promise.all([api<User>('/me').catch(() => null), api<{ configured: boolean }>('/chat/status')])
-      .then(([profile, status]) => { if (alive) { setUser(profile); setConfigured(status.configured); } })
-      .catch(() => { if (alive) setError('无法连接银行服务，请刷新后重试。'); })
-      .finally(() => { if (alive) setSessionLoading(false); });
+    api<{ configured: boolean }>('/chat/status')
+      .then(status => { if (alive) setConfigured(status.configured); })
+      .catch(() => { if (alive) { setConfigured(false); setError('无法连接聊天服务，请刷新后重试。'); } });
     return () => { alive = false; };
   }, []);
   useEffect(() => () => controller.current?.abort(), []);
@@ -68,7 +69,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   }, [draft]);
 
   async function requestReply(next: Message[]) {
-    if (controller.current || !user) return;
+    if (controller.current) return;
     const active = new AbortController(); controller.current = active;
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
@@ -76,46 +77,47 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
       if (!active.signal.aborted) setMessages([...next, { ...response, id: crypto.randomUUID(), role: 'assistant' }]);
     } catch (failure) {
       if (!active.signal.aborted) {
-        if (failure instanceof ChatError && [401, 409].includes(failure.status)) { setUser(null); reset(); }
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
+        // 401：会话过期，回到登录页；409：其他标签页切换了账户，同步银行数据（新用户会得到新的对话）。
+        if (failure instanceof ChatError && [401, 409].includes(failure.status)) void refresh().catch(() => logout());
       }
     } finally {
       if (controller.current === active) { controller.current = null; setBusy(false); }
     }
   }
   function send() {
-    const text = draft.trim(); if (!text || controller.current || !user || !configured) return;
+    const text = draft.trim(); if (!text || controller.current || !configured) return;
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text }];
     setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
   }
   function stop() { controller.current?.abort(); controller.current = null; setBusy(false); setNotice('已停止回复'); }
   function reset() {
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
-    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages().slice(0, 1)); setStartedAt(new Date());
-    input.current?.focus(); document.querySelector('.conversation-scroll')?.scrollTo({ top: 0 });
+    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages()); setStartedAt(new Date());
+    scroller.current?.scrollTo({ top: 0 });
   }
-  return <div className="chat-shell">
-    <header className="chat-header"><div className="header-inner">
-      <div className="brand-row"><div className="brand"><Mark /><div><strong>澄川银行</strong><span>CHENGCHUAN BANK</span></div></div><span className="simulation-pill">模拟银行</span></div>
-      <div className="title-row"><h1>澄川 Agent</h1><div className="header-controls"><button className="new-chat" onClick={reset} title="新对话" aria-label="新对话"><Plus size={17} /><span>新对话</span></button><span className="connection-status"><span className={`status-dot${!user || !configured ? ' inactive' : ''}`} />{sessionLoading ? '连接中' : !configured ? '待配置' : user ? 'AI 对话' : '待登录'}</span></div></div>
-    </div></header>
-    <main className="conversation-scroll" aria-label="与澄川智能助手的对话">
+  return <section className="assistant-page" aria-label="智能体">
+    <div className="assistant-toolbar">
+      <span className="connection-status"><span className={`status-dot${configured ? '' : ' inactive'}`} />{configured === null ? '连接中' : configured ? `AI 对话 · ${user.name}` : '待配置'}</span>
+      <button className="new-chat" onClick={reset}><Plus size={15} /><span>新对话</span></button>
+    </div>
+    <div ref={scroller} className="conversation-scroll" role="log" aria-label="与澄川智能助手的对话">
       <div className="conversation-inner">
-        <AccountSession user={user} loading={sessionLoading} onChange={profile => { reset(); setUser(profile); void api<{ configured: boolean }>('/chat/status').then(status => setConfigured(status.configured)).catch(() => setConfigured(false)); }} />
         <div className="date-divider">今天 {startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
-        <div className="message-list">{messages.map(message => <MessageBubble key={message.id} message={message} />)}</div>
+        <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} />)}</div>
         {messages.length === 1 && <div className="suggestions" aria-label="推荐问题">{['看看最近的账户情况', '了解转账流程', '生活缴费怎么操作'].map(text => <button key={text} onClick={() => { setDraft(text); input.current?.focus(); }}>{text}<ArrowRight size={14} /></button>)}</div>}
+        {configured === false && !error && <div className="error-message" role="alert">聊天服务尚未配置，请在服务器 .env 中设置 CHAT_API_KEY 后重启。</div>}
         <div role="status" aria-live="polite">{busy && <div className="reply-status"><LoaderCircle size={16} className="spin" />澄川助手正在回复…</div>}{notice && <div className="reply-status">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={14} />重新生成</button></div>}</div>
-        {error && <div className="error-message" role="alert">{error}<button onClick={() => void requestReply(messages)}><RotateCcw size={14} />重试</button></div>}
+        {error && <div className="error-message" role="alert">{error}{configured && <button onClick={() => void requestReply(messages)}><RotateCcw size={14} />重试</button>}</div>}
         <div ref={bottom} className="scroll-anchor" />
       </div>
-    </main>
-    <footer className="chat-footer"><div className="footer-inner">
+    </div>
+    <div className="composer-bar">
       <form className="composer" onSubmit={event => { event.preventDefault(); send(); }}>
-        <textarea ref={input} aria-label="消息" placeholder={user ? '和澄川助手聊聊…' : '请先登录模拟账户'} disabled={!user || sessionLoading} value={draft} onChange={event => setDraft(event.target.value)} rows={1} maxLength={4000} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
-        {busy ? <button type="button" className="send-button" onClick={stop} aria-label="停止回复"><Square size={21} fill="currentColor" /></button> : <button type="submit" className="send-button" disabled={!draft.trim() || !user || !configured} aria-label="发送消息"><ArrowRight size={29} strokeWidth={2.4} /></button>}
+        <textarea ref={input} aria-label="消息" placeholder="和澄川助手聊聊…" value={draft} onChange={event => setDraft(event.target.value)} rows={1} maxLength={4000} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
+        {busy ? <button type="button" className="send-button" onClick={stop} aria-label="停止回复"><Square size={19} fill="currentColor" /></button> : <button type="submit" className="send-button" disabled={!draft.trim() || !configured} aria-label="发送消息"><ArrowRight size={25} strokeWidth={2.4} /></button>}
       </form>
-      <p className="footer-note">模拟演示环境 · 所有资金与业务均为虚拟</p><span className="footer-brand">CHENGCHUAN BANK</span>
-    </div></footer>
-  </div>;
+      <p className="footer-note">对话和脱敏的账户资料会发送至 AI 服务 · 模拟演示环境</p>
+    </div>
+  </section>;
 }

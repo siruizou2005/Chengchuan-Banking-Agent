@@ -39,5 +39,5 @@ export const liveAdapter: ChatAdapter = {
 };
 
 export function initialMessages(): Message[] {
-  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '你好，我是澄川智能助手。登录模拟账户后，我可以结合你的账户、收支和个人资料，帮你了解本站服务，也可以陪你聊聊。' }];
+  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '你好，我是澄川智能助手。我可以结合你的账户、收支和个人资料，帮你了解本站服务，也可以陪你聊聊。' }];
 }

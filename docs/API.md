@@ -82,6 +82,6 @@
 
 ## 网页 Agent
 
-主要hash路由：首页 `/#home`、转账 `/#transfer`、收支 `/#ledger`、交易 `/#transactions`、账户 `/#accounts`、财富 `/#wealth`、定期 `/#deposit`、贷款 `/#loan`、信用卡 `/#credit`、生活 `/#life`、开发者 `/#agent`。
+主要hash路由：首页 `/#home`、转账 `/#transfer`、收支 `/#ledger`、交易 `/#transactions`、账户 `/#accounts`、财富 `/#wealth`、定期 `/#deposit`、贷款 `/#loan`、信用卡 `/#credit`、生活 `/#life`、智能体 `/#assistant`、开发者 `/#agent`。
 
 核心定位符：`login-submit`、`quick-transfer`、`transfer-form`、`create-transfer`、`confirm-transaction`、`cancel-transaction`、`transaction-status`、`transaction-id`、`nav-home`等。字段优先使用中文标签或name：`recipientName`、`recipientAccount`、`bank`、`amount`、`pin`。交易结果必须通过页面状态或API查询核对，不能仅凭点击完成判断成功。
