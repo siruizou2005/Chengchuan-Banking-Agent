@@ -20,7 +20,7 @@ export function createAgent(services,options={}) {
  async function runTurn({user,channel='app',messages,sessionId,signal}) {
   messages=validateMessages(messages);
   const requestedSession=sessionId;
-  if(sessionId){const existing=services.bank.get('SELECT * FROM agent_sessions WHERE id=? AND user_id=? AND channel=?',sessionId,user.id,channel);requireThat(existing,'会话不存在',404,'NOT_FOUND');}
+  if(sessionId){const existing=services.bank.get('SELECT * FROM agent_sessions WHERE id=? AND user_id=? AND channel=? AND archived=0',sessionId,user.id,channel);requireThat(existing,'会话不存在',404,'NOT_FOUND');}
   sessionId ||= id('SESSION');
   requireThat(!active.has(user.id),'上一条回复仍在结束，请稍后重试',429,'CHAT_BUSY');active.add(user.id);
   const started=Date.now(),runId=id('RUN'),trace=[],events=[];let output='',tokens=0,fatal;
@@ -77,7 +77,7 @@ export function createAgent(services,options={}) {
   }finally{clearTimeout(timeout);signal?.removeEventListener('abort',disconnect);active.delete(user.id);}
   return finish();
   function finish(){
-   services.bank.run('INSERT INTO agent_runs VALUES(?,?,?,?,?,?,?,?,?,?,?)',runId,user.id,channel,sessionId,redact(input),JSON.stringify(flags),JSON.stringify(redact(trace)),redact(output),Date.now()-started,tokens,now());
+   services.bank.run('INSERT INTO agent_runs(id,user_id,channel,session_id,input,injection,trace,output,duration_ms,tokens,created_at,events) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',runId,user.id,channel,sessionId,redact(input),JSON.stringify(flags),JSON.stringify(redact(trace)),redact(output),Date.now()-started,tokens,now(),JSON.stringify(redact(events)));
    const existing=services.bank.get('SELECT * FROM agent_sessions WHERE id=?',sessionId);
    const history=[...(channel!=='app'&&existing?JSON.parse(existing.history):messages.slice(0,-1)),messages.at(-1),{role:'assistant',content:output}].slice(-12);
    services.bank.run('INSERT INTO agent_sessions(id,user_id,channel,history,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET history=excluded.history,updated_at=excluded.updated_at',sessionId,user.id,channel,JSON.stringify(redact(history)),now());
