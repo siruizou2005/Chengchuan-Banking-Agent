@@ -10,7 +10,7 @@ export function registerDirectVerification(route,services) {
   if(/^\/transactions\/[A-Za-z0-9]+\/confirm$/.test(path)){
    const tx=bank.get('SELECT * FROM transactions WHERE id=? AND user_id=?',path.split('/')[2],user.id);requireThat(tx,'交易不存在',404);
    const tool={transfer:'propose_transfer',payment:'propose_payment',deposit:'propose_subscribe_product',investment:'propose_subscribe_product',redeem:'propose_redeem',loan_draw:'propose_loan_draw',loan_repay:'propose_loan_repay',credit_repay:'propose_credit_repay',credit_spend:'propose_payment'}[tx.type];
-   if(['transfer','payment'].includes(tx.type))ctx.dailyTotal-=tx.amount;
+   if(['transfer','payment'].includes(tx.type)&&tx.created_at.slice(0,10)===now().slice(0,10)&&['pending','completed'].includes(tx.status))ctx.dailyTotal-=tx.amount;
    return {red:tx.status==='pending'&&classify(tool,{amount:(tx.amount/100).toFixed(2)},ctx)==='red',title:tx.title+` ¥${(tx.amount/100).toFixed(2)}`,resource:tx.id};
   }
   if(path==='/settings')return {red:body.newPassword!==undefined||body.newPin!==undefined||(body.dailyLimit!==undefined&&cents(body.dailyLimit)>user.daily_limit),title:body.newPassword!==undefined?'修改登录密码':body.newPin!==undefined?'修改支付密码':`修改日限额至 ¥${body.dailyLimit}`,resource:'settings'};

@@ -123,10 +123,14 @@ export function createServices(bank,core,guard) {
  function scheduledAmount(args,tool){return args._transaction&& !['redeem','loan_draw','credit_spend'].includes(args._transaction.type)?cents(args.amount):tool==='propose_lock_funds'?cents(args.amount):0;}
  function authorizePlan(user,action,args) {
   const plan=get('SELECT * FROM agent_plans WHERE action_id=?',action.id);
+  const spending=args.steps.reduce((n,s)=>n+(s.tool==='propose_lock_funds'?0:scheduledAmount(s.args,s.tool)),0);
+  const locked=args.steps.filter(s=>s.tool==='propose_lock_funds').reduce((n,s)=>n+cents(s.args.amount),0);
+  const dates=args.steps.map(s=>s.args.until||new Date(Date.parse(s.runAt||s.args.scheduleAt||s.args.at||now())+86400000).toISOString());
+  const until=dates.sort().at(-1);
+  reserve(user,action.id,plan.id,Math.max(spending,locked),until,`计划预授权 · ${args.title}`);
   for(const step of args.steps){
    const taskId=id('TASK');step.actionId=taskId;
    const runAt=step.runAt||step.args.scheduleAt||(step.tool==='set_reminder'?step.args.at:now());
-   reserve(user,taskId,plan.id,scheduledAmount(step.args,step.tool),step.args.until||new Date(Date.parse(runAt)+86400000).toISOString(),`计划预授权 · ${step.title}`);
    run('INSERT INTO scheduled_tasks(id,user_id,action_id,plan_id,step_id,kind,args,run_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)',taskId,user.id,action.id,plan.id,step.id,step.tool,JSON.stringify(step.args),runAt,now());
   }
   run("UPDATE agent_plans SET steps=?,status='active' WHERE id=?",JSON.stringify(args.steps),plan.id);
@@ -177,6 +181,7 @@ export function createServices(bank,core,guard) {
  function abortPlan(user,planId,reason='用户中断',status='cancelled') {
   const plan=get('SELECT * FROM agent_plans WHERE id=? AND user_id=?',planId,user.id);requireThat(plan,'计划不存在',404);
   atomic(()=>{
+   releaseReservations(plan.action_id);
    const steps=parse(plan.steps);for(const s of steps){if(s.status==='pending')s.status='cancelled';if(s.actionId)releaseReservations(s.actionId);}
    run('UPDATE agent_plans SET status=?,steps=? WHERE id=?',status,JSON.stringify(steps),plan.id);
    run("UPDATE scheduled_tasks SET status='cancelled',error=? WHERE plan_id=? AND status='pending'",reason,plan.id);
@@ -190,5 +195,5 @@ export function createServices(bank,core,guard) {
  function expireActions(){for(const a of all("SELECT * FROM agent_actions WHERE status='proposed' AND expires_at<=?",now())){run("UPDATE agent_actions SET status='expired',updated_at=? WHERE id=?",now(),a.id);run("UPDATE agent_plans SET status='expired' WHERE action_id=?",a.id);audit(a.user_id,'agent.action.expired',a.id);}}
  function plans(user){return all('SELECT * FROM agent_plans WHERE user_id=? ORDER BY created_at DESC',user.id).map(planView);}
  function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all('SELECT id,channel,status,created_at FROM channel_bindings WHERE user_id=?',user.id),agentLockedUntil:fresh(user).agent_locked_until};}
- return Object.assign(services,{resolveRecipients,normalize,policy,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult});
+ return Object.assign(services,{resolveRecipients,normalize,policy,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
 }

@@ -17,7 +17,7 @@ export function registerVoice(route,services,options={}) {
   services.checkRate(`voice:${req.user.id}`);services.badAttempt(`voice:${req.user.id}`);
   const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),options.timeoutMs||45000);const close=()=>{if(!res.writableEnded)abort.abort();};res.on('close',close);
   try{
-   const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal:abort.signal,headers:{Authorization:`Bearer ${config.apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:config.model,messages:[{role:'user',content:[{type:'input_audio',input_audio:{data:`data:audio/wav;base64,${req.body.toString('base64')}`}}]}],asr_options:{language:'zh',enable_itn:true}})});
+   const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal:abort.signal,headers:{Authorization:`Bearer ${config.apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:config.model,messages:[{role:'system',content:[{type:'text',text:services.bank.all('SELECT name FROM payees WHERE user_id=?',req.user.id).map(p=>p.name).join('、')}]},{role:'user',content:[{type:'input_audio',input_audio:{data:`data:audio/wav;base64,${req.body.toString('base64')}`}}]}],asr_options:{language:'zh',enable_itn:true}})});
    if(!response.ok){const code={401:'PROVIDER_AUTH',402:'PROVIDER_BALANCE',429:'PROVIDER_RATE_LIMIT'}[response.status]||'PROVIDER_ERROR';throw new BusinessError('语音识别服务暂时不可用，请检查配置或稍后重试',502,code);}
    const data=await response.json(),text=data.choices?.[0]?.message?.content;
    requireThat(typeof text==='string'&&text.trim()&&text.length<=6000,'未识别到清晰语音，请重试',502,'EMPTY_TRANSCRIPT');

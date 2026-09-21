@@ -6,7 +6,7 @@ export function injectionFlags(text) {
 }
 export function redact(value) {
   const visit = v => {
-    if (typeof v === 'string') return v.replace(/\b\d{11,19}\b/g, n=>'****'+n.slice(-4)).replace(/sk-[a-zA-Z0-9_-]+/g,'[secret]');
+    if (typeof v === 'string') return v.replace(/((?:支付密码|登录密码|密码|验证码|API[ _-]?KEY|PIN)\s*[:：=是为]?\s*)[A-Za-z0-9_-]{4,128}/gi,'$1[已隐藏]').replace(/\b\d{11,19}\b/g, n=>'****'+n.slice(-4)).replace(/sk-[a-zA-Z0-9_-]+/g,'[secret]');
     if (Array.isArray(v)) return v.map(visit);
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([k])=>!/(password|pin|token|secret|code_hash|frame_hash)/i.test(k)).map(([k,x])=>[k,visit(x)]));
     return v;

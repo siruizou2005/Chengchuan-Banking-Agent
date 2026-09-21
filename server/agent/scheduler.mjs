@@ -17,12 +17,14 @@ export function createScheduler(services) {
      atomic(()=>{
       guard.assertOpen(user.id);
       run("UPDATE scheduled_tasks SET status='executing' WHERE id=?",task.id);
-      services.releaseReservations(plan?task.id:task.action_id||task.id);
+      if(plan)services.releaseReservations(plan.action_id,task.kind==='propose_lock_funds'?0:services.scheduledAmount(args,task.kind));
+      else services.releaseReservations(task.action_id||task.id);
       let result;
       if(task.kind==='reminder'||task.kind==='set_reminder'){notify(user.id,'智能助手提醒',args.text);result={reminded:true};}
+      else if(plan&&task.kind==='propose_lock_funds'){run("UPDATE reservations SET purpose=? WHERE action_id=? AND status='active'",args.purpose,plan.action_id);result={amount:Math.round(Number(args.amount)*100),until:args.until,purpose:args.purpose,sharedPlanBudget:true};}
       else result=services.executeOne(user,task.kind,args,plan?task.id:task.action_id,plan?.id);
       run("UPDATE scheduled_tasks SET status='completed',result=? WHERE id=?",JSON.stringify(result),task.id);audit(user.id,'scheduled.completed',task.id,{kind:task.kind});
-      if(plan){const steps=JSON.parse(plan.steps),step=steps.find(s=>s.id===task.step_id);step.status='completed';step.result=result;const done=steps.every(s=>s.status==='completed');run('UPDATE agent_plans SET steps=?,status=? WHERE id=?',JSON.stringify(steps),done?'completed':'active',plan.id);if(done)services.completeAction(get('SELECT * FROM agent_actions WHERE id=?',plan.action_id),{planId:plan.id,steps:steps.map(s=>({id:s.id,status:s.status}))});}
+      if(plan){const steps=JSON.parse(plan.steps),step=steps.find(s=>s.id===task.step_id);step.status='completed';step.result=result;const done=steps.every(s=>s.status==='completed');run('UPDATE agent_plans SET steps=?,status=? WHERE id=?',JSON.stringify(steps),done?'completed':'active',plan.id);if(done&&!steps.some(s=>s.tool==='propose_lock_funds'))services.releaseReservations(plan.action_id);if(done)services.completeAction(get('SELECT * FROM agent_actions WHERE id=?',plan.action_id),{planId:plan.id,steps:steps.map(s=>({id:s.id,status:s.status}))});}
       else if(task.action_id)services.completeAction(get('SELECT * FROM agent_actions WHERE id=?',task.action_id),result);
      });
     }catch(error){
