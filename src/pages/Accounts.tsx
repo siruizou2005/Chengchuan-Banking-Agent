@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { ShieldCheck, Copy, Download, Search, Plus, ScanLine, Upload } from 'lucide-react';
 import { useBank } from '../bank';
-import { yuan, tail, date, formValues, statusLabel } from '../api';
+import { ActionCard } from '../chat/cards';
+import type { AgentAction } from '../types';
+import { api, yuan, tail, date, formValues, statusLabel } from '../api';
 import { AccountSelect, Amount, Empty, Field, Notice, PinField, Row, Card, Submit, Brand, Pill, Tabs, Avatar, CircleIcon } from '../ui';
 import { IcoIn, IcoOut, IcoSnow, IcoClock, IcoRecord, IcoQr, Logo } from '../icons';
 import type { Ledger } from '../types';
 
 export function Accounts() {
-  const { data, navigate, openModal, closeModal, mutate, hidden } = useBank();
+  const { data, navigate, openModal, hidden, refresh, toast } = useBank();
+  async function propose(tool: string, args: Record<string, unknown>) { try { const action = await api<AgentAction>('/agent/actions', 'POST', { tool, args }); await refresh(); openModal('核对卡片操作', <ActionCard action={action} />); } catch (e) { toast((e as Error).message, true); } }
   return <div className="page">
     {data.accounts.map(a => <section className="card" key={a.id}>
-      <div className={`debit-card${a.status === 'frozen' ? ' frozen' : ''}`}><span className="debit-head"><span>澄川卡</span><em>尾号 {tail(a.number)}</em>{a.status === 'frozen' && <em>已冻结</em>}</span><strong className="debit-balance">{hidden ? '****' : yuan(a.balance)}</strong><span className="debit-caption">余额</span><span className="debit-mark" aria-hidden="true"><Logo size={150} watermark /></span></div>
+      <div className={`debit-card${a.status === 'frozen' ? ' frozen' : ''}`}><span className="debit-head"><span>澄川卡</span><em>尾号 {tail(a.number)}</em>{a.status !== 'active' && <em>{a.status === 'lost' ? '已挂失' : '已冻结'}</em>}</span><strong className="debit-balance">{hidden ? '****' : yuan(a.balance)}</strong><span className="debit-caption">余额</span><span className="debit-mark" aria-hidden="true"><Logo size={150} watermark /></span></div>
       <dl className="kv">
         <div><dt>卡号</dt><dd className="mono">{a.number.replace(/(.{4})/g, '$1 ').trim()}</dd></div>
         <div><dt>可用余额</dt><dd>{hidden ? '****' : `¥${yuan(a.available)}`}</dd></div>
@@ -20,9 +23,12 @@ export function Accounts() {
         <div><dt>持卡人</dt><dd>{data.user.name}</dd></div>
       </dl>
       <Row icon={IcoRecord} tone="blue" title="交易记录" onClick={() => navigate('ledger')} />
-      <Row icon={IcoSnow} tone="coral" title={a.status === 'active' ? '冻结银行卡' : '解冻银行卡'} subtitle="冻结后暂停该卡全部交易" onClick={() => openModal(a.status === 'active' ? '冻结银行卡' : '解冻银行卡', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate(`/accounts/${a.id}`, { pin: f.pin, status: a.status === 'active' ? 'frozen' : 'active' }, '银行卡状态已更新', 'PATCH')) closeModal(); }}><Notice>操作对象：尾号 {tail(a.number)} 的储蓄卡。冻结后待确认交易也无法完成扣款。</Notice><PinField /><Submit>确认{a.status === 'active' ? '冻结' : '解冻'}</Submit></form>)} />
+      <Row icon={IcoSnow} tone="coral" title={a.status === 'lost' ? '解挂银行卡' : a.status === 'active' ? '冻结银行卡' : '解冻银行卡'} subtitle="状态变更由服务端分级验证" onClick={() => void propose('propose_card_action', { card: a.id, action: a.status === 'lost' ? 'unlost' : a.status === 'active' ? 'freeze' : 'unfreeze' })} />
+      {a.status !== 'lost' && <Row icon={IcoSnow} tone="red" title="挂失银行卡" subtitle="挂失后停止交易并释放待确认预留" onClick={() => void propose('propose_card_action', { card: a.id, action: 'report_lost' })} />}
     </section>)}
     <div className="pill-row"><Pill onClick={() => navigate('receive')}>收款码</Pill><Pill primary onClick={() => navigate('transfer')}>转账汇款</Pill></div>
+    <Card title="虚拟卡" action="申请" onAction={() => void propose('propose_virtual_card', { limit: '1000' })}>{data.virtualCards.map(c => <Row key={c.id} title={`虚拟卡 · ${tail(c.number)}`} subtitle={`限额 ¥${yuan(c.card_limit)} · ${c.status}`} />)}{!data.virtualCards.length && <Empty title="暂无虚拟卡" />}</Card>
+    <Card title="锁定与预授权资金">{data.reservations.map(r => <Row key={r.id} title={r.purpose} subtitle={`释放时间 ${date(r.until_at)}`} trailing={`¥${yuan(r.amount)}`} />)}{!data.reservations.length && <Empty title="暂无锁定资金" />}</Card>
     <Notice>演示环境账户，请勿填写真实银行卡资料。</Notice>
   </div>;
 }

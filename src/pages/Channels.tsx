@@ -1,0 +1,18 @@
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import { api, formValues, date } from '../api';
+import { useBank } from '../bank';
+import { Card, Empty, InlineError, Notice, PinField } from '../ui';
+export function Channels() {
+ const { data, refresh } = useBank();
+ const [code, setCode] = useState(''), [qr, setQr] = useState<{ id: string; image: string } | null>(null), [status, setStatus] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+ const [enabled, setEnabled] = useState({ feishu: false, wechat: false });
+ useEffect(() => { api('/chat/status').then(s => setEnabled(s.channels)).catch(e => setError(e.message)); }, []);
+ useEffect(() => {
+  if (!qr) return; let cancelled = false; let timer: ReturnType<typeof setTimeout>;
+  async function poll() { try { const result = await api(`/channels/wechat/qr/${qr!.id}`); if (cancelled) return; setStatus(({ wait: '等待扫码', scaned: '已扫码，请在微信确认', confirmed: '绑定成功', expired: '二维码已过期' } as Record<string, string>)[result.status] || result.status); if (result.status === 'confirmed') { await refresh(); setQr(null); return; } if (result.status === 'expired') return; } catch (e) { if (!cancelled) { setError((e as Error).message); return; } } if (!cancelled) timer = setTimeout(poll, 1000); }
+  void poll(); return () => { cancelled = true; clearTimeout(timer); };
+ }, [qr, refresh]);
+ async function bind(channel: string, pin: string) { setBusy(true); setError(''); try { if (channel === 'feishu') { const result = await api('/channels/code', 'POST', { pin }); setCode(result.code); } else { const result = await api('/channels/wechat/qr', 'POST', { pin }); setQr({ id: result.id, image: await QRCode.toDataURL(result.qrcode_img_content, { width: 260, margin: 2 }) }); setStatus('等待扫码'); } } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
+ return <div className="page"><Notice>绑定时授权在对应私聊中确认黄色操作。红色操作始终需回App完成人脸模拟、短信验证码和支付密码。</Notice><Card title="飞书机器人"><form className="stack-form form-card" onSubmit={e => { const f = formValues(e); void bind('feishu', f.pin); }}><p>在飞书与机器人私聊，发送下方一次性绑定码。</p>{!enabled.feishu && <Notice>飞书机器人尚未配置，管理员完成接入后即可绑定。</Notice>}<PinField /><button className="btn-primary" disabled={busy}>生成5分钟绑定码</button>{code && <div className="binding-code"><strong>{code}</strong><span>在飞书发送：绑定 {code}</span></div>}</form></Card><Card title="微信 ClawBot"><form className="stack-form form-card" onSubmit={e => { const f = formValues(e); void bind('wechat', f.pin); }}><p>直接连接 iLink。请使用支持 ClawBot 插件的微信扫码。</p>{!enabled.wechat && <Notice>微信渠道尚未开启。</Notice>}<PinField /><button className="btn-primary" disabled={busy || !enabled.wechat}>生成微信绑定二维码</button></form>{qr && <div className="channel-qr"><img src={qr.image} width="260" height="260" alt="微信ClawBot绑定二维码" /><p role="status">{status}</p></div>}{!qr && status && <p className="body-copy">{status}</p>}</Card><Card title="已绑定渠道">{data.bindings.length === 0 && <Empty title="尚未绑定消息渠道" />}{data.bindings.map(b => <div className="form-card" key={b.id}><p><strong>{b.channel === 'feishu' ? '飞书' : '微信'}</strong> · {({ active: '已绑定', revoked: '已解绑', expired: '登录已失效' } as Record<string, string>)[b.status]} · {date(b.created_at)}</p>{b.status !== 'revoked' && <form className="stack-form" onSubmit={async e => { const f = formValues(e); setBusy(true); setError(''); try { await api(`/channels/${b.id}/unbind`, 'POST', f); await refresh(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } }}><PinField /><button className="pill" disabled={busy}>解绑并撤销未执行操作</button></form>}</div>)}</Card><InlineError message={error} /></div>;
+}

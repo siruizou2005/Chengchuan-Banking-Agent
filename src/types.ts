@@ -6,6 +6,12 @@ export type Loan = { id: string; principal: number; outstanding: number; months:
 export type Transaction = { id: string; type: string; amount: number; title: string; status: string; payload: Record<string, any>; account_id: string; created_at: string; updated_at: string; expires_at: string; error?: string };
 export type Ledger = { id: number; transaction_id: string; amount: number; balance_after: number; title: string; category: string; created_at: string; number: string };
 export type Snapshot = {
+  agentActions: AgentAction[]; agentPlans: AgentPlan[]; subscriptions: Subscription[];
+  virtualCards: { id: string; number: string; card_limit: number; status: string }[];
+  reservations: { id: string; amount: number; purpose: string; until_at: string }[];
+  scheduledTasks: { id: string; kind: string; run_at: string; status: string; error?: string }[];
+  bindings: { id: string; channel: string; status: string; created_at: string }[];
+  agentLockedUntil: string | null;
   user: User; accounts: Account[]; holdings: Holding[]; loans: Loan[]; products: Product[];
   ledger: Ledger[]; transactions: Transaction[];
   creditCard: { id: string; number: string; credit_limit: number; used: number; status: string };
@@ -14,3 +20,12 @@ export type Snapshot = {
   tickets: { id: string; subject: string; content: string; status: string; created_at: string }[];
   appointments: { id: string; branch: string; service: string; date: string; status: string }[];
 };
+
+export type AgentAction = { id: string; tool: string; title: string; level: 'green' | 'yellow' | 'red'; status: string; amount: number; args: Record<string, any>; result?: Record<string, any>; error?: string; channel: string; created_at: string; expires_at: string; plan?: AgentPlan };
+export type AgentPlan = { id: string; action_id: string; title: string; status: string; steps: { id: string; title: string; tool: string; args: Record<string, any>; dependsOn: string[]; runAt?: string; status: string; result?: Record<string, any> }[] };
+export type AgentEvent = { type: string; data: any };
+export type AgentTrace = { tool: string; args?: Record<string, unknown>; ok: boolean; level?: string; actionId?: string; result?: string; durationMs?: number };
+export type Subscription = { id: string; merchant: string; amount: number; next_at: string; status: string };
+export type AgentSession = { id: string; title: string; turns: number; updated_at: string; handover: number };
+export type AgentSessionDetail = { id: string; handover: boolean; updatedAt: string; messages: { role: 'user' | 'assistant'; text: string; events?: AgentEvent[]; trace?: AgentTrace[]; runId?: string; at: string }[] };
+export type AgentRun = { id: string; channel: string; input: string; output: string; trace: AgentTrace[]; injection: string[]; duration_ms: number; tokens: number; created_at: string };

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useBank } from '../bank';
 import { IcoWallet, IcoShield, IcoBell, IcoPerson, IcoRecord, IcoHeadset, IcoCode, IcoLock, IcoSliders, IcoKeypad, IcoDoc, IcoActivity, IcoTerminal, IcoTransfer, IcoHelp, IcoClock } from '../icons';
+import { Markdown } from '../chat/Markdown';
+import { DecisionTrace } from '../chat/cards';
+import type { AgentRun } from '../types';
 import { api, date, formValues, yuan } from '../api';
 import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelect, Avatar, CircleIcon } from '../ui';
 
@@ -30,12 +33,18 @@ export function Profile() {
 
 export function Security() {
   const { data, openModal, closeModal, mutate, navigate } = useBank();
-  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按 UTC 日期统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<PinField label={kind === 'pin' ? '原支付密码' : '支付密码'} /><Submit>确认修改</Submit></form>);
+  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按 UTC 日期统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<Notice>下一步核对操作，高风险修改需完成人脸模拟、短信验证码和支付密码验证。</Notice><Submit>下一步</Submit></form>);
   return <div className="page">
     <section className="card split"><div><CircleIcon icon={IcoShield} tone="blue" size={30} glyph={16} /><span>支付验证</span><b>已开启</b></div><div><CircleIcon icon={IcoClock} tone="orange" size={30} glyph={16} /><span>会话有效期</span><b>24小时</b></div></section>
     <Card title="密码与验证">
       <Row icon={IcoLock} tone="blue" title="登录密码" subtitle="修改后其他设备需重新登录" onClick={() => edit('password')} />
       <Row icon={IcoKeypad} tone="coral" title="支付密码" subtitle="资金操作前验证6位数字密码" onClick={() => edit('pin')} />
+    </Card>
+    <Card title="智能助手安全">
+      <Row icon={IcoBell} tone="blue" title="消息渠道绑定" subtitle="飞书 / 微信 ClawBot" onClick={() => navigate('channels')} />
+      <Row icon={IcoClock} tone="orange" title="智能助手操作与计划" onClick={() => navigate('tasks')} />
+      <Row icon={IcoShield} tone="coral" title="智能助手安全" subtitle={data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() ? `已锁定至 ${date(data.agentLockedUntil)}` : '正常 · 服务端三级权限保护'} onClick={() => openModal('解除智能助手锁定', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/agent/unlock', f, '智能助手已解锁')) closeModal(); }}><PinField /><Submit>解除锁定</Submit></form>)} />
+      <Row icon={IcoKeypad} tone="gold" title="验证方式" subtitle="摄像头人脸演示 + 站内短信模拟 + 支付密码" />
     </Card>
     <Card title="交易保护">
       <Row icon={IcoSliders} tone="orange" title="每日转账限额" trailing={<b className="amount">¥{yuan(data.user.dailyLimit)}</b>} onClick={() => edit('limit')} />
@@ -59,6 +68,8 @@ export function Messages() {
 type AuditRow = { id: number; action: string; resource_id: string; created_at: string; detail: Record<string, unknown> };
 export function AgentCenter() {
   const { data, openModal, begin } = useBank();
+  const [runs, setRuns] = useState<AgentRun[]>([]);
+  useEffect(() => { api<AgentRun[]>('/agent/runs').then(setRuns).catch(() => {}); }, [data]);
   const [logs, setLogs] = useState<AuditRow[]>([]), [error, setError] = useState('');
   useEffect(() => { api<AuditRow[]>('/audit').then(setLogs).catch(e => setError(e.message)); }, [data]);
   const link = (href: string, icon: typeof IcoDoc, title: string) => <a className="row" href={href} target="_blank" rel="noreferrer"><CircleIcon icon={icon} tone="blue" size={44} glyph={22} /><span className="row-body"><span className="row-line"><strong className="row-title">{title}</strong></span><span className="row-line row-sub"><small className="row-subtitle mono">{href}</small></span></span><ChevronRight size={18} className="chevron" /></a>;
@@ -67,6 +78,7 @@ export function AgentCenter() {
     <Card title="接口与能力">{link('/api/openapi.json', IcoDoc, 'OpenAPI 接口定义')}{link('/api/agent/manifest', IcoTerminal, 'Agent 能力清单')}</Card>
     <Card title="交易流程"><div className="flow-steps"><span>创建交易</span><ChevronRight size={14} /><span>核对确认</span><ChevronRight size={14} /><span>查询结果</span></div><p className="body-copy">网页操作与 API 共用业务状态和数据库。创建时传入 Idempotency-Key，金额输入使用“元”字符串，返回值使用整数“分”。待确认交易预留资金，15分钟自动过期；确认时校验支付密码。</p><pre className="code-snippet">POST /api/transactions{'\n'}POST /api/transactions/:id/confirm{'\n'}GET  /api/transactions/:id</pre></Card>
     <Card title="模拟异常场景"><Row icon={IcoTransfer} tone="red" title="模拟跨行转账失败" subtitle="验证失败状态与预留资金释放" onClick={() => openModal('模拟收款行拒绝', <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'transfer', recipientName: '模拟收款人', recipientAccount: '6222000000000012345', bank: '其他银行', scenario: 'bank_rejected' }); }}><Notice>向虚构的外部收款账户发起转账。确认后收款行将模拟拒绝入账，交易标记为失败并释放预留资金。</Notice><AccountSelect /><Amount defaultValue="100.00" /><Submit>创建失败场景交易</Submit></form>)} /></Card>
+    <Card title="智能体决策链路">{runs.map(r => <div className="form-card" key={r.id}><strong>{r.input}</strong><p className="data-note">{r.channel} · {date(r.created_at)} · {r.duration_ms}ms · {r.tokens} tokens{r.injection.length ? ' · 检测到注入特征' : ''}</p><DecisionTrace trace={r.trace} /><Markdown text={r.output} /></div>)}{!runs.length && <Empty title="尚无智能体调用记录" />}</Card>
     <Card title="操作记录"><div className="audit-list">{error && <Notice>{error}</Notice>}{logs.slice(0, 30).map(l => <div className="audit-row" key={l.id}><span className="audit-point" /><div><strong>{l.action}</strong><small>{date(l.created_at)}</small>{l.resource_id && <code>{l.resource_id}</code>}</div></div>)}{!logs.length && !error && <Empty />}</div></Card>
     <Notice>仅展示当前用户的操作记录，不提供跨用户访问或真实银行连接。</Notice>
   </div>;

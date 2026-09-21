@@ -1,4 +1,6 @@
+import type { AgentEvent, AgentTrace } from '../types';
 export type Message = {
+  events?: AgentEvent[]; trace?: AgentTrace[]; runId?: string; sessionId?: string;
   id: string;
   role: 'user' | 'assistant';
   text: string;
@@ -28,9 +30,9 @@ export const liveAdapter: ChatAdapter = {
       size += message.text.length;
     }
     while (history[0]?.role === 'assistant') history.shift();
-    const response = await fetch('/api/chat', {
+    const response = await fetch('/api/agent/chat', {
       method: 'POST', credentials: 'same-origin', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, expectedUserId: userId }),
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, expectedUserId: userId, sessionId: [...messages].reverse().find(m => m.sessionId)?.sessionId }),
     });
     const data = await response.json();
     if (!response.ok) throw new ChatError(data.error?.message || '回复暂时未能送达，请重试。', response.status);
@@ -39,5 +41,5 @@ export const liveAdapter: ChatAdapter = {
 };
 
 export function initialMessages(): Message[] {
-  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '您好，我是澄川银行智能助手。可为您查询账户余额、交易明细，解答转账、存款、理财、贷款等业务问题。' }];
+  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '您好，我是澄川银行智能助手。可以查询账户、分析账单、安排转账和联动计划。资金与卡片操作会先生成待确认卡片；高风险操作需在App完成强验证。' }];
 }

@@ -52,6 +52,7 @@ export function Home() {
         <div className="asset-row"><span className="asset-label">总资产<button className="eye" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={18} /> : <Eye size={18} />}</button></span><button className="asset-total" onClick={() => navigate('accounts')} data-testid="total-assets">{hidden ? '****' : `¥${yuan(balance + holdings)}`}</button></div>
         <div className="asset-row sub"><span>活期余额 <b>{mask(yuan(balance))}</b></span><span>存款理财 <b>{mask(yuan(holdings))}</b></span></div>
       </section>
+      {data.agentActions.some(a => a.status === 'proposed' && a.level === 'red') && <button className="card ticker" onClick={() => navigate('assistant')}><em className="tag red">待验证</em><span>有高风险操作等待您在App完成强验证</span><ChevronRight size={18} /></button>}
       {pending > 0 && <button className="card ticker" onClick={() => navigate('transactions')}><em className="tag orange">待确认</em><span>您有 {pending} 笔交易待确认，请及时处理</span><ChevronRight size={18} className="chevron" /></button>}
       <Card head={<Tabs items={data.accounts.map((a, i) => ({ id: a.id, label: data.accounts.length > 1 ? `储蓄卡${i + 1}` : '储蓄卡' }))} value={account?.id ?? ''} onChange={setCardId} />}>
         {account && <>
