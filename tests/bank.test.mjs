@@ -24,7 +24,16 @@ async function fixture(t) {
   const req = (path, body, method, headers) => request(path, body, alice.token, method, headers);
   const state = async () => (await req('/dashboard')).data;
   const create = (body, key = randomUUID()) => req('/transactions', body, 'POST', { 'Idempotency-Key': key });
-  const confirm = (tx, pin = '123456') => req(`/transactions/${tx.id}/confirm`, { pin });
+  async function strong(path, body) {
+    const intent = (await req('/verify/intent', { path, body })).data;
+    if (!intent.required) return body;
+    const v = (await req('/verify/start', { actionId: intent.actionId })).data;
+    const code = bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1", alice.user.id).body.match(/验证码 (\d{6})/)[1];
+    await req('/verify/face', { id: v.id, skipped: true, reason: 'unavailable' });
+    const result = (await req('/verify/complete', { id: v.id, code })).data;
+    return { ...body, verificationActionId: intent.actionId, verificationToken: result.verificationToken };
+  }
+  const confirm = async (tx, pin = '123456') => req(`/transactions/${tx.id}/confirm`, await strong(`/transactions/${tx.id}/confirm`, { pin }));
   const transfer = (amount = '100.01', extras = {}) => create({ type: 'transfer', amount, recipientName: '陈屿', recipientAccount: '6218808888000088096', bank: '澄川银行', ...extras });
   function balanced() {
     assert.equal(bank.get('SELECT SUM(amount) AS value FROM ledger').value, 0);
@@ -32,7 +41,7 @@ async function fixture(t) {
     assert.deepEqual(bank.all('SELECT transaction_id FROM ledger GROUP BY transaction_id HAVING SUM(amount)<>0'), []);
     assert.deepEqual(bank.all('SELECT id FROM accounts WHERE user_id IS NOT NULL AND (balance<held OR held<0 OR balance<0)'), []);
   }
-  return { bank, request, login, alice, bob, req, state, create, confirm, transfer, balanced };
+  return { strong, bank, request, login, alice, bob, req, state, create, confirm, transfer, balanced };
 }
 
 test('金额使用整数分，拒绝浮点边界、负数和非法格式', () => {
@@ -184,7 +193,7 @@ test('注册新用户、收款人、客服和预约可保存且隔离', async t 
 
 test('修改密码使其他会话失效且不将密码写入日志', async t => {
   const f = await fixture(t), secondSession = await f.login();
-  assert.equal((await f.req('/settings', { pin: '123456', newPin: '654321', dailyLimit: '30000' }, 'PATCH')).status, 200);
+  assert.equal((await f.req('/settings', await f.strong('/settings', { pin: '123456', newPin: '654321', dailyLimit: '30000' }), 'PATCH')).status, 200);
   assert.equal((await f.request('/me', undefined, secondSession.token)).status, 401);
   assert.equal((await f.state()).user.dailyLimit, 3000000);
   const tx = (await f.transfer()).data; assert.equal((await f.confirm(tx, '654321')).data.status, 'completed');

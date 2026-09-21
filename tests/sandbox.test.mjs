@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import { runAnalysis } from '../server/agent/sandbox.mjs';
+test('WASM沙箱无IO、不可修改data，可计算统计',async()=>{const r=await runAnalysis('return [typeof require,typeof fetch,typeof process,typeof setTimeout,data.values.reduce((a,b)=>a+b,0)];',{values:[1,2,3]});assert.deepEqual(r.result,['undefined','undefined','undefined','undefined',6]);await assert.rejects(runAnalysis('data.values.push(9);return data;', {values:[]}));});
+test('WASM死循环、内存和输出限制',async()=>{await assert.rejects(runAnalysis('while(true){}',{}),/interrupt|超时|中断/);await assert.rejects(runAnalysis('return new Array(30000000).fill("memory");',{}));await assert.rejects(runAnalysis('return "x".repeat(9000);',{}),/8KB/);});

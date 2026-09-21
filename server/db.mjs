@@ -72,10 +72,51 @@ export function createBank(path) {
   const get = (sql, ...args) => db.prepare(sql).get(...args);
   const all = (sql, ...args) => db.prepare(sql).all(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
+  // Additive migrations also run against existing local databases.
+  if (!all('PRAGMA table_info(users)').some(c => c.name === 'agent_locked_until')) db.exec('ALTER TABLE users ADD COLUMN agent_locked_until TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_actions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL, session_id TEXT,
+      tool TEXT NOT NULL, args TEXT NOT NULL, title TEXT NOT NULL, level TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'proposed', result TEXT, error TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS agent_actions_user ON agent_actions(user_id,status);
+    CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL,
+      session_id TEXT, input TEXT NOT NULL, injection TEXT NOT NULL, trace TEXT NOT NULL, output TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL, tokens INTEGER NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS agent_plans (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), action_id TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL, steps TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS agent_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL,
+      history TEXT NOT NULL DEFAULT '[]', handover INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS agent_memory (user_id TEXT NOT NULL REFERENCES users(id), key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id,key));
+    CREATE TABLE IF NOT EXISTS agent_security (id INTEGER PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), action_id TEXT,
+      plan_id TEXT, step_id TEXT, kind TEXT NOT NULL, args TEXT NOT NULL, run_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+      result TEXT, error TEXT, created_at TEXT NOT NULL, UNIQUE(plan_id,step_id));
+    CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), merchant TEXT NOT NULL,
+      amount INTEGER NOT NULL, next_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', reminded_at TEXT, UNIQUE(user_id,merchant));
+    CREATE TABLE IF NOT EXISTS virtual_cards (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), number TEXT NOT NULL,
+      card_limit INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS reservations (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), account_id TEXT NOT NULL REFERENCES accounts(id),
+      action_id TEXT, plan_id TEXT, amount INTEGER NOT NULL CHECK(amount>=0), purpose TEXT NOT NULL, until_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS channel_bindings (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL,
+      external_id TEXT NOT NULL, token TEXT, base_url TEXT, context_token TEXT, cursor TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL, UNIQUE(channel,external_id));
+    CREATE TABLE IF NOT EXISTS channel_codes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), code_hash TEXT NOT NULL UNIQUE,
+      channel TEXT NOT NULL, expires_at TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS channel_messages (channel TEXT NOT NULL, message_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(channel,message_id));
+    CREATE TABLE IF NOT EXISTS channel_outbox (id TEXT PRIMARY KEY, binding_id TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS verifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), action_id TEXT NOT NULL,
+      code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, face_status TEXT NOT NULL DEFAULT 'pending', frame_hash TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0, token_hash TEXT, token_expires_at TEXT, used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+  `);
+  let depth = 0;
   function atomic(fn) {
-    db.exec('BEGIN IMMEDIATE');
-    try { const result = fn(); db.exec('COMMIT'); return result; }
-    catch (error) { db.exec('ROLLBACK'); throw error; }
+    const savepoint = `bank_${depth++}`;
+    db.exec(depth === 1 ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
+    try { const result = fn(); db.exec(depth === 1 ? 'COMMIT' : `RELEASE ${savepoint}`); return result; }
+    catch (error) { db.exec(depth === 1 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`); throw error; }
+    finally { depth--; }
   }
   function audit(user, action, resource = '', detail = {}) { run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, resource, JSON.stringify(detail), now()); }
   function notify(user, title, body) { run('INSERT INTO notifications(id,user_id,title,body,created_at) VALUES(?,?,?,?,?)', id('N'), user, title, body, now()); }
@@ -111,6 +152,26 @@ export function createBank(path) {
       post(id('SEED'), acct, 'system', 2000000, '安心存 · 一年期', 'deposit', past);
       run('INSERT INTO holdings VALUES(?,?,?,?,?,?)', id('H'), first, 'deposit-365', 2000000, past, new Date(Date.now()+363*86400000).toISOString());
       post(id('SEED'), acct, 'system', 320000, '转账 · 房租', 'transfer', new Date(Date.now()-86400000).toISOString());
+    });
+  }
+  // Balanced, once-only demo history, including upgrades of previously seeded databases.
+  for (const user of all("SELECT * FROM users WHERE phone IN ('13800138000','13900139000')")) {
+    if (get("SELECT id FROM audit WHERE user_id=? AND action='demo.history.v2'", user.id)) continue;
+    atomic(() => {
+      const account = get("SELECT id FROM accounts WHERE user_id=? AND type='debit'", user.id).id;
+      for (let month = 2; month >= 0; month--) {
+        for (const [day, title, amount] of [[1,'工资收入',1860000],[2,'房租',-320000],[5,'餐饮 · 小馆',-8600],[7,'交通 · 地铁',-2400],[9,'购物 · 超市',-26800],[10,'水电缴费',-18600],[12,'通讯 · 话费',-5900],[13,'订阅 · 视频会员',-2500],[14,'订阅 · 音乐',-1500],[15,'订阅 · 云盘',-2100],[16,'订阅 · 健身',-19900]]) {
+          const d = new Date(); d.setUTCMonth(d.getUTCMonth()-month, day); d.setUTCHours(10,0,0,0);
+          if (d > new Date()) continue;
+          post(id('DEMO'), amount > 0 ? 'system' : account, amount > 0 ? account : 'system', Math.abs(amount), title, amount > 0 ? 'income' : 'payment', d.toISOString());
+        }
+      }
+      const abnormal = new Date(Date.now()-86400000); abnormal.setUTCHours(19,17,0,0); // 03:17 China time
+      post(id('DEMO'), account, 'system', 888800, '消费 · 陌生商户星际数码', 'payment', abnormal.toISOString());
+      for (const [merchant, amount] of [['视频会员',2500],['音乐',1500],['云盘',2100],['健身',19900]]) {
+        run('INSERT OR IGNORE INTO subscriptions(id,user_id,merchant,amount,next_at) VALUES(?,?,?,?,?)', id('SUB'), user.id, merchant, amount, new Date(Date.now()+25*86400000).toISOString());
+      }
+      audit(user.id, 'demo.history.v2');
     });
   }
   return { db, get, all, run, atomic, audit, notify, post, newUser };

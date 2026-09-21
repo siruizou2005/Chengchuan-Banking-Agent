@@ -2,22 +2,19 @@ import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { createBank, id, now, products, verifyPassword, hashPassword } from './db.mjs';
 import { registerChat } from './chat.mjs';
+import { registerVoice } from './voice.mjs';
+import { createChannels } from './channels/index.mjs';
+import { registerDirectVerification } from './direct-verification.mjs';
+import { createServices } from './services.mjs';
+import { createGuard } from './agent/guard.mjs';
+import { createAgent } from './agent/agent.mjs';
+import { registerAgentRoutes } from './agent/routes.mjs';
+import { createScheduler } from './agent/scheduler.mjs';
+import { createVerification, registerVerification } from './verify.mjs';
 
-class BusinessError extends Error {
-  constructor(message, status = 400, code = 'VALIDATION_ERROR') { super(message); this.status = status; this.code = code; }
-}
-const fail = (message, status, code) => { throw new BusinessError(message, status, code); };
-const requireThat = (test, message, status, code) => { if (!test) fail(message, status, code); };
-const hash = value => createHash('sha256').update(value).digest('hex');
-const textField = (v, label, min = 1, max = 80) => { requireThat(typeof v === 'string' && v.trim().length >= min && v.trim().length <= max, `请正确填写${label}`); return v.trim(); };
-export function cents(v) {
-  const s = String(v ?? '');
-  requireThat(/^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(s), '金额须为正数，最多保留两位小数');
-  const [whole, fraction = ''] = s.split('.');
-  const result = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-  requireThat(result > 0 && result <= 1000000000, '金额须大于0且不超过1,000万元');
-  return result;
-}
+
+import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
+export { cents } from './errors.mjs';
 const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
 const canonical = o => JSON.stringify(Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b))));
 const transactionView = t => ({ ...t, payload: JSON.parse(t.payload), fingerprint: undefined, idempotency_key: undefined });
@@ -27,6 +24,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   const bank = createBank(dbPath);
   const { get, all, run, atomic, audit, notify, post } = bank;
   const app = express();
+  const guard = createGuard(bank, options.agent);
+  let services;
   app.disable('x-powered-by');
   if (options.trustProxy) app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '32kb' }));
@@ -36,6 +35,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (['POST', 'PATCH', 'DELETE'].includes(req.method)) {
       const origin = req.get('origin');
       if (origin && origin !== (options.publicOrigin || `${req.protocol}://${req.get('host')}`)) return res.status(403).json({ error: { code: 'ORIGIN_REJECTED', message: '请求来源不匹配' } });
+      if (req.path === '/voice/transcribe') return next();
       if (!req.is('application/json')) return res.status(415).json({ error: { code: 'JSON_REQUIRED', message: '请使用 application/json 请求' } });
       if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') return res.status(400).json({ error: { code: 'INVALID_BODY', message: '请求内容必须是 JSON 对象' } });
     }
@@ -74,7 +74,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }
   function pin(user, value) {
     const key = `pin:${user.id}`; checkRate(key);
-    if (!verifyPassword(value, user.pin_hash)) { badAttempt(key); audit(user.id, 'pin.rejected'); fail('支付密码不正确', 403, 'INVALID_PIN'); }
+    if (!verifyPassword(value, user.pin_hash)) { badAttempt(key); guard.record(user.id, 'pin_failure'); audit(user.id, 'pin.rejected'); fail('支付密码不正确', 403, 'INVALID_PIN'); }
     attempts.delete(key);
   }
   function startSession(userId, res) {
@@ -104,7 +104,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   function prepare(user, b, existing = false) {
     const amount = existing ? b.amount : cents(b.amount);
     const account = accountFor(user, b.accountId);
-    requireThat(account.status === 'active', '银行卡已冻结，请先解冻', 409, 'ACCOUNT_FROZEN');
+    requireThat(account.status === 'active', account.status === 'lost' ? '银行卡已挂失' : '银行卡已冻结，请先解冻', 409, account.status === 'lost' ? 'ACCOUNT_LOST' : 'ACCOUNT_FROZEN');
     let title, debit = true;
     const p = { accountId: account.id, type: b.type };
     switch (b.type) {
@@ -167,9 +167,10 @@ export function createApp(dbPath = ':memory:', options = {}) {
         title = b.type === 'credit_repay' ? '信用卡还款' : `信用卡消费 · ${p.merchant}`; break;
       }
       case 'payment': {
-        const labels = { water: '水费', electricity: '电费', gas: '燃气费', mobile: '话费', broadband: '宽带费', property: '物业费', scan: '扫码付款' };
+        const labels = { water: '水费', electricity: '电费', gas: '燃气费', mobile: '话费', broadband: '宽带费', property: '物业费', scan: '扫码付款', merchant: '商户消费' };
         requireThat(labels[b.billType], '请选择缴费类型');
         p.billType = b.billType;
+        if (b.billType === 'merchant') { p.merchant = textField(b.merchant, '商户名称', 2, 50); title = `消费 · ${p.merchant}`; break; }
         p.billNumber = textField(b.billNumber, '缴费户号', 6, 30);
         requireThat(/^[\dA-Za-z-]{6,30}$/.test(p.billNumber), '缴费户号格式不正确');
         if (p.billType === 'mobile') requireThat(/^1\d{10}$/.test(p.billNumber), '请填写11位手机号');
@@ -180,11 +181,65 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (debit && !existing) requireThat(account.balance - account.held >= amount, '可用余额不足', 409, 'INSUFFICIENT_FUNDS');
     return { p: { ...p, debit }, title, amount, account };
   }
+  function createTransaction(user, body, key) {
+    const fingerprint = hash(canonical(body));
+    const previous = get('SELECT * FROM transactions WHERE user_id=? AND idempotency_key=?', user.id, key);
+    if (previous) { requireThat(previous.fingerprint === fingerprint, '该幂等键已用于其他请求', 409, 'IDEMPOTENCY_CONFLICT'); return previous; }
+    return atomic(() => {
+      const { p, title, amount, account } = prepare(user, body);
+      const tx = id('TX'), created = now(), expires = new Date(Date.now() + 900000).toISOString();
+      if (p.debit) run('UPDATE accounts SET held=held+? WHERE id=?', amount, account.id);
+      run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', tx, user.id, body.type, amount, title, 'pending', JSON.stringify(p), account.id, created, created, expires, key, fingerprint);
+      audit(user.id, 'transaction.created', tx, { type: body.type, amount });
+      return get('SELECT * FROM transactions WHERE id=?', tx);
+    });
+  }
+  function settle(user, t) {
+    requireThat(t.user_id === user.id && t.status === 'pending', '交易状态无效', 409, 'INVALID_STATE');
+        const payload = JSON.parse(t.payload);
+        const { p, account } = prepare(user, { ...payload, amount: t.amount }, true);
+        if (p.scenario === 'bank_rejected') fail('模拟收款行拒绝入账，预留资金已释放', 409, 'BANK_REJECTED');
+        if (p.debit) {
+          requireThat(account.held >= t.amount && account.balance >= t.amount, '预留资金不足', 409, 'INSUFFICIENT_FUNDS');
+          run('UPDATE accounts SET held=held-? WHERE id=?', t.amount, account.id);
+        }
+        if (t.type === 'transfer') {
+          post(t.id, account.id, p.targetId, t.amount, t.title + (p.note ? ` · ${p.note}` : ''), t.type);
+          const recipient = get('SELECT user_id FROM accounts WHERE id=?', p.targetId);
+          if (recipient?.user_id) {
+            run('UPDATE ledger SET title=? WHERE transaction_id=? AND account_id=?', `转账收入 · ${user.name}${p.note ? ` · ${p.note}` : ''}`, t.id, p.targetId);
+            notify(recipient.user_id, '转账到账通知', `${user.name}向您转入¥${money(t.amount)}，资金已到账。`);
+          }
+        } else if (['deposit', 'investment'].includes(t.type)) {
+          post(t.id, account.id, 'system', t.amount, t.title, t.type);
+          const product = products.find(x => x.id === p.productId);
+          run('INSERT INTO holdings VALUES(?,?,?,?,?,?)', id('H'), user.id, p.productId, t.amount, now(), new Date(Date.now() + product.days * 86400000).toISOString());
+        } else if (t.type === 'redeem') {
+          run('UPDATE holdings SET principal=principal-? WHERE id=?', t.amount, p.holdingId);
+          post(t.id, 'system', account.id, t.amount, t.title, t.type);
+        } else if (t.type === 'loan_draw') {
+          run('INSERT INTO loans VALUES(?,?,?,?,?,?,?)', id('L'), user.id, t.amount, t.amount, p.months, 'active', now());
+          post(t.id, 'system', account.id, t.amount, t.title, t.type);
+        } else if (t.type === 'loan_repay') {
+          run("UPDATE loans SET outstanding=outstanding-?,status=CASE WHEN outstanding=? THEN 'paid' ELSE 'active' END WHERE id=?", t.amount, t.amount, p.loanId);
+          post(t.id, account.id, 'system', t.amount, t.title, t.type);
+        } else if (t.type === 'credit_repay') {
+          run('UPDATE credit_cards SET used=used-? WHERE user_id=?', t.amount, user.id);
+          post(t.id, account.id, 'system', t.amount, t.title, t.type);
+        } else if (t.type === 'credit_spend') {
+          run('UPDATE credit_cards SET used=used+? WHERE user_id=?', t.amount, user.id);
+        } else if (t.type === 'payment') post(t.id, account.id, 'system', t.amount, t.title, t.type);
+        run("UPDATE transactions SET status='completed',updated_at=? WHERE id=?", now(), t.id);
+        audit(user.id, 'transaction.completed', t.id, { amount: t.amount, type: t.type });
+        notify(user.id, '交易完成', `${t.title} ¥${money(t.amount)}，已完成。`);
+    return get('SELECT * FROM transactions WHERE id=?', t.id);
+  }
   function state(user) {
     const accounts = all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', user.id);
     const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal>0 ORDER BY created_at DESC', user.id).map(h => ({ ...h, product: products.find(p => p.id === h.product_id) }));
     const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id);
     return {
+      ...(services ? services.snapshot(user) : {}),
       user: publicUser(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, ledger, products,
       loans: all('SELECT * FROM loans WHERE user_id=? ORDER BY created_at DESC', user.id),
       creditCard: get('SELECT * FROM credit_cards WHERE user_id=?', user.id),
@@ -195,7 +250,17 @@ export function createApp(dbPath = ':memory:', options = {}) {
       appointments: all('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC', user.id),
     };
   }
+  services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt }, guard);
+  services.verification = createVerification(bank, services);
+  const agent = createAgent(services, options.chat);
+  const scheduler = createScheduler(services);
   registerChat(route, state, options.chat);
+  registerVerification(route, services.verification);
+  const directVerification = registerDirectVerification(route, services);
+  registerAgentRoutes(route, services, agent);
+  registerVoice(route, services, options.voice);
+  const channels = createChannels(services, agent, options.channels);
+  channels.register(route);
   route('get', '/health', '服务健康状态', (_req, res) => res.json({ status: 'ok', simulation: true }), false);
   route('post', '/auth/login', '登录，返回会话 Cookie 与 Bearer Token', (req, res) => {
     const key = `login:${req.ip}`; checkRate(key);
@@ -221,24 +286,14 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('get', '/accounts', '账户与可用余额（单位：分）', (req, res) => res.json(all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', req.user.id)));
   route('patch', '/accounts/:id', '冻结或解冻借记卡', (req, res) => {
     pin(req.user, req.body.pin); const a = accountFor(req.user, req.params.id);
-    requireThat(['active', 'frozen'].includes(req.body.status), '状态无效');
-    atomic(() => { run('UPDATE accounts SET status=? WHERE id=?', req.body.status, a.id); audit(req.user.id, 'account.status_changed', a.id, { status: req.body.status }); });
+    requireThat(['active', 'frozen', 'lost'].includes(req.body.status), '状态无效');
+    atomic(() => { directVerification.consume(req.user, `/accounts/${a.id}`, req.body); requireThat(a.status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂', 409); run('UPDATE accounts SET status=? WHERE id=?', req.body.status, a.id); if(req.body.status === 'lost') for(const tx of all("SELECT * FROM transactions WHERE account_id=? AND status='pending'",a.id)) finishFailed(tx,'failed','银行卡已挂失'); audit(req.user.id, 'account.status_changed', a.id, { status: req.body.status }); });
     res.json({ ok: true });
   });
   route('post', '/transactions', '创建待确认交易并预留余额；请求金额单位：元', (req, res) => {
     const key = textField(req.get('Idempotency-Key') || req.body.idempotencyKey, '幂等键', 8, 100);
     const body = { ...req.body }; delete body.idempotencyKey;
-    const fingerprint = hash(canonical(body));
-    const previous = get('SELECT * FROM transactions WHERE user_id=? AND idempotency_key=?', req.user.id, key);
-    if (previous) { requireThat(previous.fingerprint === fingerprint, '该幂等键已用于其他请求', 409, 'IDEMPOTENCY_CONFLICT'); return res.json(transactionView(previous)); }
-    const transaction = atomic(() => {
-      const { p, title, amount, account } = prepare(req.user, body);
-      const tx = id('TX'), created = now(), expires = new Date(Date.now() + 900000).toISOString();
-      if (p.debit) run('UPDATE accounts SET held=held+? WHERE id=?', amount, account.id);
-      run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', tx, req.user.id, body.type, amount, title, 'pending', JSON.stringify(p), account.id, created, created, expires, key, fingerprint);
-      audit(req.user.id, 'transaction.created', tx, { type: body.type, amount });
-      return get('SELECT * FROM transactions WHERE id=?', tx);
-    });
+    const transaction = createTransaction(req.user, body, key);
     res.status(201).json(transactionView(transaction));
   }, true, { required: ['type', 'amount'], properties: { type: { type: 'string', enum: ['transfer', 'deposit', 'investment', 'redeem', 'loan_draw', 'loan_repay', 'credit_repay', 'credit_spend', 'payment'] }, amount: { type: 'string', pattern: '^[0-9]+(\\.[0-9]{1,2})?$', description: '人民币元，例如 100.50' }, accountId: { type: 'string' }, recipientName: { type: 'string' }, recipientAccount: { type: 'string' }, bank: { type: 'string' }, note: { type: 'string' }, scenario: { type: 'string', enum: ['success', 'bank_rejected'] }, productId: { type: 'string' }, holdingId: { type: 'string' }, loanId: { type: 'string' }, months: { type: 'integer', enum: [3, 6, 12, 24] }, merchant: { type: 'string' }, billType: { type: 'string', enum: ['water', 'electricity', 'gas', 'mobile', 'broadband', 'property', 'scan'] }, billNumber: { type: 'string' } } });
   route('get', '/transactions', '交易列表，可按状态过滤', (req, res) => {
@@ -260,45 +315,11 @@ export function createApp(dbPath = ':memory:', options = {}) {
     requireThat(t.status === 'pending', '该交易已结束，无法确认', 409, 'INVALID_STATE');
     try {
       atomic(() => {
-        const payload = JSON.parse(t.payload);
-        const { p, account } = prepare(req.user, { ...payload, amount: t.amount }, true);
-        if (p.scenario === 'bank_rejected') fail('模拟收款行拒绝入账，预留资金已释放', 409, 'BANK_REJECTED');
-        if (p.debit) {
-          requireThat(account.held >= t.amount && account.balance >= t.amount, '预留资金不足', 409, 'INSUFFICIENT_FUNDS');
-          run('UPDATE accounts SET held=held-? WHERE id=?', t.amount, account.id);
-        }
-        if (t.type === 'transfer') {
-          post(t.id, account.id, p.targetId, t.amount, t.title + (p.note ? ` · ${p.note}` : ''), t.type);
-          const recipient = get('SELECT user_id FROM accounts WHERE id=?', p.targetId);
-          if (recipient?.user_id) {
-            run('UPDATE ledger SET title=? WHERE transaction_id=? AND account_id=?', `转账收入 · ${req.user.name}${p.note ? ` · ${p.note}` : ''}`, t.id, p.targetId);
-            notify(recipient.user_id, '转账到账通知', `${req.user.name}向您转入¥${money(t.amount)}，资金已到账。`);
-          }
-        } else if (['deposit', 'investment'].includes(t.type)) {
-          post(t.id, account.id, 'system', t.amount, t.title, t.type);
-          const product = products.find(x => x.id === p.productId);
-          run('INSERT INTO holdings VALUES(?,?,?,?,?,?)', id('H'), req.user.id, p.productId, t.amount, now(), new Date(Date.now() + product.days * 86400000).toISOString());
-        } else if (t.type === 'redeem') {
-          run('UPDATE holdings SET principal=principal-? WHERE id=?', t.amount, p.holdingId);
-          post(t.id, 'system', account.id, t.amount, t.title, t.type);
-        } else if (t.type === 'loan_draw') {
-          run('INSERT INTO loans VALUES(?,?,?,?,?,?,?)', id('L'), req.user.id, t.amount, t.amount, p.months, 'active', now());
-          post(t.id, 'system', account.id, t.amount, t.title, t.type);
-        } else if (t.type === 'loan_repay') {
-          run("UPDATE loans SET outstanding=outstanding-?,status=CASE WHEN outstanding=? THEN 'paid' ELSE 'active' END WHERE id=?", t.amount, t.amount, p.loanId);
-          post(t.id, account.id, 'system', t.amount, t.title, t.type);
-        } else if (t.type === 'credit_repay') {
-          run('UPDATE credit_cards SET used=used-? WHERE user_id=?', t.amount, req.user.id);
-          post(t.id, account.id, 'system', t.amount, t.title, t.type);
-        } else if (t.type === 'credit_spend') {
-          run('UPDATE credit_cards SET used=used+? WHERE user_id=?', t.amount, req.user.id);
-        } else if (t.type === 'payment') post(t.id, account.id, 'system', t.amount, t.title, t.type);
-        run("UPDATE transactions SET status='completed',updated_at=? WHERE id=?", now(), t.id);
-        audit(req.user.id, 'transaction.completed', t.id, { amount: t.amount, type: t.type });
-        notify(req.user.id, '交易完成', `${t.title} ¥${money(t.amount)}，已完成。`);
+        directVerification.consume(req.user, `/transactions/${t.id}/confirm`, req.body);
+        settle(req.user, t);
       });
     } catch (error) {
-      if (!(error instanceof BusinessError)) throw error;
+      if (!(error instanceof BusinessError) || ['VERIFICATION_REQUIRED','INVALID_VERIFICATION'].includes(error.code)) throw error;
       atomic(() => finishFailed(t, 'failed', error.message));
     }
     res.json(transactionView(get('SELECT * FROM transactions WHERE id=?', t.id)));
@@ -321,8 +342,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('get', '/loans', '贷款与剩余本金', (req, res) => res.json(all('SELECT * FROM loans WHERE user_id=?', req.user.id)));
   route('get', '/credit-card', '信用卡额度与账单', (req, res) => res.json(get('SELECT * FROM credit_cards WHERE user_id=?', req.user.id)));
   route('patch', '/credit-card', '冻结或解冻信用卡', (req, res) => {
-    pin(req.user, req.body.pin); requireThat(['active', 'frozen'].includes(req.body.status), '状态无效');
-    atomic(() => { run('UPDATE credit_cards SET status=? WHERE user_id=?', req.body.status, req.user.id); audit(req.user.id, 'credit.status_changed', '', { status: req.body.status }); }); res.json({ ok: true });
+    pin(req.user, req.body.pin); requireThat(['active', 'frozen', 'lost'].includes(req.body.status), '状态无效');
+    atomic(() => { directVerification.consume(req.user, '/credit-card', req.body); requireThat(get('SELECT status FROM credit_cards WHERE user_id=?',req.user.id).status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂',409); run('UPDATE credit_cards SET status=? WHERE user_id=?', req.body.status, req.user.id); audit(req.user.id, 'credit.status_changed', '', { status: req.body.status }); }); res.json({ ok: true });
   });
   route('get', '/payees', '常用收款人', (req, res) => res.json(all('SELECT * FROM payees WHERE user_id=?', req.user.id)));
   route('post', '/payees', '保存常用收款人', (req, res) => {
@@ -351,6 +372,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (req.body.newPin !== undefined) { requireThat(/^\d{6}$/.test(req.body.newPin), '新支付密码须为6位数字'); changes.pin_hash = hashPassword(req.body.newPin); }
     requireThat(Object.keys(changes).length, '未提供需要修改的设置');
     atomic(() => {
+      directVerification.consume(req.user, '/settings', req.body);
       for (const [key, value] of Object.entries(changes)) run(`UPDATE users SET ${key}=? WHERE id=?`, value, req.user.id);
       if (changes.password_hash || changes.pin_hash) run('DELETE FROM sessions WHERE user_id=? AND token<>?', req.user.id, req.tokenHash);
       audit(req.user.id, 'settings.updated', '', { fields: Object.keys(changes) });
@@ -387,9 +409,9 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }, false);
   app.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } }));
   app.use((error, _req, res, _next) => {
-    const status = error instanceof BusinessError ? error.status : error.type === 'entity.parse.failed' ? 400 : 500;
+    const status = error instanceof BusinessError ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
     if (status === 500) console.error('Bank API error:', error.message);
     res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message } });
   });
-  return { app, bank, maintenance: expire };
+  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); } };
 }
