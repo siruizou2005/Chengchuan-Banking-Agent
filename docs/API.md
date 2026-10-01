@@ -26,7 +26,7 @@
 6. `GET /transactions/{id}` 查询最终状态；只有 `completed` 表示成功。确认接口即使 HTTP 200 也可能返回业务 `failed`，务必判断 `status`。
 7. 放弃交易时 `POST /transactions/{id}/cancel`，请求体 `{}`。
 
-超时重试创建时必须复用原幂等键和相同请求体；同键不同请求返回 409。重复确认已成功交易不会重复入账。待确认交易 15 分钟后过期。每日限额与累计按 UTC 日期统计；账户冻结/挂失、余额不足、姓名不匹配或超限均由后端拒绝。
+超时重试创建时必须复用原幂等键和相同请求体；同键不同请求返回 409。重复确认已成功交易不会重复入账。待确认交易 15 分钟后过期。每日限额与累计按固定 `Asia/Shanghai` 业务日统计；完成交易按完成时间，未来操作按预计执行日归集，实际执行再次复核；账户冻结/挂失、余额不足、姓名不匹配或超限均由后端拒绝。
 
 ## 交易类型
 
@@ -91,9 +91,9 @@
 
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
-| GET /agent/actions | 本人最近 100 条动作，含 `level`（green/yellow/red）、`status`、`args`（脱敏）、`result`、`plan` |
+| GET /agent/actions | 本人最近 100 条动作，含 `level`（green/yellow/red）、`status`、`args`（脱敏）、`result`、`plan`、`decision`、`accountTail`、`authorization_until`、`verification_until`、`pause_reason` |
 | POST /agent/actions | `{tool, args}` 从业务页面直接提议，如 `{"tool":"propose_card_action","args":{"card":"A…","action":"report_lost"}}`；返回 201 与动作 |
-| POST /agent/actions/{id}/confirm | `{pin, verificationToken?}`；黄色只需 pin，红色必须附有效一次性 token（403 `VERIFICATION_REQUIRED` / `INVALID_VERIFICATION`）；返回执行后的动作，`status` 为 completed/confirmed（定时）/failed |
+| POST /agent/actions/{id}/confirm | `{pin, verificationToken?}`；黄色只需 pin，红色必须附有效一次性 token（403 `VERIFICATION_REQUIRED` / `INVALID_VERIFICATION`）；返回动作，`status` 为 completed/confirmed（已授权待执行）/failed；同一接口也完成 awaiting_verification 的补充授权与恢复，不能修改已保存业务参数 |
 | POST /agent/actions/{id}/cancel | {}，取消待确认或已授权未执行的动作，释放预授权 |
 | GET /agent/plans | 本人联动计划及步骤状态 |
 | POST /agent/plans/{id}/abort | {}，中断计划：取消未执行步骤、释放锁定资金 |
@@ -102,7 +102,22 @@
 | POST /agent/unlock | `{pin}` 解除智能体安全锁定 |
 | GET /agent/splits/{id}/{index} | 本人收到的 AA 收款请求（金额、收款方），页面 `/#pay-request/{id}/{index}` 使用 |
 
-动作状态：`proposed → confirmed → executing → completed | failed`，以及 `cancelled`、`expired`（15 分钟）。IM 渠道的红色动作在 `GET /agent/actions` 中 `channel` 为 feishu/wechat，须在 App 完成强验证后确认。
+动作状态：`proposed → confirmed → executing → completed | failed`，以及 `awaiting_verification`、`cancelled`、`expired`。提议 15 分钟过期；未来任务的 `authorization_until` 默认为最后预计执行时间后 24 小时（锁定步骤使用 until），等待验证以 `verification_until` 单独保存，默认 15 分钟且受原授权窗口限制。IM 渠道的红色动作在 `GET /agent/actions` 中 `channel` 为 feishu/wechat，须在 App 完成强验证后确认。
+
+
+### 策略决策、授权与调度
+
+`decision` 包含 `level`、`outcome`（allow / require_confirmation / require_verification / deny）、`reasons[{code,message}]`、`requiredFactors`、`policyVersion`、`evaluatedAt`、`businessDate`。对转账及缴费，`amounts` 为整数分：completed（已完成）、committed（已授权未执行）、proposed（其他有效待确认）、current（本笔）、total、threshold（100000）。DAG 增加 `amountsByDate`，逐个预计业务日列明本计划支出和计入后的累计，不把跨日预算当作今日累计。
+
+红色动作仍缺模拟强验证时返回 403 `VERIFICATION_REQUIRED`，并附最新 `error.decision`，动作保持待确认。调度风险升高则持久暂停，不算执行失败或触发连续业务失败熔断。前端刷新卡片，使用原 actionId 验证后再次调用 confirm；返回 confirmed 表示已重新授权并等待调度，不能显示付款成功。
+
+授权参数从服务端读取。客户端额外提供 `amount`、`recipient`、`level`、`skipConfirmation` 不会修改已授权操作。确认后的关键参数修改应创建新动作并取消旧动作。授权精确覆盖原步骤和金额，任务每步使用独立幂等键；重复确认、重跑和重启不会重复扣款或重复预留。
+
+`operation_authorizations` 保存授权版本、摘要、精确范围、批准等级、实际模拟因素、策略版本、确认来源及时间窗口；`authorization_executions` 保存每步唯一执行记录。取消、解绑、过期和业务失败撤销许可。`/audit` 关联 runId、actionId、planId、stepId、authorizationId、transactionId，包含策略金额快照、签发、撤销、暂停、恢复与拒绝原因，不含完整 token、PIN 或验证码。
+
+订阅的长期固定月度授权独立于即时转账授权，固定商户、金额、周期与每期幂等键均由服务端校验。演示种子来源为 `explicit_demo_seed`；没有证明来源的旧订阅 status 为 awaiting_authorization，需要重新授权，当前版本没有通用新增持续代扣授权接口。
+
+模拟身份验证不能代表生产级多因子认证。摄像头跳过记录 skipped 和原因，并在授权因素中登记模拟替代路径；站内短信不接短信服务。
 
 ### 对话历史
 
@@ -116,10 +131,10 @@
 
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
-| POST /verify/intent | `{path, body}` 业务页面直接操作前询问是否需要强验证，如 `{"path":"/settings","body":{"dailyLimit":"60000"}}` → `{required, actionId?}`；token 与具体参数绑定 |
-| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated:true}`，6 位验证码哈希存库并投递到消息中心（标题「模拟短信验证码」），开发环境同时输出到控制台 |
+| POST /verify/intent | `{path, body}` 业务页面直接操作前询问是否需要强验证，如 `{"path":"/settings","body":{"dailyLimit":"60000"}}` → `{required, actionId?, decision}`；token 与具体参数及服务端保存的交易参数绑定 |
+| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated:true}`，6 位验证码哈希存库并投递到消息中心（标题「模拟短信验证码」）；不向模型或审计记录明文验证码 |
 | POST /verify/face | `{id, frameHash}`（64 位十六进制 SHA-256，前端摄像头画面摘要）或 `{id, skipped:true, reason:"unavailable"|"denied"|"unsupported"}` 降级，降级写审计 `verification.face_skipped` |
-| POST /verify/complete | `{id, code}` → `{verificationToken}`；未完成人脸步骤 403 `FACE_REQUIRED`；错误 8 次限频并计入熔断；token 10 分钟有效、一次性、绑定 actionId |
+| POST /verify/complete | `{id, code}` → `{verificationToken}`；未完成人脸步骤 403 `FACE_REQUIRED`；错误 8 次限频并计入熔断；token 10 分钟有效、一次性、绑定 user、actionId、revision 和规范化参数摘要；确认事务内消费，并签发独立持久操作授权，计划不依赖短期 token 长期有效 |
 
 ### 语音
 
@@ -135,11 +150,15 @@
 | POST /channels/wechat/qr | `{pin}` → `{id, qrcode_img_content, expiresIn}`，需 `WECHAT_ENABLED=true` 与 `CHANNEL_SECRET` |
 | GET /channels/wechat/qr/{id} | `{status: wait|scaned|confirmed|expired, bindingId?}` 轮询扫码状态 |
 
-IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认」/「取消」命中本会话最近待确认动作、其他文本进入智能体。红色动作在 IM 只返回「请打开澄川银行 App 完成验证」。
+IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认 ACT…」/「取消 ACT…」指定当前用户、渠道及绑定内动作。多笔不带编号时返回简短列表且不执行；只有一笔时可省略编号。重复确认返回原状态；红色升级也要求回 App。其他文本进入智能体。红色动作在 IM 只返回「请打开澄川银行 App 完成验证」。
 
 ### 工具清单
 
-查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`detect_anomalies`、`list_subscriptions`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`remember`、`recall`、`set_reminder`、`handover_to_human`。
+查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
+
+已登记低风险副作用（绿）：`remember` 仅保存本人主动要求的非敏感偏好，`set_reminder` 仅创建站内提醒，`handover_to_human` 仅创建模拟工单。
+
+需确认查询（黄）：`list_subscriptions`。确认前只返回范围及动作卡片，不返回订阅列表；确认结果 `result={query:true, subscriptions, detected}`，没有付款回单。
 
 提议（黄/红由策略决定）：`propose_transfer`、`propose_payment`、`propose_split`、`propose_subscribe_product`、`propose_redeem`、`propose_loan_draw`、`propose_loan_repay`、`propose_credit_repay`、`propose_card_action`、`propose_virtual_card`、`propose_set_daily_limit`、`propose_cancel_subscription`、`propose_lock_funds`、`create_plan`（DAG，最多 12 步，步骤只能引用提议工具或 `set_reminder`）。
 
@@ -149,7 +168,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认」/「
 
 400 参数错误，401 认证失效，403 支付密码/验证/来源错误，404 资源不存在或无权访问，409 业务状态冲突，415 非 JSON 或非 WAV 请求，423 智能体锁定，429 限频，502 上游模型或语音服务错误，503 未配置，504 对话超时。
 
-常见代码：`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
+常见代码：`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
 
 `GET /ledger` 与 `GET /transactions` 均只返回自己的资源。行内转账收款人可在自己的流水中看到入账，但不能查询发款人的交易资源或支付信息。智能体的所有查询与动作同样按会话或渠道绑定的用户隔离。
 

@@ -1,6 +1,6 @@
 import { validate, redact } from './guard.mjs';
-import { READ_TOOLS } from './policy.mjs';
-import { ledgerFor, billReport, detectAnomalies, recognizeSubscriptions } from './analytics.mjs';
+import { READ_TOOLS, LOW_RISK_EFFECTS } from './policy.mjs';
+import { ledgerFor, billReport, detectAnomalies } from './analytics.mjs';
 import { runAnalysis } from './sandbox.mjs';
 import { id, now, products } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
@@ -15,7 +15,7 @@ const definitions={
  get_products_and_holdings:['查询产品目录、风险说明与本人持仓',obj()],
  get_credit_card:['查询本人信用卡',obj()],get_loans:['查询本人贷款',obj()],get_payees:['查询本人收款人簿（脱敏）',obj()],
  resolve_recipient:['按姓名、手机号、账号查找收款人；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
- bill_report:['按YYYY-MM月份或YYYY年度生成账单报告',obj({period:str(7)})],detect_anomalies:['检测账单中异常支出；仅为模拟规则提示',obj()],list_subscriptions:['列出订阅与周期扣费识别结果',obj()],
+ bill_report:['按YYYY-MM月份或YYYY年度生成账单报告',obj({period:str(7)})],detect_anomalies:['检测账单中异常支出；仅为模拟规则提示',obj()],list_subscriptions:['提议查询本人订阅与周期扣费明细，黄色确认前只返回查询范围',obj()],
  compare_products:['对比产品（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含本人ledger和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
  remember:['用户明确要求记住的偏好或日期，不保存任何密码/验证码/密钥',obj({key:str(60),value:str(300)},['key','value'])],recall:['读取本人主动保存的记忆',obj()],
@@ -44,7 +44,7 @@ export function validateArgs(name,args) {
 export async function executeTool(services,user,name,raw,context={}) {
  services.guard.assertOpen(user.id);
  const args=validateArgs(name,raw),{bank}=services;
- if(!READ_TOOLS.has(name)){
+ if(!READ_TOOLS.has(name) && !LOW_RISK_EFFECTS.has(name)){
   const action=services.propose(user,name,args,context);
   return {ok:true,level:action.level,actionId:action.id,data:action,event:{type:action.tool==='create_plan'?'plan':'action',data:action}};
  }
@@ -60,7 +60,6 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'resolve_recipient':requireThat(args.name||args.phone||args.account,'请提供收款人姓名、手机号或账号');data=services.resolveRecipients(user,args);break;
  case 'bill_report':data=billReport(ledgerFor(bank,user.id),args.period);event={type:'report',data};break;
  case 'detect_anomalies':data=detectAnomalies(ledgerFor(bank,user.id));event={type:'anomalies',data};break;
- case 'list_subscriptions':data={subscriptions:bank.all('SELECT * FROM subscriptions WHERE user_id=?',user.id),detected:recognizeSubscriptions(ledgerFor(bank,user.id))};event={type:'subscriptions',data};break;
  case 'compare_products':data={products:products.filter(p=>args.ids.includes(p.id)),holdings:[]};event={type:'products',data};break;
  case 'get_risk_profile':data={level:bank.get('SELECT risk_level FROM users WHERE id=?',user.id).risk_level};break;
  case 'get_scheduled_tasks':data={tasks:services.snapshot(user).scheduledTasks,plans:services.plans(user)};break;
@@ -72,5 +71,7 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'handover_to_human':data=services.handover(user,args.reason,context.sessionId);event={type:'handover',data};break;
  default:throw new Error('Unhandled tool');
  }
- return {ok:true,level:'green',data:redact(data),...(event?{event}: {})};
+ const decision=services.policyDecision(user,name,args);
+ bank.audit(user.id,'policy.evaluated',context.sessionId||'',{tool:name,decision});
+ return {ok:true,level:'green',decision,data:redact(data),...(event?{event}: {})};
 }

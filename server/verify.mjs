@@ -1,13 +1,15 @@
 import { randomInt, randomBytes } from 'node:crypto';
 import { id, now } from './db.mjs';
 import { hash, requireThat } from './errors.mjs';
+import { paramsDigest, actionParams } from './authorization.mjs';
 
 export function createVerification(bank, services) {
   const { get, run, atomic, audit, notify } = bank;
   function owned(user, actionId) {
     const action = get('SELECT * FROM agent_actions WHERE id=? AND user_id=?', actionId, user.id);
     requireThat(action, '操作不存在',404,'NOT_FOUND');
-    requireThat(action.status === 'proposed' && action.expires_at > now(), '操作已结束或过期',409,'INVALID_STATE');
+    requireThat((action.status === 'proposed' && action.expires_at > now()) || (action.status==='awaiting_verification' && action.verification_until>now() && action.authorization_until>now()), '操作已结束或过期',409,'INVALID_STATE');
+    requireThat(!action.params_digest || action.params_digest===paramsDigest(actionParams(action)),'操作参数已变化，请重新提议',403,'AUTHORIZATION_MISMATCH');
     return action;
   }
   function start(user, actionId) {
@@ -19,6 +21,7 @@ export function createVerification(bank, services) {
     atomic(()=>{
       run('UPDATE verifications SET used=1 WHERE user_id=? AND action_id=?',user.id,actionId);
       run('INSERT INTO verifications(id,user_id,action_id,code_hash,expires_at,created_at) VALUES(?,?,?,?,?,?)', verificationId,user.id,actionId,hash(code),new Date(Date.now()+300000).toISOString(),now());
+      run('UPDATE verifications SET params_digest=?,revision=? WHERE id=?',paramsDigest(actionParams(action)),action.revision,verificationId);
       notify(user.id,'模拟短信验证码',`【澄川银行】验证码 ${code}，用于：${action.title}。5分钟内有效。请勿发送给聊天助手或他人。`);
       audit(user.id,'verification.started',actionId,{id:verificationId});
     });
@@ -27,12 +30,13 @@ export function createVerification(bank, services) {
   function challenge(user, verificationId) {
     const v=get('SELECT * FROM verifications WHERE id=? AND user_id=?',verificationId,user.id);
     requireThat(v && !v.used && v.expires_at>now(),'验证已过期，请重新开始',403,'VERIFICATION_EXPIRED');
-    owned(user,v.action_id); return v;
+    const action=owned(user,v.action_id);
+    requireThat(v.params_digest===paramsDigest(actionParams(action)) && v.revision===action.revision,'验证与当前参数版本不匹配',403,'INVALID_VERIFICATION');return v;
   }
   function face(user, { id:verificationId, frameHash, skipped, reason }) {
     challenge(user,verificationId);
     requireThat(skipped === true ? ['unavailable','denied','unsupported'].includes(reason) : typeof frameHash==='string' && /^[a-f0-9]{64}$/.test(frameHash), '请先完成人脸演示或记录摄像头不可用原因');
-    run('UPDATE verifications SET face_status=?,frame_hash=? WHERE id=?',skipped?'skipped':'completed',skipped?null:frameHash,verificationId);
+    run('UPDATE verifications SET face_status=?,frame_hash=?,face_reason=? WHERE id=?',skipped?'skipped':'completed',skipped?null:frameHash,skipped?reason:null,verificationId);
     audit(user.id,skipped?'verification.face_skipped':'verification.face_simulated',verificationId,{reason:skipped?reason:undefined});
     return {ok:true,simulated:true};
   }
@@ -55,7 +59,10 @@ export function createVerification(bank, services) {
     requireThat(typeof token==='string' && token.length===64,'此操作需在App完成强验证',403,'VERIFICATION_REQUIRED');
     const v=get('SELECT * FROM verifications WHERE user_id=? AND action_id=? AND token_hash=? AND used=0 AND token_expires_at>?',user.id,actionId,hash(token),now());
     requireThat(v,'验证令牌无效、已使用或与操作不匹配',403,'INVALID_VERIFICATION');
+    const action=owned(user,actionId);
+    requireThat(v.params_digest===paramsDigest(actionParams(action)) && v.revision===action.revision,'验证令牌与参数版本不匹配',403,'INVALID_VERIFICATION');
     run('UPDATE verifications SET used=1 WHERE id=?',v.id); audit(user.id,'verification.consumed',actionId);
+    return ['simulated_sms',v.face_status==='skipped'?'simulated_camera_fallback:'+v.face_reason:'simulated_face'];
   }
   return { start, face, complete, consume };
 }

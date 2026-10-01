@@ -113,6 +113,32 @@ export function createBank(path) {
   for (const [table, column, ddl] of [['agent_runs', 'events', "TEXT NOT NULL DEFAULT '[]'"], ['agent_sessions', 'archived', 'INTEGER NOT NULL DEFAULT 0']]) {
     if (!all(`PRAGMA table_info(${table})`).some(c => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   }
+  for (const [table, column, ddl] of [
+    ['transactions','completed_at','TEXT'],
+    ['agent_actions','revision','INTEGER NOT NULL DEFAULT 1'],
+    ['agent_actions','params_digest','TEXT'],['agent_actions','decision','TEXT'],['agent_actions','run_id','TEXT'],
+    ['agent_actions','authorization_until','TEXT'],['agent_actions','verification_until','TEXT'],['agent_actions','pause_reason','TEXT'],
+    ['verifications','params_digest','TEXT'],['verifications','revision','INTEGER'],['verifications','face_reason','TEXT'],
+  ]) if (!all(`PRAGMA table_info(${table})`).some(c=>c.name===column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY,created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS operation_authorizations (
+      id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),action_id TEXT NOT NULL REFERENCES agent_actions(id),
+      plan_id TEXT,revision INTEGER NOT NULL,params_digest TEXT NOT NULL,scope TEXT NOT NULL,
+      approved_level TEXT NOT NULL,factors TEXT NOT NULL,policy_version TEXT NOT NULL,channel TEXT NOT NULL,binding_id TEXT,
+      valid_from TEXT NOT NULL,expires_at TEXT NOT NULL,status TEXT NOT NULL,revoked_at TEXT,created_at TEXT NOT NULL,
+      UNIQUE(action_id,revision)
+    );
+    CREATE TABLE IF NOT EXISTS authorization_executions (
+      id TEXT PRIMARY KEY,action_id TEXT NOT NULL,authorization_id TEXT NOT NULL REFERENCES operation_authorizations(id),
+      execution_key TEXT NOT NULL UNIQUE,step_id TEXT NOT NULL,amount INTEGER NOT NULL,result TEXT,created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS authorization_step_once ON authorization_executions(action_id,step_id);
+    CREATE TABLE IF NOT EXISTS subscription_mandates (
+      subscription_id TEXT PRIMARY KEY REFERENCES subscriptions(id),user_id TEXT NOT NULL,merchant TEXT NOT NULL,
+      amount INTEGER NOT NULL,period TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL
+    );
+  `);
   let depth = 0;
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;
@@ -173,9 +199,29 @@ export function createBank(path) {
       post(id('DEMO'), account, 'system', 888800, '消费 · 陌生商户星际数码', 'payment', abnormal.toISOString());
       for (const [merchant, amount] of [['视频会员',2500],['音乐',1500],['云盘',2100],['健身',19900]]) {
         run('INSERT OR IGNORE INTO subscriptions(id,user_id,merchant,amount,next_at) VALUES(?,?,?,?,?)', id('SUB'), user.id, merchant, amount, new Date(Date.now()+25*86400000).toISOString());
+        const sub=get('SELECT * FROM subscriptions WHERE user_id=? AND merchant=?',user.id,merchant);
+        if(sub.amount===amount)run('INSERT OR IGNORE INTO subscription_mandates VALUES(?,?,?,?,?,?,?,?)',sub.id,user.id,merchant,amount,'monthly','explicit_demo_seed','active',now());
       }
       audit(user.id, 'demo.history.v2');
     });
   }
+  if (!get("SELECT version FROM schema_migrations WHERE version='permissions-v2'")) atomic(()=>{
+    for(const a of all("SELECT * FROM agent_actions WHERE status IN ('confirmed','executing')")) {
+      const until=get("SELECT MAX(until_at) AS until_at FROM reservations WHERE action_id=? AND status='active'",a.id).until_at || new Date(Date.now()+900000).toISOString();
+      run("UPDATE agent_actions SET status='awaiting_verification',authorization_until=?,verification_until=?,pause_reason='旧任务缺少有效授权证明，请重新授权' WHERE id=?",until,new Date(Math.min(Date.now()+900000,Date.parse(until))).toISOString(),a.id);
+      run("UPDATE scheduled_tasks SET status='awaiting_verification' WHERE action_id=? AND status IN ('pending','executing')",a.id);
+      run("UPDATE agent_plans SET status='awaiting_verification' WHERE action_id=?",a.id);
+      audit(a.user_id,'authorization.migration_paused',a.id);
+    }
+    for(const sub of all('SELECT * FROM subscriptions')) {
+      if(get('SELECT subscription_id FROM subscription_mandates WHERE subscription_id=?',sub.id))continue;
+      const seed={视频会员:2500,音乐:1500,云盘:2100,健身:19900};
+      const demo=get("SELECT id FROM audit WHERE user_id=? AND action='demo.history.v2'",sub.user_id);
+      if(demo && seed[sub.merchant]===sub.amount)run('INSERT INTO subscription_mandates VALUES(?,?,?,?,?,?,?,?)',sub.id,sub.user_id,sub.merchant,sub.amount,'monthly','explicit_demo_seed','active',now());
+      else {run("UPDATE subscriptions SET status='awaiting_authorization' WHERE id=? AND status='active'",sub.id);audit(sub.user_id,'subscription.migration_paused',sub.id);}
+    }
+    for(const t of all("SELECT * FROM transactions WHERE status='completed' AND completed_at IS NULL"))audit(t.user_id,'transaction.legacy_completion_proxy',t.id,{source:'updated_at',limitation:'历史记录无独立完成时间；累计以原updated_at兼容，不回填精确完成时间'});
+    run('INSERT INTO schema_migrations VALUES(?,?)','permissions-v2',now());
+  });
   return { db, get, all, run, atomic, audit, notify, post, newUser };
 }

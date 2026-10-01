@@ -21,8 +21,9 @@ export type Snapshot = {
   appointments: { id: string; branch: string; service: string; date: string; status: string }[];
 };
 
-export type AgentAction = { id: string; tool: string; title: string; level: 'green' | 'yellow' | 'red'; status: string; amount: number; args: Record<string, any>; result?: Record<string, any>; error?: string; channel: string; created_at: string; expires_at: string; plan?: AgentPlan };
-export type AgentPlan = { id: string; action_id: string; title: string; status: string; steps: { id: string; title: string; tool: string; args: Record<string, any>; dependsOn: string[]; runAt?: string; status: string; result?: Record<string, any> }[] };
+export type PolicyDecision = { level: 'green' | 'yellow' | 'red'; outcome: 'allow' | 'require_confirmation' | 'require_verification' | 'deny'; reasons: {code: string; message: string}[]; requiredFactors: string[]; policyVersion: string; evaluatedAt: string; businessDate?: string; dates?: string[]; amountsByDate?: {businessDate: string; total: number; current: number}[]; amounts?: { completed: number; committed: number; proposed: number; current: number; total: number; threshold: number } };
+export type AgentAction = { id: string; tool: string; title: string; level: 'green' | 'yellow' | 'red'; status: string; amount: number; args: Record<string, any>; result?: Record<string, any>; error?: string; channel: string; created_at: string; expires_at: string; authorization_until?: string; verification_until?: string; pause_reason?: string; accountTail?: string; decision?: PolicyDecision; plan?: AgentPlan };
+export type AgentPlan = { id: string; action_id: string; title: string; status: string; budget?: number; authorization_until?: string; verification_until?: string; pause_reason?: string; steps: { id: string; title: string; tool: string; args: Record<string, any>; dependsOn: string[]; runAt?: string; status: string; result?: Record<string, any> }[] };
 export type AgentEvent = { type: string; data: any };
 export type AgentTrace = { tool: string; args?: Record<string, unknown>; ok: boolean; level?: string; actionId?: string; result?: string; durationMs?: number };
 export type Subscription = { id: string; merchant: string; amount: number; next_at: string; status: string };

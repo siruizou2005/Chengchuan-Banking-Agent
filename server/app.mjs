@@ -13,10 +13,11 @@ import { createScheduler } from './agent/scheduler.mjs';
 import { createVerification, registerVerification } from './verify.mjs';
 
 
+import { businessDate, dailyTotal } from './agent/policy.mjs';
+import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
 const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
-const canonical = o => JSON.stringify(Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b))));
 const transactionView = t => ({ ...t, payload: JSON.parse(t.payload), fingerprint: undefined, idempotency_key: undefined });
 const money = n => (n / 100).toFixed(2);
 
@@ -57,6 +58,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
           req.tokenHash = hash(token);
           expire();
         }
+        req.resourceId=req.params.id;
         Promise.resolve(handler(req, res)).catch(next);
       } catch (error) { next(error); }
     });
@@ -125,7 +127,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
           p.targetId = target.id; p.bank = '澄川银行';
         } else { p.targetId = 'system'; }
         if (!existing) {
-          const spent = get("SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE user_id=? AND type='transfer' AND status IN ('pending','completed') AND substr(created_at,1,10)=?", user.id, now().slice(0, 10)).total;
+          const spent = dailyTotal(bank,user.id,b._excludeId||'',businessDate(b._businessAt||now()));
           requireThat(spent + amount <= user.daily_limit, '已超出每日转账限额，可前往安全中心调整', 409, 'DAILY_LIMIT');
         }
         title = `转账 · ${p.recipientName}`; break;
@@ -181,12 +183,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (debit && !existing) requireThat(account.balance - account.held >= amount, '可用余额不足', 409, 'INSUFFICIENT_FUNDS');
     return { p: { ...p, debit }, title, amount, account };
   }
-  function createTransaction(user, body, key) {
-    const fingerprint = hash(canonical(body));
+  function createTransaction(user, body, key, context={}) {
+    const fingerprint = hash(JSON.stringify(canonical(body)));
     const previous = get('SELECT * FROM transactions WHERE user_id=? AND idempotency_key=?', user.id, key);
     if (previous) { requireThat(previous.fingerprint === fingerprint, '该幂等键已用于其他请求', 409, 'IDEMPOTENCY_CONFLICT'); return previous; }
     return atomic(() => {
-      const { p, title, amount, account } = prepare(user, body);
+      const { p, title, amount, account } = prepare(user, {...body,_excludeId:context.excludeId,_businessAt:context.at});
       const tx = id('TX'), created = now(), expires = new Date(Date.now() + 900000).toISOString();
       if (p.debit) run('UPDATE accounts SET held=held+? WHERE id=?', amount, account.id);
       run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', tx, user.id, body.type, amount, title, 'pending', JSON.stringify(p), account.id, created, created, expires, key, fingerprint);
@@ -194,10 +196,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
       return get('SELECT * FROM transactions WHERE id=?', tx);
     });
   }
-  function settle(user, t) {
+  function settle(user, t, permit) {
+    services.authorization.assertSettlement(permit,user,t);
     requireThat(t.user_id === user.id && t.status === 'pending', '交易状态无效', 409, 'INVALID_STATE');
         const payload = JSON.parse(t.payload);
         const { p, account } = prepare(user, { ...payload, amount: t.amount }, true);
+        if(t.type==='transfer')requireThat(dailyTotal(bank,user.id,t.id,businessDate(permit.at),permit.at)+t.amount<=get('SELECT daily_limit FROM users WHERE id=?',user.id).daily_limit,'已超出每日转账限额',409,'DAILY_LIMIT');
         if (p.scenario === 'bank_rejected') fail('模拟收款行拒绝入账，预留资金已释放', 409, 'BANK_REJECTED');
         if (p.debit) {
           requireThat(account.held >= t.amount && account.balance >= t.amount, '预留资金不足', 409, 'INSUFFICIENT_FUNDS');
@@ -229,8 +233,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
         } else if (t.type === 'credit_spend') {
           run('UPDATE credit_cards SET used=used+? WHERE user_id=?', t.amount, user.id);
         } else if (t.type === 'payment') post(t.id, account.id, 'system', t.amount, t.title, t.type);
-        run("UPDATE transactions SET status='completed',updated_at=? WHERE id=?", now(), t.id);
-        audit(user.id, 'transaction.completed', t.id, { amount: t.amount, type: t.type });
+        run("UPDATE transactions SET status='completed',updated_at=?,completed_at=? WHERE id=?", now(), permit.at||now(), t.id);
+        audit(user.id, 'transaction.completed', t.id, { amount: t.amount, type: t.type,runId:permit.runId,actionId:permit.actionId,planId:permit.planId,stepId:permit.stepId,authorizationId:permit.authorizationId,subscriptionId:permit.subscriptionId,mandateSource:permit.mandateSource });
         notify(user.id, '交易完成', `${t.title} ¥${money(t.amount)}，已完成。`);
     return get('SELECT * FROM transactions WHERE id=?', t.id);
   }
@@ -287,7 +291,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('patch', '/accounts/:id', '冻结或解冻借记卡', (req, res) => {
     pin(req.user, req.body.pin); const a = accountFor(req.user, req.params.id);
     requireThat(['active', 'frozen', 'lost'].includes(req.body.status), '状态无效');
-    atomic(() => { directVerification.consume(req.user, `/accounts/${a.id}`, req.body); requireThat(a.status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂', 409); run('UPDATE accounts SET status=? WHERE id=?', req.body.status, a.id); if(req.body.status === 'lost') for(const tx of all("SELECT * FROM transactions WHERE account_id=? AND status='pending'",a.id)) finishFailed(tx,'failed','银行卡已挂失'); audit(req.user.id, 'account.status_changed', a.id, { status: req.body.status }); });
+    atomic(() => { const proof=directVerification.consume(req.user, `/accounts/${a.id}`, req.body); req.directProof=proof; requireThat(a.status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂', 409); run('UPDATE accounts SET status=? WHERE id=?', req.body.status, a.id); if(req.body.status === 'lost') for(const tx of all("SELECT * FROM transactions WHERE account_id=? AND status='pending'",a.id)) finishFailed(tx,'failed','银行卡已挂失'); audit(req.user.id, 'account.status_changed', a.id, { status: req.body.status }); directVerification.complete(proof,{card:a.id,status:req.body.status}); });
     res.json({ ok: true });
   });
   route('post', '/transactions', '创建待确认交易并预留余额；请求金额单位：元', (req, res) => {
@@ -315,12 +319,13 @@ export function createApp(dbPath = ':memory:', options = {}) {
     requireThat(t.status === 'pending', '该交易已结束，无法确认', 409, 'INVALID_STATE');
     try {
       atomic(() => {
-        directVerification.consume(req.user, `/transactions/${t.id}/confirm`, req.body);
-        settle(req.user, t);
+        const proof=directVerification.consume(req.user, `/transactions/${t.id}/confirm`, req.body);
+        const result=settle(req.user, t,proof.permit);
+        directVerification.complete(proof,result);
       });
     } catch (error) {
-      if (!(error instanceof BusinessError) || ['VERIFICATION_REQUIRED','INVALID_VERIFICATION'].includes(error.code)) throw error;
-      atomic(() => finishFailed(t, 'failed', error.message));
+      if (!(error instanceof BusinessError) || ['VERIFICATION_REQUIRED','INVALID_VERIFICATION','SUPPLEMENTAL_VERIFICATION_REQUIRED','AUTHORIZATION_MISMATCH'].includes(error.code)) throw error;
+      atomic(() => { directVerification.fail(req.user,`/transactions/${t.id}/confirm`,error); finishFailed(t, 'failed', error.message); });
     }
     res.json(transactionView(get('SELECT * FROM transactions WHERE id=?', t.id)));
   }, true, { required: ['pin'], properties: { pin: { type: 'string', pattern: '^\\d{6}$' } } });
@@ -343,7 +348,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('get', '/credit-card', '信用卡额度与账单', (req, res) => res.json(get('SELECT * FROM credit_cards WHERE user_id=?', req.user.id)));
   route('patch', '/credit-card', '冻结或解冻信用卡', (req, res) => {
     pin(req.user, req.body.pin); requireThat(['active', 'frozen', 'lost'].includes(req.body.status), '状态无效');
-    atomic(() => { directVerification.consume(req.user, '/credit-card', req.body); requireThat(get('SELECT status FROM credit_cards WHERE user_id=?',req.user.id).status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂',409); run('UPDATE credit_cards SET status=? WHERE user_id=?', req.body.status, req.user.id); audit(req.user.id, 'credit.status_changed', '', { status: req.body.status }); }); res.json({ ok: true });
+    atomic(() => { const proof=directVerification.consume(req.user, '/credit-card', req.body); req.directProof=proof; requireThat(get('SELECT status FROM credit_cards WHERE user_id=?',req.user.id).status !== 'lost' || req.body.status !== 'frozen', '挂失卡片需先解挂',409); run('UPDATE credit_cards SET status=? WHERE user_id=?', req.body.status, req.user.id); audit(req.user.id, 'credit.status_changed', '', { status: req.body.status }); directVerification.complete(proof,{status:req.body.status}); }); res.json({ ok: true });
   });
   route('get', '/payees', '常用收款人', (req, res) => res.json(all('SELECT * FROM payees WHERE user_id=?', req.user.id)));
   route('post', '/payees', '保存常用收款人', (req, res) => {
@@ -372,10 +377,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (req.body.newPin !== undefined) { requireThat(/^\d{6}$/.test(req.body.newPin), '新支付密码须为6位数字'); changes.pin_hash = hashPassword(req.body.newPin); }
     requireThat(Object.keys(changes).length, '未提供需要修改的设置');
     atomic(() => {
-      directVerification.consume(req.user, '/settings', req.body);
+      const proof=directVerification.consume(req.user, '/settings', req.body);
+      req.directProof=proof;
       for (const [key, value] of Object.entries(changes)) run(`UPDATE users SET ${key}=? WHERE id=?`, value, req.user.id);
       if (changes.password_hash || changes.pin_hash) run('DELETE FROM sessions WHERE user_id=? AND token<>?', req.user.id, req.tokenHash);
       audit(req.user.id, 'settings.updated', '', { fields: Object.keys(changes) });
+      directVerification.complete(proof,{settingsUpdated:true});
     }); res.json({ ok: true });
   });
   route('get', '/notifications', '站内消息', (req, res) => res.json(all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC', req.user.id)));
@@ -411,7 +418,13 @@ export function createApp(dbPath = ':memory:', options = {}) {
   app.use((error, _req, res, _next) => {
     const status = error instanceof BusinessError ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
     if (status === 500) console.error('Bank API error:', error.message);
-    res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message } });
+    const action=_req.user&&_req.resourceId?get('SELECT decision FROM agent_actions WHERE id=? AND user_id=?',_req.resourceId,_req.user.id):null;
+    const latest=error.decision||(action?.decision?JSON.parse(action.decision):null);
+    const requirement=['VERIFICATION_REQUIRED','INVALID_VERIFICATION','APP_VERIFICATION_REQUIRED','SUPPLEMENTAL_VERIFICATION_REQUIRED','FACE_REQUIRED','INVALID_CODE','VERIFICATION_EXPIRED'].includes(error.code);
+    const decision=latest?(requirement?latest:{...latest,outcome:'deny',evaluatedAt:now(),reasons:[{code:error.code||'INTERNAL_ERROR',message:status===500?'服务暂时不可用':error.message}]}):null;
+    if(_req.directProof)atomic(()=>directVerification.fail(_req.user,_req.path.replace(/^\/api/,''),error));
+    if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
+    res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
   });
   return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); } };
 }
