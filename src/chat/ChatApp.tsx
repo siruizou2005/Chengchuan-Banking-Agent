@@ -13,7 +13,7 @@ import './chat.css';
 
 const money = (cents: number) => (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function MessageBubble({ message, userName }: { message: Message; userName: string }) {
+function MessageBubble({ message, userName, onAsk }: { message: Message; userName: string; onAsk?: (text: string) => void }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   useEffect(() => { if (copied) { const timer = setTimeout(() => setCopied(false), 1800); return () => clearTimeout(timer); } }, [copied]);
@@ -25,7 +25,7 @@ function MessageBubble({ message, userName }: { message: Message; userName: stri
     catch { setCopyError(true); }
   }
   if (message.role === 'user') return <article className="msg user"><div className="bubble">{message.text}</div><Avatar size={34} /></article>;
-  return <article className="msg assistant">
+  return <article className="msg assistant" id={`msg-${message.id}`}>
     <span className="chat-avatar" aria-hidden="true"><Logo size={34} /></span>
     <div className="msg-body">
       <span className="msg-name">澄川智能助手</span>
@@ -35,7 +35,7 @@ function MessageBubble({ message, userName }: { message: Message; userName: stri
         {message.sources && <p className="data-note">数据来源：{message.sources.join('、')}{message.asOf && `，${new Date(message.asOf).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 更新`}</p>}
         {message.truncated && <p className="data-note">回复已达长度上限，可以请助手继续说。</p>}
       </div>
-      {message.events && <EventCards events={message.events} />}
+      {message.events && <EventCards events={message.events} onAsk={onAsk} />}
       {message.trace && message.trace.length > 0 && <DecisionTrace trace={message.trace} />}
       <button className="copy-button" onClick={copy} aria-label={copied ? '已复制' : '复制回复'}>{copied ? <Check size={12} /> : <Copy size={12} />}<span>{copyError ? '复制失败，请手动选择文本' : copied ? '已复制' : '复制'}</span></button>
     </div>
@@ -66,6 +66,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const shouldScroll = useRef(false);
+  const replyAnchor = useRef(''), started = useRef(false);
   const [startedAt, setStartedAt] = useState(() => new Date());
   const [historyOpen, setHistoryOpen] = useState(false), [sessions, setSessions] = useState<AgentSession[] | null>(null), [historyError, setHistoryError] = useState(''), [historyBusy, setHistoryBusy] = useState(false), [pendingDelete, setPendingDelete] = useState('');
   const sessionId = currentSessionId(messages);
@@ -76,11 +77,12 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
       .catch(() => { if (alive) { setConfigured(false); setError('无法连接聊天服务，请刷新后重试。'); } });
     // 恢复本浏览器上次打开的对话；对话已删除或不属于当前用户时静默开始新对话。
     const stored = readStoredSession(user.id);
-    if (stored) restore(stored, false).catch(() => storeSession(user.id, ''));
+    if (stored) restore(stored, false, true).catch(() => storeSession(user.id, ''));
     return () => { alive = false; };
   }, []);
-  async function restore(id: string, scroll = true) {
+  async function restore(id: string, scroll = true, onLoad = false) {
     const detail = await api<AgentSessionDetail>(`/agent/sessions/${id}`);
+    if (onLoad && started.current) return; // the user already asked something; don't cancel it to reopen the old chat
     controller.current?.abort(); controller.current = null; cancelVoice();
     const restored: Message[] = detail.messages.map(m => ({ id: crypto.randomUUID(), role: m.role, text: m.text, sessionId: id, ...(m.role === 'assistant' ? { events: m.events, trace: m.trace, runId: m.runId, asOf: m.at, sources: ['澄川银行服务端工具结果'] } : {}) }));
     shouldScroll.current = scroll;
@@ -99,7 +101,10 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     catch (e) { setHistoryError((e as Error).message); } finally { setHistoryBusy(false); }
   }
   useEffect(() => () => { controller.current?.abort(); recorder.current?.cancel(); voiceAbort.current?.abort(); voiceGeneration.current++; }, []);
+  // A new reply is read from its first line, so stop at its top instead of the bottom of the cards.
+  // Jump instantly: smooth scrolling never runs while the tab is in the background.
   useEffect(() => {
+    if (replyAnchor.current) { document.getElementById(`msg-${replyAnchor.current}`)?.scrollIntoView({ block: 'start' }); replyAnchor.current = ''; shouldScroll.current = false; return; }
     if (shouldScroll.current) bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, busy, error, notice]);
   useEffect(() => {
@@ -112,7 +117,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
-      if (!active.signal.aborted) { setMessages([...next, { ...response, id: crypto.randomUUID(), role: 'assistant' }]); if (response.sessionId) storeSession(user.id, response.sessionId); await refresh(); }
+      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); await refresh(); }
     } catch (failure) {
       if (!active.signal.aborted) {
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
@@ -125,6 +130,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   }
   function send(text = draft) {
     const content = text.trim(); if (!content || controller.current || !configured) return;
+    started.current = true;
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text: content }];
     setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
   }
@@ -173,7 +179,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
         {data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() && <LockedCard message={`锁定至 ${new Date(data.agentLockedUntil).toLocaleTimeString('zh-CN')}`} />}
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
-        <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} />)}</div>
+        <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
         {messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">聊天服务尚未配置，请在服务器 .env 中设置 CHAT_API_KEY 后重启。</div>}
         <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>

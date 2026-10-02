@@ -53,8 +53,8 @@
 | GET /me | 当前用户 |
 | GET /dashboard | 账户、持仓、贷款、信用卡、最近 500 条流水/100 条交易、消息，以及 agentActions、agentPlans、subscriptions、virtualCards、reservations、scheduledTasks、bindings、agentLockedUntil |
 | GET /transactions?status=pending | 最近最多 500 条交易，可筛选状态 |
-| GET /ledger?direction=income&q=工资 | 最近最多 2000 条匹配流水；direction 支持 income/expense |
-| GET /ledger/export | 全部流水 CSV 下载 |
+| GET /ledger?preset=last_30_days&direction=expense&category=餐饮美食&q=美团 | 最多 2000 条匹配流水。时段（北京时间）用 `preset`（同智能体工具取值）、`period`（YYYY / YYYY-MM / YYYY-MM-DD）或 `from`+`to`，不传为全部；`direction` 为 income/expense；`kind`（`spend` 表示消费加退款）、`category`、`platform`（如 支付宝、银行卡快捷支付、澄川银行）按统一口径筛选；`q` 匹配摘要、对方、商户、附言、交易编号。每行附带 `kind`、`tag`、`bj_time`，导入流水另含 `txn_type`、`counterparty`、`merchant`、`platform` 等统一字段，见 README |
+| GET /ledger/export | 按与 `/ledger` 相同的筛选导出 CSV：交易编号、北京时间、摘要、金额、余额、分类、类型、交易类型、对方户名、商户、支付平台、附言、来源银行 |
 | PATCH /accounts/{id} | status=active/frozen/lost、pin；解冻（lost/frozen→active）与挂失为红色，需附 verificationActionId + verificationToken |
 | GET /products /holdings /loans /credit-card | 分别获取业务资源 |
 | PATCH /credit-card | status=active/frozen/lost、pin；解冻与挂失同上 |
@@ -84,7 +84,7 @@
 
 - `messages` 只接受 user/assistant 角色，最多 24 条、单条 6000 字、合计 12000 字，最后一条必须是 user。历史 assistant 消息不构成已执行的证据。
 - `sessionId` 可选；首轮由服务端生成并返回，后续携带以归入同一对话。`expectedUserId` 可选，登录账户变化时返回 409 `ACCOUNT_CHANGED`。
-- 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
+- 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`stats`（多维统计，两者都带 `suggestions` 追问建议，每轮最多一张）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
 - 智能体锁定时返回 200 且 `events` 含 `locked`；`AGENT_DISABLED=true` 或锁定期间的工具调用与提议接口返回 423 `AGENT_LOCKED`。
 
 ### 动作与计划
@@ -154,7 +154,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认 ACT…
 
 ### 工具清单
 
-查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
+查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`spending_stats`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
 
 已登记低风险副作用（绿）：`remember` 仅保存本人主动要求的非敏感偏好，`set_reminder` 仅创建站内提醒，`handover_to_human` 仅创建模拟工单。
 

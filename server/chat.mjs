@@ -19,9 +19,9 @@ export function accountContext(snapshot) {
     holdings: snapshot.holdings.map(h => pick(h, ['principal', 'created_at', 'unlock_at', 'product'])),
     loans: snapshot.loans.map(l => pick(l, ['principal', 'outstanding', 'months', 'status', 'created_at'])),
     creditCard: { ...pick(snapshot.creditCard, ['credit_limit', 'used', 'status']), number: mask(snapshot.creditCard?.number) },
-    recentLedger: snapshot.ledger.slice(0, 30).map(l => pick(l, ['amount', 'balance_after', 'title', 'category', 'created_at'])),
+    recentLedger: snapshot.ledger.slice(0, 30).map(l => pick(l, ['amount', 'balance_after', 'title', 'bj_time', 'kind', 'tag', 'merchant', 'platform'])),
     recentTransactions: snapshot.transactions.slice(0, 20).map(t => pick(t, ['type', 'amount', 'title', 'status', 'created_at', 'error'])),
-    scope: '流水最多最近30条，交易最多最近20条；不代表完整历史。未提供其他用户资料。',
+    scope: '流水最多最近30条（bj_time为北京时间），交易最多最近20条；不代表完整历史，统计请调用bill_report或spending_stats。未提供其他用户资料。',
   };
 }
 

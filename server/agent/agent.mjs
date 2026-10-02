@@ -8,9 +8,13 @@ export function validateMessages(messages) {
  requireThat(Array.isArray(messages)&&messages.length>0&&messages.length<=24&&messages.at(-1)?.role==='user'&&messages.every(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string'&&m.content.trim()&&m.content.length<=6000)&&messages.reduce((n,m)=>n+m.content.length,0)<=12000,'对话内容过长或格式无效，请开始新对话',400,'INVALID_MESSAGES');
  return messages.map(m=>({role:m.role,content:m.content}));
 }
+const CARD_TOOLS=new Set(['bill_report','spending_stats','detect_anomalies']);
 const instructions=`你是澄川银行AI Banking Agent，所有银行业务均为虚拟模拟。你可以查询、分析、规划、提议，只有服务端能决定权限、确认与执行。
-只依据工具返回的数据陈述事实；金额返回是整数分，输入工具金额是元字符串。不编造交易、回单、收款人、余额或收益。不能声明提议已完成。金额、状态、回单以服务端卡片为准。
+只依据工具返回的数据陈述事实；金额返回是整数分（bill_report、spending_stats标明unit为元的除外），输入工具金额是元字符串。不编造交易、回单、收款人、余额或收益。不能声明提议已完成。金额、状态、回单以服务端卡片为准。
 “今天”“本月”“今年”以服务端给出的北京时间日期为准，不得根据最近一笔流水推断当前月份。本月账单调用bill_report时使用服务端给出的本月期间，即使该期间暂无流水。展示ISO时间时必须转换到北京时间，不能将UTC时间直接标为北京时间。
+账单分析：时段优先用preset（today/yesterday/this_week/last_week/last_7_days/last_30_days/this_month/last_month/last_3_months/this_year），具体日期用period（YYYY-MM-DD/YYYY-MM/YYYY）或from+to。日报、周报、月报、年报用bill_report；按分类、商户、支付平台、日期、星期、小时统计用spending_stats；查看具体流水用get_ledger。每次回答最多调用一个统计工具（bill_report、spending_stats、detect_anomalies三选一，选最贴合问题的那个），其余角度等用户追问再查。每个新的统计问题（换了时段、维度、分类或商户）都必须重新调用工具，不能用历史回答里的数字推算或代替。口径：消费=消费−退款；转账给他人单列；本人账户互转、充值提现、理财存款、信用卡/贷款不计入消费。“支付宝支出”“微信支付支出”是原银行只显示支付平台、看不到具体商户的消费，要如实说明，不要猜测商户。coverage.partial为真或时段超出数据范围时，说明数据只覆盖到哪天。bj_time只有日期的流水没有具体时间，不能据此分析几点消费。
+描述历史流水时用“支出”“消费”“转出”“付款记录”等措辞，不要写“已支付”“已转账”“已完成”。
+有统计卡片时，文字只写2到3句：先说总额，再点出最大的一两项或最值得注意的变化；不要用表格或列表复述卡片里的数字，不要罗列“需要我…吗”的选项，卡片下方会给出继续查看的建议。
 订阅明细查询list_subscriptions也需要黄色确认，确认前只能说明查询范围，不能声称已读取明细。remember仅保存偏好，set_reminder仅创建站内提醒，handover_to_human仅创建工单，不附带资金变更。任何付款、卡片、订阅、理财等写操作调用propose工具，展示明细等待用户确认。不得代替用户调用确认，不得索取支付密码、短信验证码、密钥。IM红色操作必须回App。
 转账先resolve_recipient，用返回的recipient创建提议；多个候选必须澄清。不要猜金额、时间、收款人。理财先查询产品与风险匹配；收益是模拟展示，不保证收益。
 复合任务用create_plan创建有dependsOn的DAG，明确日期、商户、金额、锁定资金与提醒。生日偏好用remember保存；未指定预算/商户时询问，或清楚说明你拟定的模拟鲜花200元、蛋糕300元、生日当月锁定1000元方案交用户确认。生日若今年已过用明年，锁定到月底。锁定1000元不代表已经花费。
@@ -54,7 +58,9 @@ export function createAgent(services,options={}) {
      for(const call of message.tool_calls){
       abort.signal.throwIfAborted();services.guard.assertOpen(user.id);
       const start=Date.now();let result,args;
-      try{args=JSON.parse(call.function.arguments||'{}');result=await executeTool(services,user,call.function.name,args,{channel,sessionId,runId});}
+      // One chart or table per answer; further angles come from the card's follow-up suggestions.
+      if(CARD_TOOLS.has(call.function.name)&&events.some(e=>['report','stats','anomalies'].includes(e.type)))result={ok:false,error:{code:'ONE_CARD_PER_TURN',message:'本轮已生成一张统计卡片，请只基于它简要回答；其他角度等用户追问再查询'}};
+      else try{args=JSON.parse(call.function.arguments||'{}');result=await executeTool(services,user,call.function.name,args,{channel,sessionId,runId});}
       catch(error){result={ok:false,error:{code:error.code||'TOOL_ERROR',message:error instanceof BusinessError?error.message:'分析或工具执行失败，请调整参数'}};}
       const safe=redact(result);if(result.event)events.push(result.event);
       const summary=JSON.stringify(safe.data||safe.error);
@@ -68,7 +74,7 @@ export function createAgent(services,options={}) {
     output=message.content?.trim()||'';
     if(unsupportedSuccess(output)){
      trace.push({tool:'guard.hallucination',ok:false,result:'检测到无回单支持的成功断言'});
-     if(!correction&&round<5){correction=true;conversation.push({role:'assistant',content:output},{role:'system',content:'本轮没有已完成的银行动作。上一回答中的成功断言不真实，请纠正：动作仅为待确认提议，用户必须在卡片确认。'});continue;}
+     if(!correction&&round<5){correction=true;conversation.push({role:'assistant',content:output},{role:'system',content:'本轮没有已完成的银行动作。上一回答中的成功断言不真实，请纠正：动作仅为待确认提议，用户必须在卡片确认。若只是描述历史流水，请改用支出、消费、转出等措辞重写。'});continue;}
      output=events.some(e=>['action','plan'].includes(e.type))?'已生成待确认操作，请核对下方卡片并完成确认；目前尚未执行。':'本轮没有执行银行写操作，请以账户查询结果为准。';
     }
     break;

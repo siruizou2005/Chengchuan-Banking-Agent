@@ -14,6 +14,7 @@ import { createVerification, registerVerification } from './verify.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
+import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL } from './agent/analytics.mjs';
 import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
@@ -241,7 +242,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   function state(user) {
     const accounts = all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', user.id);
     const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal>0 ORDER BY created_at DESC', user.id).map(h => ({ ...h, product: products.find(p => p.id === h.product_id) }));
-    const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id);
+    const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id).map(enrich);
     return {
       ...(services ? services.snapshot(user) : {}),
       user: publicUser(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, ledger, products,
@@ -329,17 +330,18 @@ export function createApp(dbPath = ':memory:', options = {}) {
     }
     res.json(transactionView(get('SELECT * FROM transactions WHERE id=?', t.id)));
   }, true, { required: ['pin'], properties: { pin: { type: 'string', pattern: '^\\d{6}$' } } });
-  route('get', '/ledger', '收支流水，支持方向与关键字过滤', (req, res) => {
-    let rows = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 2000', req.user.id);
-    if (req.query.direction === 'income') rows = rows.filter(x => x.amount > 0);
-    if (req.query.direction === 'expense') rows = rows.filter(x => x.amount < 0);
-    if (req.query.q) rows = rows.filter(x => x.title.includes(String(req.query.q)) || x.transaction_id.includes(String(req.query.q)));
-    res.json(rows);
-  });
-  route('get', '/ledger/export', '导出当前用户流水 CSV', (req, res) => {
-    const rows = all('SELECT l.* FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC', req.user.id);
-    const escape = v => { let s = String(v); if (/^[=+@\t\r]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
-    const csv = [['交易编号', '时间', '摘要', '金额（元）', '余额（元）'], ...rows.map(r => [r.transaction_id, r.created_at, r.title, money(r.amount), money(r.balance_after)])].map(r => r.map(escape).join(',')).join('\r\n');
+  // Periods are Beijing dates: filter by UTC bounds in SQL, then classify and filter the rest in JS.
+  function ledgerQuery(user, query) {
+    const q = key => query[key] === undefined ? undefined : String(query[key]);
+    const range = q('preset') || q('period') || q('from') || q('to') ? resolveRange({ preset: q('preset'), period: q('period'), from: q('from'), to: q('to') }, businessDate()) : null;
+    const rows = all(`SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=?${range ? ' AND l.created_at>=? AND l.created_at<?' : ''} ORDER BY l.created_at DESC,l.id DESC`, user.id, ...(range ? utcBounds(range) : []));
+    return selectLedger(rows.map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), keyword: q('q') });
+  }
+  route('get', '/ledger', '收支流水，支持时段（preset/period/from/to，北京时间）、方向、类型、分类与关键字过滤', (req, res) => res.json(ledgerQuery(req.user, req.query).slice(0, 2000)));
+  route('get', '/ledger/export', '按相同筛选条件导出流水 CSV', (req, res) => {
+    const rows = ledgerQuery(req.user, req.query);
+    const escape = v => { let s = String(v ?? ''); if (/^[=+@\t\r]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
+    const csv = [['交易编号', '北京时间', '摘要', '金额（元）', '余额（元）', '分类', '类型', '交易类型', '对方户名', '商户', '支付平台', '附言', '来源银行'], ...rows.map(r => [r.transaction_id, r.bj_time, r.title, money(r.amount), money(r.balance_after), r.tag, KIND_LABEL[r.kind], r.txn_type, r.counterparty, r.merchant, r.platform, r.memo, r.source_bank])].map(r => r.map(escape).join(',')).join('\r\n');
     res.type('text/csv; charset=utf-8').attachment('chengchuan-statement.csv').send('\uFEFF' + csv);
   });
   route('get', '/products', '模拟存款与理财产品', (_req, res) => res.json(products));

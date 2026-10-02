@@ -177,6 +177,20 @@ test('生活缴费入账，手机号和户号格式验证', async t => {
   assert.match((await f.req('/ledger/export')).data, /生活缴费/); f.balanced();
 });
 
+test('流水按北京时间时段、分类筛选，导出遵守同一筛选', async t => {
+  const f = await fixture(t), token = (await f.login('13300133000')).token, get = path => f.request(path, undefined, token);
+  const may = (await get('/ledger?from=2026-05-01&to=2026-05-01')).data;
+  assert.ok(may.some(r => r.created_at === '2026-04-30T16:29:25.000Z' && r.bj_time === '2026-05-01 00:29'));
+  assert.ok(!(await get('/ledger?period=2026-04')).data.some(r => r.created_at === '2026-04-30T16:29:25.000Z'));
+  const food = (await get(`/ledger?period=2026-09&category=${encodeURIComponent('餐饮美食')}`)).data;
+  assert.ok(food.length > 0 && food.every(r => r.tag === '餐饮美食' && r.kind === 'consumption' && r.bj_time.startsWith('2026-09')));
+  const recent = (await get('/ledger?preset=last_30_days')).data, from = new Date(Date.now() + 8 * 3600000 - 29 * 86400000).toISOString().slice(0, 10);
+  assert.ok(recent.every(r => r.bj_time.slice(0, 10) >= from));
+  assert.equal((await get('/ledger?from=2026-02-30&to=2026-03-01')).status, 400);
+  const csv = (await get(`/ledger/export?period=2026-09&category=${encodeURIComponent('餐饮美食')}`)).data.trim().split('\r\n');
+  assert.match(csv[0], /分类/); assert.equal(csv.length, food.length + 1);
+});
+
 test('注册新用户、收款人、客服和预约可保存且隔离', async t => {
   const f = await fixture(t);
   const user = await f.request('/auth/register', { phone: '13700137000', name: '模拟测试', password: 'Test123456', pin: '654321' }); assert.equal(user.status, 201);
@@ -212,5 +226,20 @@ test('SQLite重启保留用户与资金，不重复生成开户数据', () => {
   let bank = createBank(path);
   const initial = bank.all('SELECT id,balance FROM accounts ORDER BY id'); bank.db.close();
   bank = createBank(path); assert.deepEqual(bank.all('SELECT id,balance FROM accounts ORDER BY id'), initial);
-  assert.equal(bank.get('SELECT COUNT(*) AS count FROM users').count, 2); bank.db.close();
+  assert.equal(bank.get('SELECT COUNT(*) AS count FROM users').count, 5); bank.db.close();
+});
+
+test('导入流水使用模拟卡号，逐笔余额与原对账单一致', () => {
+  const bank = createBank(':memory:');
+  for (const [phone, name, rows, closing] of [['19900000000', '邹瑞', 131, 147848], ['13500135000', '万锦', 507, 568413], ['13300133000', '万奇', 472, 54]]) {
+    const account = bank.get("SELECT a.* FROM accounts a JOIN users u ON u.id=a.user_id WHERE u.phone=? AND u.name=? AND a.type='debit'", phone, name);
+    assert.match(account.number, /^621880\d{13}$/); assert.equal(account.balance, closing);
+    const ledger = bank.all('SELECT * FROM ledger WHERE account_id=? ORDER BY id', account.id);
+    assert.equal(ledger.length, rows); assert.equal(ledger[0].category, 'opening');
+    ledger.reduce((previous, row) => { assert.equal(previous + row.amount, row.balance_after); return row.balance_after; }, 0);
+    assert.ok(ledger.slice(1).every(row => row.txn_type && row.source_bank && row.time_precision));
+  }
+  assert.equal(bank.get('SELECT SUM(amount) AS value FROM ledger').value, 0);
+  assert.equal(bank.get("SELECT COUNT(*) AS n FROM ledger WHERE counterparty LIKE '%思瑞%' OR counterparty LIKE '%锦奇%' OR counterparty_account GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*'").n, 0);
+  bank.db.close();
 });

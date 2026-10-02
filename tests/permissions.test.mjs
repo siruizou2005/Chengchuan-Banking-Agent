@@ -26,7 +26,7 @@ test('显式策略登记、低风险副作用范围、拒绝结果和稳定嵌�
  const f=await fixture(t);
  for(const definition of toolDefinitions){const name=definition.function.name;assert.notEqual(name,'confirm');}
  assert.throws(()=>classify('unregistered_tool'),/未知/);
- assert.equal(classify('remember'),'green');assert.equal(classify('list_subscriptions'),'yellow');
+ assert.equal(classify('remember'),'green');assert.equal(classify('spending_stats'),'green');assert.equal(classify('list_subscriptions'),'yellow');
  assert.equal(classify('propose_split',{total:'50000',people:['someone']}),'yellow');
  const d=decide(f.bank,f.user,'get_overview',{}, {denial:{code:'NOT_OWNER',message:'无资源权限'}});
  assert.equal(d.outcome,'deny');assert.equal(d.reasons[0].code,'NOT_OWNER');assert.equal(d.policyVersion,'permissions-v2');

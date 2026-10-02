@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
@@ -14,6 +14,9 @@ export function verifyPassword(value, stored) {
   const [salt, hash] = stored.split(':');
   return timingSafeEqual(Buffer.from(hash, 'hex'), scryptSync(value, salt, 64));
 }
+
+// Optional, source-neutral ledger details; native rows leave them NULL.
+export const LEDGER_DETAIL = ['txn_type','bank_summary','counterparty','counterparty_account','merchant','platform','channel','memo','time_precision','source_bank','source_detail'];
 
 export const products = [
   { id: 'deposit-90', type: 'deposit', name: '安心存三个月', subtitle: '90天整存整取，支持提前支取', rate: 1.35, days: 90, minimum: 5000, risk: '存款', tags: ['50元起存', '到期可取'], description: '人民币整存整取定期存款，存期90天，支持提前支取。演示环境按本金结算，不计付利息。' },
@@ -119,6 +122,7 @@ export function createBank(path) {
     ['agent_actions','params_digest','TEXT'],['agent_actions','decision','TEXT'],['agent_actions','run_id','TEXT'],
     ['agent_actions','authorization_until','TEXT'],['agent_actions','verification_until','TEXT'],['agent_actions','pause_reason','TEXT'],
     ['verifications','params_digest','TEXT'],['verifications','revision','INTEGER'],['verifications','face_reason','TEXT'],
+    ...LEDGER_DETAIL.map(column=>['ledger',column,'TEXT']),
   ]) if (!all(`PRAGMA table_info(${table})`).some(c=>c.name===column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY,created_at TEXT NOT NULL);
@@ -149,20 +153,21 @@ export function createBank(path) {
   }
   function audit(user, action, resource = '', detail = {}) { run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, resource, JSON.stringify(detail), now()); }
   function notify(user, title, body) { run('INSERT INTO notifications(id,user_id,title,body,created_at) VALUES(?,?,?,?,?)', id('N'), user, title, body, now()); }
-  function post(tx, from, to, amount, title, category, date = now()) {
+  function post(tx, from, to, amount, title, category, date = now(), detail = {}) {
     for (const [account, delta] of [[from, -amount], [to, amount]]) {
       run('UPDATE accounts SET balance=balance+? WHERE id=?', delta, account);
       const row = get('SELECT balance FROM accounts WHERE id=?', account);
-      run('INSERT INTO ledger(transaction_id,account_id,amount,balance_after,title,category,created_at) VALUES(?,?,?,?,?,?,?)', tx, account, delta, row.balance, title, category, date);
+      const extra = account === 'system' ? {} : detail;
+      run(`INSERT INTO ledger(transaction_id,account_id,amount,balance_after,title,category,created_at,${LEDGER_DETAIL}) VALUES(?,?,?,?,?,?,?${',?'.repeat(LEDGER_DETAIL.length)})`, tx, account, delta, row.balance, title, category, date, ...LEDGER_DETAIL.map(c => extra[c] ?? null));
     }
   }
-  function newUser(phone, name, password, pin, number) {
+  function newUser(phone, name, password, pin, number, opening = 12865080) {
     const userId = id('U'), accountId = id('A');
     run('INSERT INTO users(id,phone,name,password_hash,pin_hash,created_at) VALUES(?,?,?,?,?,?)', userId, phone, name, hashPassword(password), hashPassword(pin), now());
     const cardNumber = number || `621880${String(BigInt('0x' + randomBytes(6).toString('hex'))).padStart(13, '0').slice(-13)}`;
     run('INSERT INTO accounts(id,user_id,number,name) VALUES(?,?,?,?)', accountId, userId, cardNumber, '澄川银行 · 借记卡');
     run('INSERT INTO credit_cards(id,user_id,number) VALUES(?,?,?)', id('C'), userId, '622880' + cardNumber.slice(6));
-    post(id('SEED'), 'system', accountId, 12865080, '模拟开户资金', 'income', number ? new Date(Date.now() - 30 * 86400000).toISOString() : now());
+    if (opening) post(id('SEED'), 'system', accountId, opening, '模拟开户资金', 'income', number ? new Date(Date.now() - 30 * 86400000).toISOString() : now());
     notify(userId, '欢迎来到澄川银行', '模拟账户已开通。开户资金、信用卡账单和产品均为虚拟数据，可用于体验与测试。');
     audit(userId, 'user.created', userId);
     return userId;
@@ -203,6 +208,23 @@ export function createBank(path) {
         if(sub.amount===amount)run('INSERT OR IGNORE INTO subscription_mandates VALUES(?,?,?,?,?,?,?,?)',sub.id,user.id,merchant,amount,'monthly','explicit_demo_seed','active',now());
       }
       audit(user.id, 'demo.history.v2');
+    });
+  }
+  // Statements imported from other banks: renamed holders, simulated card numbers, masked counterparty accounts.
+  // Rows start with a back-computed opening balance, so balance_after reproduces the source statement.
+  const imported = JSON.parse(readFileSync(new URL('./seed/imported-statements.json', import.meta.url), 'utf8'));
+  for (const s of imported.users) {
+    if (get('SELECT id FROM users WHERE phone=?', s.phone)) continue;
+    atomic(() => {
+      const userId = newUser(s.phone, s.name, 'Bank123456', '123456', s.card, 0);
+      const account = get("SELECT id FROM accounts WHERE user_id=? AND type='debit'", userId).id;
+      for (const values of s.rows) {
+        const r = Object.fromEntries(imported.columns.map((c, i) => [c, values[i]]));
+        const detail = { ...r, source_bank: s.source_bank, source_detail: r.source_detail && JSON.stringify(r.source_detail) };
+        post(id('IMP'), r.amount > 0 ? 'system' : account, r.amount > 0 ? account : 'system', Math.abs(r.amount), r.title, r.category, r.created_at, detail);
+      }
+      if (get('SELECT balance FROM accounts WHERE id=?', account).balance !== s.closing) throw new Error(`导入流水余额不符：${s.name}`);
+      audit(userId, 'statement.imported', account, { sourceBank: s.source_bank, period: s.period, rows: s.rows.length });
     });
   }
   if (!get("SELECT version FROM schema_migrations WHERE version='permissions-v2'")) atomic(()=>{
