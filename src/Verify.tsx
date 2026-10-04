@@ -35,7 +35,7 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
     finally { stopCamera(); if (alive.current) setBusy(false); }
   }
   async function skip() { setBusy(true); try { await api('/verify/face', 'POST', { id, skipped: true, reason: fallback }); setStep('sms'); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  return <Modal title="App 强验证" onClose={onCancel}><div className="stack-form verify-flow">
+  return <Modal title="App 加强验证" onClose={onCancel}><div className="stack-form verify-flow">
     <div className="verify-steps"><span className={step !== 'sms' ? 'active' : ''}>1 人脸演示</span><span className={step === 'sms' ? 'active' : ''}>2 短信验证码</span><span>3 支付密码</span></div>
     <Notice>演示模拟：摄像头仅采集本地画面摘要，不进行真实生物识别。短信验证码投递至本站消息中心。</Notice>
     {step === 'start' && <button className="btn-primary" disabled={busy} onClick={start}><ShieldCheck size={18} />开始验证并发送模拟短信</button>}

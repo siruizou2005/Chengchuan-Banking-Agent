@@ -10,9 +10,14 @@ export function eventsText(result,{maskAmounts=false}={}) {
  const yuan=n=>maskAmounts?'****':(n/100).toFixed(2);
  const text=[result.text];
  for(const event of result.events||[]){const a=event.data;
+<<<<<<< HEAD
   if(['action','plan'].includes(event.type)){text.push(a.level==='red'?`【待App强验证·红】${a.title}\n操作编号：${a.id}\n请打开澄川银行App完成人脸模拟、短信验证码及支付密码确认。`:`【待确认·黄】${a.title}${a.args.note?'\n备注：'+a.args.note:''}\n操作编号：${a.id}\n回复「确认 ${a.id}」执行，「取消 ${a.id}」放弃。`);}
   if(event.type==='report')text.push(a.totals?`【账单·${a.label}】${a.from}至${a.to}\n消费¥${yuan(a.totals.consumption)}（已扣退款），转账给他人¥${yuan(a.totals.transferOut)}，收入¥${yuan(a.totals.income)}\n${a.categories.slice(0,6).map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}${a.excluded.length?'\n不计入消费：'+a.excluded.map(e=>`${e.name} 转出¥${yuan(e.out)} 转入¥${yuan(e.in)}`).join('；'):''}`:`【账单·${a.period}】收入¥${yuan(a.income)}，支出¥${yuan(a.expense)}\n${a.categories.map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}`);
   if(event.type==='stats')text.push(`【统计·${a.label}·${STATS_LABEL[a.by]}】合计¥${yuan(a.total)}\n${[...a.buckets].filter(b=>b.count).sort((x,y)=>y.amount-x.amount).slice(0,8).map(b=>`${b.key} ¥${yuan(b.amount)}`).join('；')}`);
+=======
+  if(['action','plan'].includes(event.type)){text.push(a.level==='red'?`【待App加强验证】${a.title}\n操作编号：${a.id}\n请打开澄川银行App完成人脸模拟、短信验证码及支付密码确认。`:`【待授权确认】${a.title}${a.args.note?'\n备注：'+a.args.note:''}\n操作编号：${a.id}\n回复「确认 ${a.id}」执行，「取消 ${a.id}」放弃。`);}
+  if(event.type==='report')text.push(`【账单·${a.period}】收入¥${yuan(a.income)}，支出¥${yuan(a.expense)}\n${a.categories.map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}`);
+>>>>>>> f5aeb41 (Adjust expression)
   if(event.type==='subscriptions')text.push('【订阅】'+a.subscriptions.map(s=>`${s.merchant} ¥${yuan(s.amount)}/月（${s.status}）`).join('；'));
  }
  const output=text.join('\n\n');return maskAmounts?output.replace(/(?:¥|￥)\s*[\d,.]+/g,'¥****'):output;
@@ -23,19 +28,19 @@ export function createChannelRouter(services,agent,options={}) {
  function bind(channel,externalId,code){const key=`bind:${channel}:${hash(externalId)}`;services.checkRate(key);services.badAttempt(key);return atomic(()=>{
   const row=get('SELECT * FROM channel_codes WHERE code_hash=? AND channel=? AND used=0 AND expires_at>?',hash(code),channel,now());requireThat(row,'绑定码无效或已过期',403,'INVALID_BIND_CODE');
   requireThat(!get("SELECT id FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",channel,externalId),'该渠道账号已绑定，请先在App解绑',409);
-  const bindingId=id('BIND');run("INSERT INTO channel_bindings(id,user_id,channel,external_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,status='active',token=NULL,cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,row.user_id,channel,externalId,now());run('UPDATE channel_codes SET used=1 WHERE id=?',row.id);audit(row.user_id,'channel.bound',bindingId,{channel});notify(row.user_id,'消息渠道已绑定',`已授权${channel==='feishu'?'飞书':'微信'}聊天中确认黄色操作。红色操作仍需App验证。`);return get('SELECT * FROM channel_bindings WHERE channel=? AND external_id=?',channel,externalId);
+  const bindingId=id('BIND');run("INSERT INTO channel_bindings(id,user_id,channel,external_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,status='active',token=NULL,cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,row.user_id,channel,externalId,now());run('UPDATE channel_codes SET used=1 WHERE id=?',row.id);audit(row.user_id,'channel.bound',bindingId,{channel});notify(row.user_id,'消息渠道已绑定',`已绑定${channel==='feishu'?'飞书':'微信'}。需授权确认的操作，请在私聊中核对后逐笔确认；需加强验证的操作，请回App完成验证。`);return get('SELECT * FROM channel_bindings WHERE channel=? AND external_id=?',channel,externalId);
  });}
  function unbind(user,bindingId,pin){services.pin(user,pin);atomic(()=>{requireThat(run("UPDATE channel_bindings SET status='revoked',token=NULL,context_token=NULL WHERE id=? AND user_id=?",bindingId,user.id).changes,'绑定不存在',404);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",user.id,bindingId))services.cancel(user,a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",bindingId);audit(user.id,'channel.unbound',bindingId);});return {ok:true};}
  async function receive({channel,externalId,messageId,text,contextToken}){
   if(!['feishu','wechat'].includes(channel)||typeof text!=='string'||text.length>6000||!externalId||!messageId)return '';
   if(!run('INSERT OR IGNORE INTO channel_messages VALUES(?,?,?)',channel,messageId,now()).changes)return '';
   try{
-   if(channel==='feishu'&&/^绑定\s*\d{6}$/.test(text.trim())){bind(channel,externalId,text.match(/\d{6}/)[0]);return '绑定成功，可查询账户或提议业务。回复「确认」授权黄色操作；红色操作需回App。';}
+   if(channel==='feishu'&&/^绑定\s*\d{6}$/.test(text.trim())){bind(channel,externalId,text.match(/\d{6}/)[0]);return '绑定成功，可查询账户或提议业务。需授权确认时，请核对详情后回复「确认 操作编号」；需加强验证时，请回App完成验证。';}
    const binding=get("SELECT * FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",channel,externalId);
    if(!binding)return channel==='feishu'?'请在澄川银行App「消息渠道绑定」生成绑定码，再回复「绑定 123456」。':'请在澄川银行App「消息渠道绑定」重新扫码。';
    if(contextToken)run('UPDATE channel_bindings SET context_token=? WHERE id=?',crypto.encrypt(contextToken),binding.id);
    const user=get('SELECT * FROM users WHERE id=?',binding.user_id);
-   if(/^(帮助|help)$/i.test(text.trim()))return '可查余额、分析账单、提议转账或规划生日。黄色操作回复「确认」，红色操作请回App；解绑请到App安全中心。';
+   if(/^(帮助|help)$/i.test(text.trim()))return '可查余额、分析账单、提议转账或规划生日。需授权确认时，回复「确认 操作编号」；需加强验证时，请回App完成验证。解绑请到App安全中心。';
    if(text.trim()==='解绑')return '请回App安全中心输入支付密码解绑。';
    const command=text.trim().match(/^(确认|取消)(?:\s+([A-Za-z0-9]+))?$/);
    if(command){

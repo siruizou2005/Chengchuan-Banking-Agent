@@ -41,5 +41,5 @@ export const liveAdapter: ChatAdapter = {
 };
 
 export function initialMessages(): Message[] {
-  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '您好，我是澄川银行智能助手。可以查询账户、分析账单、安排转账和联动计划。资金与卡片操作会先生成待确认卡片；高风险操作需在App完成强验证。' }];
+  return [{ id: 'welcome', role: 'assistant', welcome: true, text: '您好，我是澄川银行智能助手。可以查询账户、分析账单、安排转账和联动计划。资金与卡片操作会先生成待确认卡片，请核对后授权；涉及较大金额或重要账户变更时，需在App完成加强验证。' }];
 }

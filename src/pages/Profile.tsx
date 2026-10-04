@@ -43,7 +43,7 @@ export function Security() {
     <Card title="智能助手安全">
       <Row icon={IcoBell} tone="blue" title="消息渠道绑定" subtitle="飞书 / 微信 ClawBot" onClick={() => navigate('channels')} />
       <Row icon={IcoClock} tone="orange" title="智能助手操作与计划" onClick={() => navigate('tasks')} />
-      <Row icon={IcoShield} tone="coral" title="智能助手安全" subtitle={data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() ? `已锁定至 ${date(data.agentLockedUntil)}` : '正常 · 服务端三级权限保护'} onClick={() => openModal('解除智能助手锁定', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/agent/unlock', f, '智能助手已解锁')) closeModal(); }}><PinField /><Submit>解除锁定</Submit></form>)} />
+      <Row icon={IcoShield} tone="coral" title="智能助手安全" subtitle={data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() ? `已锁定至 ${date(data.agentLockedUntil)}` : '已开启 · 按操作需要确认与验证'} onClick={() => openModal('解除智能助手锁定', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/agent/unlock', f, '智能助手已解锁')) closeModal(); }}><PinField /><Submit>解除锁定</Submit></form>)} />
       <Row icon={IcoKeypad} tone="gold" title="验证方式" subtitle="摄像头人脸演示 + 站内短信模拟 + 支付密码" />
     </Card>
     <Card title="交易保护">

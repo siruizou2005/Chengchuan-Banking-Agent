@@ -56,7 +56,7 @@ export function createVerification(bank, services) {
   }
   // Called inside the same database transaction as confirmation and settlement.
   function consume(user,actionId,token) {
-    requireThat(typeof token==='string' && token.length===64,'此操作需在App完成强验证',403,'VERIFICATION_REQUIRED');
+    requireThat(typeof token==='string' && token.length===64,'此操作需在App完成加强验证',403,'VERIFICATION_REQUIRED');
     const v=get('SELECT * FROM verifications WHERE user_id=? AND action_id=? AND token_hash=? AND used=0 AND token_expires_at>?',user.id,actionId,hash(token),now());
     requireThat(v,'验证令牌无效、已使用或与操作不匹配',403,'INVALID_VERIFICATION');
     const action=owned(user,actionId);

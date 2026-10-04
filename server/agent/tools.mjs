@@ -20,14 +20,18 @@ const definitions={
  get_products_and_holdings:['查询产品目录、风险说明与本人持仓',obj()],
  get_credit_card:['查询本人信用卡',obj()],get_loans:['查询本人贷款',obj()],get_payees:['查询本人收款人簿（脱敏）',obj()],
  resolve_recipient:['按姓名、手机号、账号查找收款人；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
+<<<<<<< HEAD
  bill_report:['生成账单报告，不传参数为本月。日报用period=YYYY-MM-DD或preset=today/yesterday，周报this_week/last_week，月报YYYY-MM或this_month/last_month，年报YYYY，也可任意from+to。返回消费（已扣退款）、转账给他人、收入、消费分类占比、商户Top5、收入来源、不计入消费的本人互转/充值提现/理财、趋势、环比与数据覆盖范围；本工具金额单位为元',obj(range)],spending_stats:['按维度统计，默认本月消费（已扣退款）。by：category分类/merchant商户/platform支付平台/month按月/week按周/day按日/weekday按星期/hour按小时；category只看某分类（如餐饮美食），keyword按商户关键词（如美团），kind可改为income/transfer_out等。时段参数同bill_report；本工具金额单位为元',obj({...range,by:{type:'string',enum:STATS_BY},kind,category:str(20),keyword:str(40),limit:{type:'integer',minimum:1,maximum:31}},['by'])],detect_anomalies:['检测异常支出（大额、深夜、首次大额、24小时同额重复），仅为模拟规则提示；可选时段，不传为全部流水',obj(range)],list_subscriptions:['提议查询本人订阅与周期扣费明细，黄色确认前只返回查询范围',obj()],
+=======
+ bill_report:['按YYYY-MM月份或YYYY年度生成账单报告',obj({period:str(7)})],detect_anomalies:['检测账单中异常支出；仅为模拟规则提示',obj()],list_subscriptions:['提议查询本人订阅与周期扣费明细，用户授权确认前只返回查询范围',obj()],
+>>>>>>> f5aeb41 (Adjust expression)
  compare_products:['对比产品（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含today（北京时间日期）、本人全部ledger（含kind、tag、bj_time及导入明细字段，金额整数分）和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
  remember:['用户明确要求记住的偏好或日期，不保存任何密码/验证码/密钥',obj({key:str(60),value:str(300)},['key','value'])],recall:['读取本人主动保存的记忆',obj()],
  propose_transfer:['提议转账，必须使用resolve_recipient返回的recipient，确认前不会扣款',obj({recipient:str(),amount:money,note:str(100),scheduleAt:str(40)},['recipient','amount'])],
  propose_payment:['提议缴费或模拟商户消费',obj({billType:{type:'string',enum:['water','electricity','gas','mobile','broadband','property','scan','merchant']},billNumber:str(30),merchant:str(50),amount:money},['billType','amount'])],
  propose_split:['提议AA收款，people为收款请求接收者的recipient，每人均分total，生成银行内收款链接',obj({total:money,people:arr(str(),20),note:str(100)},['total','people'])],
- propose_subscribe_product:['提议申购理财或定期，需要风险匹配和App强验证',obj({productId:str(),amount:money},['productId','amount'])],
+ propose_subscribe_product:['提议申购理财或定期，需要风险匹配和App加强验证',obj({productId:str(),amount:money},['productId','amount'])],
  propose_redeem:['提议赎回本人持仓',obj({holdingId:str(),amount:money},['holdingId','amount'])],
  propose_loan_draw:['提议贷款提款',obj({amount:money,months:{type:'integer',enum:[3,6,12,24]}},['amount'])],
  propose_loan_repay:['提议归还贷款本金',obj({loanId:str(),amount:money},['loanId','amount'])],propose_credit_repay:['提议信用卡还款',obj({amount:money},['amount'])],

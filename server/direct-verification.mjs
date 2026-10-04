@@ -44,7 +44,7 @@ export function registerDirectVerification(route,services) {
   const check=inspect(user,path,body);let action,factors=['explicit_confirmation','pin'];
   if(check.decision.level==='red') {
    action=bank.get("SELECT * FROM agent_actions WHERE id=? AND user_id=? AND tool='direct_operation' AND status='proposed' AND expires_at>?",body.verificationActionId||'',user.id,now());
-   if(!action||JSON.parse(action.args).digest!==check.digest){const error=new BusinessError('此操作需先完成App强验证',403,'VERIFICATION_REQUIRED');error.decision=check.decision;throw error;}
+   if(!action||JSON.parse(action.args).digest!==check.digest){const error=new BusinessError('此操作需先完成App加强验证',403,'VERIFICATION_REQUIRED');error.decision=check.decision;throw error;}
    factors.push(...services.verification.consume(user,action.id,body.verificationToken));
   }else action=create(user,path,check);
   const args=JSON.parse(action.args);
@@ -57,6 +57,6 @@ export function registerDirectVerification(route,services) {
  function fail(user,path,error) {
   for(const action of bank.all("SELECT * FROM agent_actions WHERE user_id=? AND tool='direct_operation' AND status='proposed'",user.id))if(JSON.parse(action.args).path===path){authorization.revoke(action.id,error.code);bank.run('UPDATE verifications SET used=1 WHERE action_id=?',action.id);bank.run("UPDATE agent_actions SET status='failed',error=? WHERE id=?",error.message,action.id);bank.audit(user.id,'authorization.execution_rejected',action.id,{code:error.code});}
  }
- route('post','/verify/intent','业务页面模拟强验证意图（绑定具体参数）',(req,res)=>res.json(start(req.user,req.body.path,req.body.body||{})));
+ route('post','/verify/intent','业务页面模拟加强验证意图（绑定具体参数）',(req,res)=>res.json(start(req.user,req.body.path,req.body.body||{})));
  return {start,consume,complete,fail};
 }

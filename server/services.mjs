@@ -77,7 +77,7 @@ export function createServices(bank,core,guard) {
    const saved=get('SELECT * FROM agent_actions WHERE id=?',actionId);run('UPDATE agent_actions SET params_digest=?,decision=?,run_id=? WHERE id=?',paramsDigest(actionParams(saved)),JSON.stringify(decision),context.runId||null,actionId);audit(user.id,'policy.evaluated',actionId,{phase:'propose',decision,runId:context.runId});
    if(tool==='create_plan')run('INSERT INTO agent_plans(id,user_id,action_id,title,steps,status,created_at) VALUES(?,?,?,?,?,?,?)',id('PLAN'),user.id,actionId,args.title,JSON.stringify(args.steps),'proposed',now());
    audit(user.id,'agent.action.proposed',actionId,{tool,args:redact(args),level,channel:context.channel||'app',runId:context.runId});
-   if(level==='red'&&context.channel&&context.channel!=='app')notify(user.id,'待App强验证操作',`${title}，请打开智能助手完成验证。操作编号：${actionId}`);
+   if(level==='red'&&context.channel&&context.channel!=='app')notify(user.id,'操作待加强验证',`${title}，请打开智能助手完成验证。操作编号：${actionId}`);
    return actionView(get('SELECT * FROM agent_actions WHERE id=?',actionId));
   });
  }
@@ -183,7 +183,7 @@ export function createServices(bank,core,guard) {
   const initialDecision=policyDecision(user,action.tool,currentPlanArgs(action,args),{excludeId:action.id,confirmed:true});
   if(rank[action.level]>rank[initialDecision.level])initialDecision.level=action.level;
   recordDecision(user,action,initialDecision,'confirm');action=owned(user,actionId);
-  if(action.level==='red')requireThat(context.channel==='app','红色操作必须返回App完成强验证',403,'APP_VERIFICATION_REQUIRED');
+  if(action.level==='red')requireThat(context.channel==='app','此操作需返回App完成加强验证',403,'APP_VERIFICATION_REQUIRED');
   try{
    atomic(()=>{
     action=owned(user,actionId);
@@ -253,7 +253,7 @@ export function createServices(bank,core,guard) {
   run("UPDATE agent_plans SET status='awaiting_verification' WHERE action_id=?",action.id);
   const plan=get('SELECT * FROM agent_plans WHERE action_id=?',action.id);if(plan){const steps=parse(plan.steps);for(const s of steps)if(s.status==='pending')s.status='awaiting_verification';run('UPDATE agent_plans SET steps=? WHERE id=?',JSON.stringify(steps),plan.id);}
   run("UPDATE scheduled_tasks SET status='awaiting_verification',error=? WHERE action_id=? AND status='pending'",reason,action.id);
-  audit(user.id,'agent.action.awaiting_verification',action.id,{reason,until});notify(user.id,'定时操作需补充模拟强验证',action.title+'：'+reason+'。请在 '+until+' 前验证。');pushResult(action,'【需回App补充模拟强验证】'+action.title+'，编号：'+action.id);
+  audit(user.id,'agent.action.awaiting_verification',action.id,{reason,until});notify(user.id,'定时操作需补充模拟加强验证',action.title+'：'+reason+'。请在 '+until+' 前验证。');pushResult(action,'【需回App补充模拟加强验证】'+action.title+'，编号：'+action.id);
  }
  function cancel(user,actionId) {
   const a=owned(user,actionId);if(a.status==='cancelled')return actionView(a);

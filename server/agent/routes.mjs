@@ -9,7 +9,7 @@ export function registerAgentRoutes(route,services,agent) {
  route('post','/agent/chat','智能体工具对话',chat);route('post','/chat','兼容智能体对话',chat);
  route('get','/agent/actions','本人待确认与已执行动作',(req,res)=>res.json(services.snapshot(req.user).agentActions));
  route('post','/agent/actions','从业务页面提议操作',(req,res)=>res.status(201).json(services.propose(req.user,req.body.tool,req.body.args,{channel:'app'})));
- route('post','/agent/actions/:id/confirm','PIN及必要强验证后执行动作',(req,res)=>res.json(services.confirm(req.user,req.params.id,req.body,{channel:'app'})));
+ route('post','/agent/actions/:id/confirm','PIN及必要加强验证后执行动作',(req,res)=>res.json(services.confirm(req.user,req.params.id,req.body,{channel:'app'})));
  route('post','/agent/actions/:id/cancel','取消待确认或定时操作',(req,res)=>res.json(services.cancel(req.user,req.params.id)));
  route('get','/agent/plans','本人联动计划',(req,res)=>res.json(services.plans(req.user)));
  route('post','/agent/plans/:id/abort','中断计划并释放未使用资金',(req,res)=>res.json(services.abortPlan(req.user,req.params.id)));

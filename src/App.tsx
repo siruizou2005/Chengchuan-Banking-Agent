@@ -56,7 +56,7 @@ export default function App() {
     try {
       if (path === '/settings' || path === '/credit-card' || /^\/accounts\/[A-Za-z0-9]+$/.test(path)) {
         const intent = await api('/verify/intent', 'POST', { path, body });
-        const proof = await new Promise<ApprovalProof | null>(resolve => setApproval({ actionId: intent.actionId, title: intent.required ? '强验证已完成，请输入支付密码确认本次修改。' : '请核对设置并输入支付密码确认。', resolve }));
+        const proof = await new Promise<ApprovalProof | null>(resolve => setApproval({ actionId: intent.actionId, title: intent.required ? '身份验证已完成，请输入支付密码确认本次修改。' : '请核对设置并输入支付密码确认。', resolve }));
         if (!proof) return false;
         body = { ...(body as Record<string, unknown>), ...proof };
       }
