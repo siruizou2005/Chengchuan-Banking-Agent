@@ -31,6 +31,6 @@ export function registerChat(route, _snapshotFor, options = {}) {
     const config = getConfig();
     res.json({ configured: Boolean(config.apiKey && config.baseUrl), model: config.model,
       voice: Boolean(process.env.DASHSCOPE_API_KEY), agentDisabled: process.env.AGENT_DISABLED === 'true',
-      channels: { feishu: Boolean(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET), wechat: process.env.WECHAT_ENABLED === 'true' } });
+      channels: { feishu: Boolean(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET), feishuPersonal: process.env.FEISHU_PERSONAL_ENABLED === 'true' && /^https:\/\/[^/]+$/.test(process.env.PUBLIC_ORIGIN || ''), wechat: process.env.WECHAT_ENABLED === 'true' } });
   }, false);
 }

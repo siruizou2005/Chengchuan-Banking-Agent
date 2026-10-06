@@ -124,7 +124,14 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 
 绑定后可在私聊中查询、分析和提议业务。可直接办理的操作直接执行（`CHANNEL_MASK_AMOUNTS=true` 可隐藏金额），需授权确认的操作回复「确认 操作编号」逐笔明确授权（绑定只提供身份和确认渠道；只有一笔待处理动作时可省略编号，多笔必须指定），加强验证不可在 IM 完成：服务端创建待验证动作 → App 消息中心通知 + 首页/助手页「待验证」卡片 → App 内完成人脸模拟、短信验证码、支付密码 → 结果回推 IM。解绑在 App 安全中心（需支付密码），同时撤销该渠道未执行的操作及授权，释放剩余预留；微信绑定失效也执行此撤销流程。
 
-**飞书**（`@larksuiteoapi/node-sdk` WebSocket 长连接，无需公网回调）：
+**飞书专属机器人**（面向储户，推荐）：储户用支付密码发起，服务端调用 SDK 的 `registerApp`（OAuth 2.0 设备授权）生成二维码；储户用飞书扫码确认后，在自己的飞书里创建一个只属于自己的机器人，服务端拿到该机器人的 App ID / Secret 与储户 open_id 并自动绑定，无需绑定码。随后服务端用该机器人自身的令牌调用「更新应用开发配置」，把事件订阅改为 HTTP 回调 `${PUBLIC_ORIGIN}/api/channels/feishu/events/<绑定编号>`，并为每个机器人生成独立的 Encrypt Key 与 Verification Token；飞书校验地址成功后绑定才生效。
+
+- 只申请 `im:message`、`im:message:send_as_bot`、`im:message.p2p_msg:readonly`、`application:application:patch` 与事件 `im.message.receive_v1`（`preset:false` 最小基座）；只处理机器人主人本人的私聊消息。
+- 资源占用：不建立长连接、不跑轮询或定时器，空闲时每位储户只占数据库一行；收发消息时才创建 SDK 客户端，放进最多 100 个、30 分钟未用即丢弃的缓存。进行中的创建每人 1 个、全局最多 20 个，3 分钟无人查看或 10 分钟到期即中止。
+- 凭据用 `CHANNEL_SECRET` 加密存储，不返回前端。推送失败时若飞书拒绝为该凭据签发令牌（例如储户已删除应用），绑定转为「登录已失效」并撤销该渠道未执行的操作。
+- 需要 `FEISHU_PERSONAL_ENABLED=true` 且 `PUBLIC_ORIGIN` 为 https 地址（本地无公网地址时自动显示未开启）。解绑后储户可在飞书开发者后台自行删除该应用。
+
+**飞书共享机器人**（银行飞书组织成员可用；`@larksuiteoapi/node-sdk` WebSocket 长连接，无需公网回调）：
 
 1. 在 [open.feishu.cn](https://open.feishu.cn) 创建自建应用，「添加应用能力」开启机器人。
 2. 权限管理开通 `im:message`、`im:message:send_as_bot`、`im:message.p2p_msg:readonly`。
@@ -141,7 +148,8 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 | `CHAT_API_KEY` / `CHAT_BASE_URL` / `CHAT_MODEL` | 聊天模型，OpenAI 兼容且支持 tools；`CHAT_BASE_URL` 不含 `/chat/completions` |
 | `DASHSCOPE_API_KEY` / `ASR_MODEL` / `ASR_BASE_URL` | 百炼语音识别，未配置则隐藏麦克风 |
 | `CHANNEL_SECRET` | 64 位十六进制，AES-256-GCM 加密渠道令牌 |
-| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书自建应用凭据 |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书共享机器人（自建应用）凭据 |
+| `FEISHU_PERSONAL_ENABLED` | `true` 时开放储户一键创建飞书专属机器人（另需 https 的 `PUBLIC_ORIGIN`） |
 | `WECHAT_ENABLED` / `CHANNEL_MASK_AMOUNTS` | 微信 iLink 开关 / IM 回复隐藏金额 |
 | `AGENT_DISABLED` | `true` 时全局关闭智能体 |
 | `PORT` / `BANK_DB` / `PUBLIC_ORIGIN` / `TRUST_PROXY` / `SESSION_SECURE` | 服务运行参数 |

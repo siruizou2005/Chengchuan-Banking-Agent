@@ -18,14 +18,17 @@ export function eventsText(result,{maskAmounts=false}={}) {
  const output=text.join('\n\n');return maskAmounts?output.replace(/(?:¥|￥)\s*[\d,.]+/g,'¥****'):output;
 }
 export function createChannelRouter(services,agent,options={}) {
- const {bank}=services,{get,run,all,atomic,audit,notify}=bank,crypto=createChannelCrypto(options.secret||process.env.CHANNEL_SECRET),busy=new Set();
+ const {bank}=services,{get,run,all,atomic,audit,notify}=bank,crypto=createChannelCrypto(options.secret||process.env.CHANNEL_SECRET),busy=new Set(),revokeListeners=[];
+ const revoked=bindingId=>{for(const listener of revokeListeners)listener(bindingId);};
+ // Shared by every channel whose upstream credentials stop working: cancel what the binding started, then tell the user.
+ function expire(binding,title,body){atomic(()=>{run("UPDATE channel_bindings SET status='expired',token=NULL,context_token=NULL WHERE id=?",binding.id);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",binding.user_id,binding.id))services.cancel({id:binding.user_id},a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",binding.id);audit(binding.user_id,'channel.expired',binding.id,{channel:binding.channel});notify(binding.user_id,title,body);});revoked(binding.id);}
  function createCode(user,pin){services.pin(user,pin);const code=String(randomInt(100000,1000000));atomic(()=>{run("UPDATE channel_codes SET used=1 WHERE user_id=? AND channel='feishu'",user.id);run('INSERT INTO channel_codes VALUES(?,?,?,?,?,0)',id('BIND'),user.id,hash(code),'feishu',new Date(Date.now()+300000).toISOString());audit(user.id,'channel.code_created','',{channel:'feishu'});});return {code,expiresIn:300};}
  function bind(channel,externalId,code){const key=`bind:${channel}:${hash(externalId)}`;services.checkRate(key);services.badAttempt(key);return atomic(()=>{
   const row=get('SELECT * FROM channel_codes WHERE code_hash=? AND channel=? AND used=0 AND expires_at>?',hash(code),channel,now());requireThat(row,'绑定码无效或已过期',403,'INVALID_BIND_CODE');
   requireThat(!get("SELECT id FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",channel,externalId),'该渠道账号已绑定，请先在App解绑',409);
   const bindingId=id('BIND');run("INSERT INTO channel_bindings(id,user_id,channel,external_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,status='active',token=NULL,cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,row.user_id,channel,externalId,now());run('UPDATE channel_codes SET used=1 WHERE id=?',row.id);audit(row.user_id,'channel.bound',bindingId,{channel});notify(row.user_id,'消息渠道已绑定',`已绑定${channel==='feishu'?'飞书':'微信'}。需授权确认的操作，请在私聊中核对后逐笔确认；需加强验证的操作，请回App完成验证。`);return get('SELECT * FROM channel_bindings WHERE channel=? AND external_id=?',channel,externalId);
  });}
- function unbind(user,bindingId,pin){services.pin(user,pin);atomic(()=>{requireThat(run("UPDATE channel_bindings SET status='revoked',token=NULL,context_token=NULL WHERE id=? AND user_id=?",bindingId,user.id).changes,'绑定不存在',404);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",user.id,bindingId))services.cancel(user,a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",bindingId);audit(user.id,'channel.unbound',bindingId);});return {ok:true};}
+ function unbind(user,bindingId,pin){services.pin(user,pin);atomic(()=>{requireThat(run("UPDATE channel_bindings SET status='revoked',token=NULL,context_token=NULL WHERE id=? AND user_id=?",bindingId,user.id).changes,'绑定不存在',404);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",user.id,bindingId))services.cancel(user,a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",bindingId);audit(user.id,'channel.unbound',bindingId);});revoked(bindingId);return {ok:true};}
  async function receive({channel,externalId,messageId,text,contextToken}){
   if(!['feishu','wechat'].includes(channel)||typeof text!=='string'||text.length>6000||!externalId||!messageId)return '';
   if(!run('INSERT OR IGNORE INTO channel_messages VALUES(?,?,?)',channel,messageId,now()).changes)return '';
@@ -60,5 +63,5 @@ export function createChannelRouter(services,agent,options={}) {
   route('post','/channels/code','PIN授权飞书绑定码',(req,res)=>res.json(createCode(req.user,req.body.pin)));
   route('post','/channels/:id/unbind','PIN解绑消息渠道',(req,res)=>res.json(unbind(req.user,req.params.id,req.body.pin)));
  }
- return {receive,createCode,bind,unbind,register,crypto};
+ return {receive,createCode,bind,unbind,expire,onRevoke:listener=>revokeListeners.push(listener),register,crypto};
 }

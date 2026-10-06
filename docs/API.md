@@ -70,7 +70,7 @@
 | POST /appointments | branch、service、date（YYYY-MM-DD，未来 30 天内） |
 | POST /appointments/{id}/cancel | {} |
 | GET /audit | 最近 500 条本人操作日志 |
-| GET /health /agent/manifest /openapi.json /chat/status | 公开的健康状态、能力、接口信息；`/chat/status` 返回 `{configured, model, voice, agentDisabled, channels:{feishu,wechat}}` |
+| GET /health /agent/manifest /openapi.json /chat/status | 公开的健康状态、能力、接口信息；`/chat/status` 返回 `{configured, model, voice, agentDisabled, channels:{feishu,feishuPersonal,wechat}}` |
 
 ## 智能体接口
 
@@ -144,11 +144,14 @@
 
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
-| GET /channels | 已绑定渠道：`id`、`channel`、`status`（active/revoked/expired）、`created_at` |
+| GET /channels | 已绑定渠道：`id`、`channel`、`status`（active/revoked/expired）、`created_at`、`personal`（飞书专属机器人） |
 | POST /channels/code | `{pin}` → `{code, expiresIn:300}` 飞书一次性绑定码；在飞书私聊发送「绑定 123456」 |
 | POST /channels/{id}/unbind | `{pin}`，解绑并撤销该渠道未执行的动作 |
 | POST /channels/wechat/qr | `{pin}` → `{id, qrcode_img_content, expiresIn}`，需 `WECHAT_ENABLED=true` 与 `CHANNEL_SECRET` |
 | GET /channels/wechat/qr/{id} | `{status: wait|scaned|confirmed|expired, bindingId?}` 轮询扫码状态 |
+| POST /channels/feishu/register | `{pin}` → `{id, url, expiresIn}`，一键创建飞书专属机器人；`url` 用飞书扫码或在飞书中打开。需 `FEISHU_PERSONAL_ENABLED=true`、https 的 `PUBLIC_ORIGIN` 与 `CHANNEL_SECRET`；已有专属机器人返回 409 `FEISHU_BOT_EXISTS`，创建排队已满返回 429 `FEISHU_REGISTER_BUSY` |
+| GET /channels/feishu/register/{id} | `{status: wait|confirmed|denied|expired|failed, bindingId?, error?}`，页面可见时轮询；3 分钟无人查询则中止 |
+| POST /channels/feishu/events/{bindingId} | 飞书事件回调（无需登录），按该绑定的 Encrypt Key 解密并校验签名，自动应答 URL 校验；绑定不存在或已解绑时返回空对象 |
 
 IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认 ACT…」/「取消 ACT…」指定当前用户、渠道及绑定内动作。多笔不带编号时返回简短列表且不执行；只有一笔时可省略编号。重复确认返回原状态；红色升级也要求回 App。其他文本进入智能体。红色动作在 IM 只返回「请打开澄川银行 App 完成验证」。
 
