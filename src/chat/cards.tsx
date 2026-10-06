@@ -41,7 +41,6 @@ export function PlanCard({ plan }: { plan: AgentPlan }) {
   async function act(handover = false) { try { await api(`/agent/plans/${plan.id}/${handover ? 'handover' : 'abort'}`, 'POST', {}); await refresh(); toast(handover ? '计划已中断并创建人工工单' : '计划已中断，未使用资金已释放'); } catch (e) { toast((e as Error).message, true); } }
   return <div className="agent-plan"><p className="data-note">计划资金范围 ¥{yuan(plan.budget || 0)}{plan.authorization_until ? ` · 授权至 ${date(plan.authorization_until)}` : ''}</p>{plan.pause_reason && <Notice>{plan.pause_reason}</Notice>}<ol>{plan.steps.map(s => <li key={s.id} className={s.status}><i aria-hidden="true" /><div><strong>{s.title}</strong><small>{status[s.status]}{s.runAt || s.args.scheduleAt ? ` · ${date(s.runAt || s.args.scheduleAt)}` : ''}</small>{s.dependsOn.length > 0 && <small>依赖：{s.dependsOn.join('、')}</small>}{s.args.amount && <small>¥{s.args.amount}{s.args.merchant ? ` · ${s.args.merchant}` : ''}{s.args.recipientLabel ? ` · ${s.args.recipientLabel}` : ''}</small>}{s.args.cardLabel && <small>卡片：{s.args.cardLabel} · {s.args.action}</small>}{s.args.subscriptionLabel && <small>订阅：{s.args.subscriptionLabel}</small>}{s.args.productName && <small>产品：{s.args.productName}</small>}{s.args.purpose && <small>锁定用途：{s.args.purpose} · 截止 {date(s.args.until)}</small>}</div></li>)}</ol>{['active', 'completed', 'awaiting_verification'].includes(plan.status) && <div className="agent-buttons"><button className="pill" onClick={() => act()}>中断并释放锁定</button><button className="btn-text" onClick={() => act(true)}>转人工</button></div>}</div>;
 }
-<<<<<<< HEAD
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const span = (r: { from: string; to: string }) => r.from === r.to ? r.from : `${r.from} 至 ${r.to}`;
 const STATS_LABEL: Record<string, string> = { category: '按分类', merchant: '按商户', platform: '按支付平台', month: '按月', week: '按周', day: '按日', weekday: '按星期', hour: '按小时' };
@@ -117,7 +116,7 @@ function RankList({ buckets, drill, title }: { buckets: Bucket[]; drill: (key: s
 }
 // Reports saved before the analytics rewrite have no totals; keep rendering them as they were.
 function LegacyReportCard({ report }: { report: { period: string; income: number; expense: number; net: number; count: number; categories: { name: string; amount: number; share: number }[]; change: number | null; scope: string } }) {
- return <section className="agent-card report-card"><header><span className="agent-level green">绿 · 只读报告</span><span>{report.period}</span></header><h3>收支账单</h3><div className="report-totals"><div><small>收入</small><strong>¥{yuan(report.income)}</strong></div><div><small>支出</small><strong>¥{yuan(report.expense)}</strong></div></div><div className="report-bars">{report.categories.map(c => <div className="report-bar" key={c.name}><span>{c.name}</span><div><i style={{ width: `${Math.max(0, c.share * 100)}%` }} /></div><span>¥{yuan(c.amount)}<small>{pct(c.share)}</small></span></div>)}</div><p className="data-note">结余 ¥{yuan(report.net)} · {report.change === null ? '暂无上期可比数据' : `支出环比 ${report.change >= 0 ? '+' : ''}${pct(report.change)}`}</p><p className="data-note">{report.scope}</p></section>;
+ return <section className="agent-card report-card"><header><span className="agent-level green">账单分析</span><span>{report.period}</span></header><h3>收支账单</h3><div className="report-totals"><div><small>收入</small><strong>¥{yuan(report.income)}</strong></div><div><small>支出</small><strong>¥{yuan(report.expense)}</strong></div></div><div className="report-bars" role="img" aria-label={`支出分类，共${report.count}笔流水`}>{report.categories.map(c => <div className="report-bar" key={c.name}><span>{c.name}</span><div><i style={{ width: `${Math.max(0, c.share * 100)}%` }} /></div><span>¥{yuan(c.amount)}<small>{pct(c.share)}</small></span></div>)}</div><p className="data-note">结余 ¥{yuan(report.net)} · {report.change === null ? '暂无上期可比数据' : `支出环比 ${report.change >= 0 ? '+' : ''}${pct(report.change)}`}</p><p className="data-note">{report.scope}</p></section>;
 }
 export function ReportCard({ report, onAsk }: { report: any; onAsk?: Ask }) { return report.totals ? <BillReport report={report} onAsk={onAsk} /> : <LegacyReportCard report={report} />; }
 function BillReport({ report, onAsk }: { report: any; onAsk?: Ask }) {
@@ -132,7 +131,7 @@ function BillReport({ report, onAsk }: { report: any; onAsk?: Ask }) {
     report.coverage.partial && report.coverage.last ? `流水只到 ${report.coverage.last}` : '',
   ].filter(Boolean);
   return <section className="agent-card report-card">
-    <header><span className="agent-level green">绿 · 只读报告</span><span>{scope}</span></header>
+    <header><span className="agent-level green">账单分析</span><span>{scope}</span></header>
     <h3>{title}</h3>
     <div className="report-totals three"><div><small>消费</small><strong>¥{yuan(t.consumption)}</strong></div><div><small>收入</small><strong>¥{yuan(t.income)}</strong></div><div><small>{single ? '消费笔数' : '日均消费'}</small><strong>{single ? t.consumptionCount : `¥${yuan(t.dailyAverage)}`}</strong></div></div>
     <PartChart parts={report.categories} center="消费" value={t.consumption} title={name => `${name} · ${span(report)}`} drill={name => ({ from: report.from, to: report.to, category: name, kind: 'spend' })} />
@@ -151,7 +150,7 @@ export function StatsCard({ stats, onAsk }: { stats: any; onAsk?: Ask }) {
   const drillPart = (key: string): Query => stats.by === 'category' ? { ...base, category: key } : stats.by === 'platform' ? { ...base, platform: key } : isUnknownTag(key) ? { ...base, category: key } : { ...base, q: key };
   const timeTitle = (key: string) => stats.by === 'day' ? dayText(key) : stats.by === 'week' ? `${dayText(key)}起一周` : `${+key.slice(5)}月`;
   return <section className="agent-card report-card">
-    <header><span className="agent-level green">绿 · 只读统计</span><span>{scope}</span></header>
+    <header><span className="agent-level green">账单统计</span><span>{scope}</span></header>
     <h3>{KIND_TEXT[stats.kind] || stats.kind}{STATS_LABEL[stats.by]}{stats.category ? ` · ${stats.category}` : ''}{stats.keyword ? ` · “${stats.keyword}”` : ''}</h3>
     <div className="report-totals"><div><small>合计</small><strong>¥{yuan(stats.total)}</strong></div><div><small>笔数</small><strong>{stats.count}</strong></div></div>
     {!stats.count ? <p className="data-note">该时段没有符合条件的流水。</p>
@@ -161,10 +160,6 @@ export function StatsCard({ stats, onAsk }: { stats: any; onAsk?: Ask }) {
     {stats.skipped > 0 && <p className="data-note">{stats.skipped} 笔原对账单只有日期，未计入按小时统计。</p>}
     <Suggestions items={stats.suggestions} onAsk={onAsk} />
   </section>;
-=======
-export function ReportCard({ report }: { report: { period: string; income: number; expense: number; net: number; count: number; categories: { name: string; amount: number; share: number }[]; change: number | null; scope: string } }) {
- return <section className="agent-card report-card"><header><span className="agent-level green">账单分析</span><span>{report.period}</span></header><h3>收支账单</h3><div className="report-totals"><div><small>收入</small><strong>¥{yuan(report.income)}</strong></div><div><small>支出</small><strong>¥{yuan(report.expense)}</strong></div></div><div className="report-bars" role="img" aria-label={`支出分类，共${report.count}笔流水`}>{report.categories.map(c => <div className="report-bar" key={c.name}><span>{c.name}</span><div><i style={{ width: `${Math.max(0, c.share * 100)}%` }} /></div><span>¥{yuan(c.amount)}<small>{(c.share * 100).toFixed(1)}%</small></span></div>)}</div><p className="data-note">结余 ¥{yuan(report.net)} · {report.change === null ? '暂无上期可比数据' : `支出环比 ${report.change >= 0 ? '+' : ''}${(report.change * 100).toFixed(1)}%`}</p><p className="data-note">{report.scope}</p></section>;
->>>>>>> f5aeb41 (Adjust expression)
 }
 export function SubscriptionsCard({ subscriptions }: { subscriptions: Subscription[] }) {
  const { refresh, toast, data } = useBank(); const [actions, setActions] = useState<AgentAction[]>([]);
