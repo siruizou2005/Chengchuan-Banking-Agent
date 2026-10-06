@@ -196,15 +196,17 @@ test('修改计划步骤或任务参数使旧授权失效，失败释放所有�
  t.mock.timers.tick(61000);f.scheduler.runDue();assert.equal(f.services.owned(f.user,a.id).status,'failed');funds(f,b,0,0);audited(f,'scheduled.failed',steps[0].actionId);
 });
 
-test('IM多笔确认必须指定编号，跨绑定拒绝，解绑撤销计划并释放预留',async t=>{
+test('IM确认只给出App链接，多笔须指定编号，跨绑定拒绝，App确认后解绑撤销计划并释放预留',async t=>{
  clock(t);const f=await fixture(t),b=f.balance().balance,{code}=f.channels.router.createCode(f.user,'123456'),binding=f.channels.router.bind('feishu','alice',code);
  const context={channel:'feishu',sessionId:binding.id};
  const a=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'200'},context),other=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'100',scheduleAt:at(60)},context);
  let i=0;const receive=text=>f.channels.router.receive({channel:'feishu',externalId:'alice',messageId:'m'+i++,text});
  assert.match(await receive('确认'),/多笔/);funds(f,b,0,0);
- assert.match(await receive('确认 '+a.id),/操作完成/);assert.match(await receive('确认 '+a.id),/操作完成/);funds(f,b-20000,0,1);
+ assert.match(await receive('确认 '+a.id),/App内完成支付密码验证/);funds(f,b,0,0);
+ const confirmInApp=async id=>(await f.call(`/agent/actions/${id}/confirm`,{pin:'123456'})).data.status;
+ assert.equal(await confirmInApp(a.id),'completed');assert.equal(await confirmInApp(a.id),'completed');funds(f,b-20000,0,1);assert.match(await receive('确认 '+a.id),/操作完成/);
  const app=await transfer(f,'10');assert.match(await receive('确认 '+app.id),/没有该/);
- assert.match(await receive('确认 '+other.id),/等待执行/);funds(f,b-20000,10000,1);
+ assert.equal(await confirmInApp(other.id),'confirmed');assert.match(await receive('确认 '+other.id),/等待执行/);funds(f,b-20000,10000,1);
  await f.call(`/channels/${binding.id}/unbind`,{pin:'123456'});funds(f,b-20000,0,1);assert.equal(f.services.owned(f.user,other.id).status,'cancelled');
  t.mock.timers.tick(61000);f.scheduler.runDue();funds(f,b-20000,0,1);audited(f,'authorization.revoked',f.bank.get('SELECT id FROM operation_authorizations WHERE action_id=?',other.id).id);
 });
@@ -269,7 +271,7 @@ test('补充验证后重启恢复持久授权，任务和预留只消费一次',
 test('渠道解绑暂停中的整个计划，验证期限受原授权窗口约束',async t=>{
  clock(t);const f=await fixture(t),b=f.balance().balance,{code}=f.channels.router.createCode(f.user,'123456'),binding=f.channels.router.bind('feishu','pause-binding',code);
  const plan=f.services.propose(f.user,'create_plan',{title:'待解绑',steps:[{id:'a',title:'支付',tool:'propose_transfer',args:{recipient:f.recipient,amount:'500'},runAt:at(60)}]},{channel:'feishu',sessionId:binding.id});
- f.services.confirm(f.user,plan.id,{}, {channel:'feishu',bindingId:binding.id});
+ f.services.confirm(f.user,plan.id,{pin:'123456'});
  const spend=await transfer(f,'600');await approve(f,spend,await f.verify(spend.id));t.mock.timers.tick(61000);
  const until=at(120);f.bank.run('UPDATE agent_actions SET authorization_until=? WHERE id=?',until,plan.id);f.bank.run('UPDATE operation_authorizations SET expires_at=? WHERE action_id=?',until,plan.id);
  f.scheduler.runDue();assert.equal(f.services.owned(f.user,plan.id).verification_until,until);funds(f,b-60000,50000,1);

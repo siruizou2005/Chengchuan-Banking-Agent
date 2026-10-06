@@ -48,6 +48,7 @@
 @media (max-width: 360px) { .assistant-page .overview { grid-template-columns: 1fr; gap: 10px; } .assistant-page .overview > div + div { border-left: 0; padding-left: 0; border-top: 1px solid #e5e7ec; padding-top: 10px; } .assistant-page .chat-chips, .assistant-page .chat-hint, .assistant-page .chat-error { margin-left: 0; } }
 
 /* Server-owned agent result cards. */
+.focus-action .agent-card { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent); }
 .agent-card { margin: 12px 0; padding: 16px; border: 1px solid var(--line, #e8edf3); border-radius: 14px; background: var(--surface, #fff); color: var(--text, #172638); overflow-wrap: anywhere; }
 .agent-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted, #677586); }
 .agent-card h3 { margin: 12px 0; font-size: 16px; line-height: 1.5; }

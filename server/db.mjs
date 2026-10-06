@@ -122,6 +122,7 @@ export function createBank(path) {
     ['agent_actions','params_digest','TEXT'],['agent_actions','decision','TEXT'],['agent_actions','run_id','TEXT'],
     ['agent_actions','authorization_until','TEXT'],['agent_actions','verification_until','TEXT'],['agent_actions','pause_reason','TEXT'],
     ['verifications','params_digest','TEXT'],['verifications','revision','INTEGER'],['verifications','face_reason','TEXT'],
+    ['channel_bindings','transport','TEXT'],
     ...LEDGER_DETAIL.map(column=>['ledger',column,'TEXT']),
   ]) if (!all(`PRAGMA table_info(${table})`).some(c=>c.name===column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   db.exec(`

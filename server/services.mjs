@@ -77,7 +77,7 @@ export function createServices(bank,core,guard) {
    const saved=get('SELECT * FROM agent_actions WHERE id=?',actionId);run('UPDATE agent_actions SET params_digest=?,decision=?,run_id=? WHERE id=?',paramsDigest(actionParams(saved)),JSON.stringify(decision),context.runId||null,actionId);audit(user.id,'policy.evaluated',actionId,{phase:'propose',decision,runId:context.runId});
    if(tool==='create_plan')run('INSERT INTO agent_plans(id,user_id,action_id,title,steps,status,created_at) VALUES(?,?,?,?,?,?,?)',id('PLAN'),user.id,actionId,args.title,JSON.stringify(args.steps),'proposed',now());
    audit(user.id,'agent.action.proposed',actionId,{tool,args:redact(args),level,channel:context.channel||'app',runId:context.runId});
-   if(level==='red'&&context.channel&&context.channel!=='app')notify(user.id,'操作待加强验证',`${title}，请打开智能助手完成验证。操作编号：${actionId}`);
+   if(context.channel&&context.channel!=='app')notify(user.id,level==='red'?'操作待加强验证':'操作待确认',`${title}，请打开「智能助手 → 操作与计划」${level==='red'?'完成人脸模拟、短信验证码及支付密码验证':'输入支付密码确认'}。操作编号：${actionId}`);
    return actionView(get('SELECT * FROM agent_actions WHERE id=?',actionId));
   });
  }
@@ -171,8 +171,8 @@ export function createServices(bank,core,guard) {
  }
  function confirm(user,actionId,{pin,verificationToken}={},context={channel:'app'}) {
   guard.assertOpen(user.id);expireActions();let action=owned(user,actionId);
-  if(context.channel==='app')core.pin(fresh(user),pin);
-  else requireThat(context.bindingId===action.session_id&&context.channel===action.channel&&get("SELECT id FROM channel_bindings WHERE id=? AND user_id=? AND status='active'",context.bindingId,user.id),'渠道确认无效',403,'CHANNEL_NOT_BOUND');
+  // Money moves only after an in-app authentication factor: IM channels can propose and cancel, never confirm.
+  requireThat(context.channel==='app','为保障资金安全，请在澄川银行App内输入支付密码确认',403,'APP_CONFIRMATION_REQUIRED');core.pin(fresh(user),pin);
   if(['completed','confirmed'].includes(action.status))return actionView(action);
   requireThat(['proposed','awaiting_verification'].includes(action.status),'该操作无法确认',409,'INVALID_STATE');
   requireThat(action.tool!=='direct_operation','请从原业务页面完成验证',409,'INVALID_STATE');
@@ -183,14 +183,13 @@ export function createServices(bank,core,guard) {
   const initialDecision=policyDecision(user,action.tool,currentPlanArgs(action,args),{excludeId:action.id,confirmed:true});
   if(rank[action.level]>rank[initialDecision.level])initialDecision.level=action.level;
   recordDecision(user,action,initialDecision,'confirm');action=owned(user,actionId);
-  if(action.level==='red')requireThat(context.channel==='app','此操作需返回App完成加强验证',403,'APP_VERIFICATION_REQUIRED');
   try{
    atomic(()=>{
     action=owned(user,actionId);
     const decision=policyDecision(user,action.tool,currentPlanArgs(action,args),{excludeId:action.id,confirmed:true});
     if(rank[action.level]>rank[decision.level])decision.level=action.level;
     recordDecision(user,action,decision,'confirm');
-    const factors=['explicit_confirmation',context.channel==='app'?'pin':'bound_channel_confirmation'];
+    const factors=['explicit_confirmation','pin'];
     if(decision.level==='red')factors.push(...services.verification.consume(user,action.id,verificationToken));
     authorized=true;
     const until=authorizationWindow(action,args);
@@ -289,6 +288,6 @@ export function createServices(bank,core,guard) {
   });
  }
  function plans(user){return all('SELECT * FROM agent_plans WHERE user_id=? ORDER BY created_at DESC',user.id).map(planView);}
- function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,channel='feishu' AND base_url IS NOT NULL AS personal FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal)})),agentLockedUntil:fresh(user).agent_locked_until};}
+ function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
  return Object.assign(services,{resolveRecipients,normalize,policy,policyDecision,recheckTask,pauseAction,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
 }

@@ -93,7 +93,7 @@
 | --- | --- |
 | GET /agent/actions | 本人最近 100 条动作，含 `level`（green/yellow/red）、`status`、`args`（脱敏）、`result`、`plan`、`decision`、`accountTail`、`authorization_until`、`verification_until`、`pause_reason` |
 | POST /agent/actions | `{tool, args}` 从业务页面直接提议，如 `{"tool":"propose_card_action","args":{"card":"A…","action":"report_lost"}}`；返回 201 与动作 |
-| POST /agent/actions/{id}/confirm | `{pin, verificationToken?}`；黄色只需 pin，红色必须附有效一次性 token（403 `VERIFICATION_REQUIRED` / `INVALID_VERIFICATION`）；返回动作，`status` 为 completed/confirmed（已授权待执行）/failed；同一接口也完成 awaiting_verification 的补充授权与恢复，不能修改已保存业务参数 |
+| POST /agent/actions/{id}/confirm | `{pin, verificationToken?}`；只接受 App 渠道（IM 渠道发起的动作也在此确认）；黄色需 pin，红色还必须附有效一次性 token（403 `VERIFICATION_REQUIRED` / `INVALID_VERIFICATION`）；返回动作，`status` 为 completed/confirmed（已授权待执行）/failed；同一接口也完成 awaiting_verification 的补充授权与恢复，不能修改已保存业务参数 |
 | POST /agent/actions/{id}/cancel | {}，取消待确认或已授权未执行的动作，释放预授权 |
 | GET /agent/plans | 本人联动计划及步骤状态 |
 | POST /agent/plans/{id}/abort | {}，中断计划：取消未执行步骤、释放锁定资金 |
@@ -102,7 +102,7 @@
 | POST /agent/unlock | `{pin}` 解除智能体安全锁定 |
 | GET /agent/splits/{id}/{index} | 本人收到的 AA 收款请求（金额、收款方），页面 `/#pay-request/{id}/{index}` 使用 |
 
-动作状态：`proposed → confirmed → executing → completed | failed`，以及 `awaiting_verification`、`cancelled`、`expired`。提议 15 分钟过期；未来任务的 `authorization_until` 默认为最后预计执行时间后 24 小时（锁定步骤使用 until），等待验证以 `verification_until` 单独保存，默认 15 分钟且受原授权窗口限制。IM 渠道的红色动作在 `GET /agent/actions` 中 `channel` 为 feishu/wechat，须在 App 完成强验证后确认。
+动作状态：`proposed → confirmed → executing → completed | failed`，以及 `awaiting_verification`、`cancelled`、`expired`。提议 15 分钟过期；未来任务的 `authorization_until` 默认为最后预计执行时间后 24 小时（锁定步骤使用 until），等待验证以 `verification_until` 单独保存，默认 15 分钟且受原授权窗口限制。IM 渠道发起的动作在 `GET /agent/actions` 中 `channel` 为 feishu/wechat，一律在 App 确认：黄色输入 pin，红色先完成强验证；服务端对非 App 渠道的确认返回 403 `APP_CONFIRMATION_REQUIRED`。
 
 
 ### 策略决策、授权与调度
@@ -153,7 +153,7 @@
 | GET /channels/feishu/register/{id} | `{status: wait|confirmed|denied|expired|failed, bindingId?, error?}`，页面可见时轮询；3 分钟无人查询则中止 |
 | POST /channels/feishu/events/{bindingId} | 飞书事件回调（无需登录），按该绑定的 Encrypt Key 解密并校验签名，自动应答 URL 校验；绑定不存在或已解绑时返回空对象 |
 
-IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认 ACT…」/「取消 ACT…」指定当前用户、渠道及绑定内动作。多笔不带编号时返回简短列表且不执行；只有一笔时可省略编号。重复确认返回原状态；红色升级也要求回 App。其他文本进入智能体。红色动作在 IM 只返回「请打开澄川银行 App 完成验证」。
+IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…」、「确认 ACT…」，均限当前用户、渠道及绑定内动作。「确认」不会执行任何操作，只返回 App 直达链接 `${PUBLIC_ORIGIN}/#tasks?action=ACT…`（无公网地址时为文字指引）及所需验证方式；已授权待执行或已结束的动作返回当前状态。多笔不带编号时返回简短列表；只有一笔时可省略编号。其他文本进入智能体。
 
 ### 工具清单
 
@@ -171,12 +171,12 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「确认 ACT…
 
 400 参数错误，401 认证失效，403 支付密码/验证/来源错误，404 资源不存在或无权访问，409 业务状态冲突，415 非 JSON 或非 WAV 请求，423 智能体锁定，429 限频，502 上游模型或语音服务错误，503 未配置，504 对话超时。
 
-常见代码：`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
+常见代码：`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
 
 `GET /ledger` 与 `GET /transactions` 均只返回自己的资源。行内转账收款人可在自己的流水中看到入账，但不能查询发款人的交易资源或支付信息。智能体的所有查询与动作同样按会话或渠道绑定的用户隔离。
 
 ## 网页 Agent
 
-主要 hash 路由：首页 `/#home`、转账 `/#transfer`、收支 `/#ledger`、交易 `/#transactions`、账户 `/#accounts`、财富 `/#wealth`、定期 `/#deposit`、贷款 `/#loan`、信用卡 `/#credit`、生活 `/#life`、智能助手 `/#assistant`、智能助手操作与计划 `/#tasks`、消息渠道绑定 `/#channels`、安全中心 `/#security`、开发者中心 `/#agent`、AA 收款 `/#pay-request/{id}/{index}`。
+主要 hash 路由：IM 确认直达 `/#tasks?action=ACT…`（未登录时登录后仍停留在该页）、首页 `/#home`、转账 `/#transfer`、收支 `/#ledger`、交易 `/#transactions`、账户 `/#accounts`、财富 `/#wealth`、定期 `/#deposit`、贷款 `/#loan`、信用卡 `/#credit`、生活 `/#life`、智能助手 `/#assistant`、智能助手操作与计划 `/#tasks`、消息渠道绑定 `/#channels`、安全中心 `/#security`、开发者中心 `/#agent`、AA 收款 `/#pay-request/{id}/{index}`。
 
 核心定位符：`login-submit`、`quick-transfer`、`transfer-form`、`create-transfer`、`confirm-transaction`、`cancel-transaction`、`transaction-status`、`transaction-id`、`agent-action`、`nav-home`、`nav-assistant` 等。字段优先使用中文标签或 name：`recipientName`、`recipientAccount`、`bank`、`amount`、`pin`、`code`。交易结果必须通过页面状态或 API 查询核对，不能仅凭点击完成判断成功。
