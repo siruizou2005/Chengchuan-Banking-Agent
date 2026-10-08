@@ -2,6 +2,7 @@ import { createCipheriv,createDecipheriv,randomBytes,randomInt } from 'node:cryp
 import { id,now } from '../db.mjs';
 import { hash,requireThat } from '../errors.mjs';
 import { STATS_LABEL } from '../agent/analytics.mjs';
+import { channelPreferences, setChannelPreference, channelText, maskMoney } from './preferences.mjs';
 export function createChannelCrypto(secret=process.env.CHANNEL_SECRET) {
  const key=()=>{requireThat(typeof secret==='string'&&/^[a-f0-9]{64}$/i.test(secret),'请配置64位十六进制CHANNEL_SECRET',503,'CHANNEL_SECRET_REQUIRED');return Buffer.from(secret,'hex');};
  return {encrypt(value){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv),data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(b=>b.toString('base64')).join('.');},decrypt(value){const [iv,tag,data]=value.split('.').map(s=>Buffer.from(s,'base64')),decipher=createDecipheriv('aes-256-gcm',key(),iv);decipher.setAuthTag(tag);return Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8');}};
@@ -17,22 +18,49 @@ export function eventsText(result,{maskAmounts=false,origin=''}={}) {
   if(event.type==='stats')text.push(`【统计·${a.label}·${STATS_LABEL[a.by]}】合计¥${yuan(a.total)}\n${[...a.buckets].filter(b=>b.count).sort((x,y)=>y.amount-x.amount).slice(0,8).map(b=>`${b.key} ¥${yuan(b.amount)}`).join('；')}`);
   if(event.type==='subscriptions')text.push('【订阅】'+a.subscriptions.map(s=>`${s.merchant} ¥${yuan(s.amount)}/月（${s.status}）`).join('；'));
  }
- const output=text.join('\n\n');return maskAmounts?output.replace(/(?:¥|￥)\s*[\d,.]+/g,'¥****'):output;
+ const output=text.join('\n\n');return maskAmounts?maskMoney(output):output;
 }
 export function createChannelRouter(services,agent,options={}) {
  const {bank}=services,{get,run,all,atomic,audit,notify}=bank,crypto=createChannelCrypto(options.secret||process.env.CHANNEL_SECRET),busy=new Set(),revokeListeners=[];
- const origin=()=>options.publicOrigin??process.env.PUBLIC_ORIGIN??'',textOptions=()=>({maskAmounts:options.maskAmounts??process.env.CHANNEL_MASK_AMOUNTS==='true',origin:origin()});
+ const origin=()=>options.publicOrigin??process.env.PUBLIC_ORIGIN??'',textOptions=()=>({origin:origin()});
  const revoked=bindingId=>{for(const listener of revokeListeners)listener(bindingId);};
  // Shared by every channel whose upstream credentials stop working: cancel what the binding started, then tell the user.
- function expire(binding,title,body){atomic(()=>{run("UPDATE channel_bindings SET status='expired',token=NULL,context_token=NULL WHERE id=?",binding.id);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",binding.user_id,binding.id))services.cancel({id:binding.user_id},a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",binding.id);audit(binding.user_id,'channel.expired',binding.id,{channel:binding.channel});notify(binding.user_id,title,body);});revoked(binding.id);}
+ function expire(binding,title,body){atomic(()=>{run("UPDATE channel_bindings SET status='expired',auth_state='revoked',token=NULL,context_token=NULL WHERE id=?",binding.id);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id IN (?,?) AND status IN ('proposed','confirmed','awaiting_verification')",binding.user_id,binding.id,binding.binding_session_id))services.cancel({id:binding.user_id},a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",binding.id);audit(binding.user_id,'channel.expired',binding.id,{channel:binding.channel});notify(binding.user_id,title,body);});revoked(binding.id);}
  function createCode(user,pin){services.pin(user,pin);const code=String(randomInt(100000,1000000));atomic(()=>{run("UPDATE channel_codes SET used=1 WHERE user_id=? AND channel='feishu'",user.id);run('INSERT INTO channel_codes VALUES(?,?,?,?,?,0)',id('BIND'),user.id,hash(code),'feishu',new Date(Date.now()+300000).toISOString());audit(user.id,'channel.code_created','',{channel:'feishu'});});return {code,expiresIn:300};}
  function bind(channel,externalId,code){const key=`bind:${channel}:${hash(externalId)}`;services.checkRate(key);services.badAttempt(key);return atomic(()=>{
   const row=get('SELECT * FROM channel_codes WHERE code_hash=? AND channel=? AND used=0 AND expires_at>?',hash(code),channel,now());requireThat(row,'绑定码无效或已过期',403,'INVALID_BIND_CODE');
   requireThat(!get("SELECT id FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",channel,externalId),'该渠道账号已绑定，请先在App解绑',409);
   const bindingId=id('BIND');run("INSERT INTO channel_bindings(id,user_id,channel,external_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,status='active',token=NULL,cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,row.user_id,channel,externalId,now());run('UPDATE channel_codes SET used=1 WHERE id=?',row.id);audit(row.user_id,'channel.bound',bindingId,{channel});notify(row.user_id,'消息渠道已绑定',`已绑定${channel==='feishu'?'飞书':'微信'}。可在私聊中查询账户、提议业务；为保障资金安全，所有操作都需回App确认。`);return get('SELECT * FROM channel_bindings WHERE channel=? AND external_id=?',channel,externalId);
  });}
- function unbind(user,bindingId,pin){services.pin(user,pin);atomic(()=>{requireThat(run("UPDATE channel_bindings SET status='revoked',token=NULL,context_token=NULL WHERE id=? AND user_id=?",bindingId,user.id).changes,'绑定不存在',404);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id=? AND status IN ('proposed','confirmed','awaiting_verification')",user.id,bindingId))services.cancel(user,a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",bindingId);audit(user.id,'channel.unbound',bindingId);});revoked(bindingId);return {ok:true};}
- async function receive({channel,externalId,messageId,text,contextToken}){
+ function unbind(user,bindingId,pin){services.pin(user,pin);atomic(()=>{requireThat(run("UPDATE channel_bindings SET status='revoked',auth_state='revoked',token=NULL,context_token=NULL WHERE id=? AND user_id=?",bindingId,user.id).changes,'绑定不存在',404);const binding=get('SELECT binding_session_id FROM channel_bindings WHERE id=?',bindingId);for(const a of all("SELECT id FROM agent_actions WHERE user_id=? AND session_id IN (?,?) AND status IN ('proposed','confirmed','awaiting_verification')",user.id,bindingId,binding.binding_session_id))services.cancel(user,a.id);run("UPDATE channel_outbox SET status='cancelled' WHERE binding_id=? AND status='pending'",bindingId);audit(user.id,'channel.unbound',bindingId);});revoked(bindingId);return {ok:true};}
+ function wechatCommand(binding,text){
+  const value=text.trim();
+  if(/^(帮助|help)$/i.test(value))return '可以查询余额、分析账单、提议业务。完整结果请在App查看，所有业务确认都需回App完成；这里可回复「取消 操作编号」。';
+  if(value==='解绑')return '请回App「消息渠道绑定」输入支付密码解绑。';
+  const command=value.match(/^(确认|取消)(?:\s+([A-Za-z0-9]+))?$/);if(!command)return null;
+  return atomic(()=>{
+   requireThat(get("SELECT id FROM channel_bindings WHERE id=? AND status='active' AND auth_state='valid' AND binding_generation=?",binding.id,binding.binding_generation),'请回App重新连接微信',403,'CHANNEL_REAUTH_REQUIRED');
+   services.expireActions();
+   const rows=all("SELECT * FROM agent_actions WHERE user_id=? AND channel='wechat' AND session_id IN (?,?) ORDER BY created_at DESC,rowid DESC",binding.user_id,binding.id,binding.binding_session_id);
+   const pending=rows.filter(a=>['proposed','confirmed','awaiting_verification'].includes(a.status));
+   if(!command[2]&&pending.length>1)return '有多笔操作，请指定编号：\n'+pending.map(a=>a.id).join('\n');
+   const action=command[2]?rows.find(a=>a.id===command[2]):pending[0];if(!action)return '本会话没有该待处理操作。';
+   if(['cancelled','failed','expired','completed'].includes(action.status))return `该操作已结束，详情请在App查看。编号：${action.id}`;
+   if(command[1]==='取消'){services.cancel({id:binding.user_id},action.id);return `操作已取消。编号：${action.id}`;}
+   return `请在App核对操作并完成${action.level==='red'?'加强验证和支付密码':'支付密码'}确认：${appLink(origin(),action.id)}\n编号：${action.id}`;
+  });
+ }
+ function runWeChat(binding,text,execution,hooks={}){
+  const user=get('SELECT * FROM users WHERE id=?',binding.user_id),sessionId=binding.binding_session_id;
+  run('INSERT OR IGNORE INTO agent_sessions(id,user_id,channel,updated_at) VALUES(?,?,?,?)',sessionId,user.id,'wechat',now());
+  return agent.runTurn({user,channel:'wechat',sessionId,messages:[{role:'user',content:text}],execution,...hooks});
+ }
+ async function receive(input){
+  const reply=await receiveRaw(input);
+  const binding=get("SELECT user_id FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",input.channel,input.externalId);
+  return binding?channelText(bank,binding.user_id,input.channel,reply):reply;
+ }
+ async function receiveRaw({channel,externalId,messageId,text,contextToken}){
   if(!['feishu','wechat'].includes(channel)||typeof text!=='string'||text.length>6000||!externalId||!messageId)return '';
   if(!run('INSERT OR IGNORE INTO channel_messages VALUES(?,?,?)',channel,messageId,now()).changes)return '';
   try{
@@ -61,9 +89,11 @@ export function createChannelRouter(services,agent,options={}) {
   }catch(error){const binding=get("SELECT * FROM channel_bindings WHERE channel=? AND external_id=? AND status='active'",channel,externalId);if(binding)audit(binding.user_id,'channel.request.rejected','',{channel,bindingId:binding.id,code:error.code||'CHANNEL_ERROR'});return error.status?error.message:'渠道处理暂时失败，请稍后重试。';}
  }
  function register(route){
+  route('get','/channels/preferences','本人各渠道金额显示设置',(req,res)=>res.json(channelPreferences(bank,req.user.id)));
+  route('patch','/channels/preferences/:channel','修改本人单个渠道的金额显示设置',(req,res)=>res.json(setChannelPreference(bank,req.user.id,req.params.channel,req.body.maskAmounts)));
   route('get','/channels','已绑定渠道',(req,res)=>res.json(services.snapshot(req.user).bindings));
   route('post','/channels/code','PIN授权飞书绑定码',(req,res)=>res.json(createCode(req.user,req.body.pin)));
   route('post','/channels/:id/unbind','PIN解绑消息渠道',(req,res)=>res.json(unbind(req.user,req.params.id,req.body.pin)));
  }
- return {receive,createCode,bind,unbind,expire,onRevoke:listener=>revokeListeners.push(listener),register,crypto};
+ return {receive,createCode,bind,unbind,expire,wechatCommand,runWeChat,onRevoke:listener=>revokeListeners.push(listener),register,crypto};
 }

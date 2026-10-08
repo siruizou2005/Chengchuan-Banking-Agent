@@ -145,15 +145,25 @@
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
 | GET /channels | 已绑定渠道：`id`、`channel`、`status`（active/revoked/expired）、`created_at`、`personal`（飞书专属机器人） |
+| GET /channels/preferences | 本人渠道设置：`{feishu:{maskAmounts:false},wechat:{maskAmounts:false}}`，默认均不隐藏 |
+| PATCH /channels/preferences/{channel} | `{maskAmounts:boolean}` → `{maskAmounts}`；channel 只能为 feishu/wechat，只修改当前登录用户的指定渠道，不接受请求体切换身份 |
 | POST /channels/code | `{pin}` → `{code, expiresIn:300}` 飞书一次性绑定码；在飞书私聊发送「绑定 123456」 |
 | POST /channels/{id}/unbind | `{pin}`，解绑并撤销该渠道未执行的动作 |
 | POST /channels/wechat/qr | `{pin}` → `{id, qrcode_img_content, expiresIn}`，需 `WECHAT_ENABLED=true` 与 `CHANNEL_SECRET` |
-| GET /channels/wechat/qr/{id} | `{status: wait|scaned|confirmed|expired, bindingId?}` 轮询扫码状态 |
+| GET /channels/wechat/qr/{id} | `{id,status,expiresAt,retryAfterMs,message,bindingId?}`；状态为 `waiting_scan/waiting_confirmation/awaiting_code/confirmed/expired/failed/cancelled`，仅本人可读取 |
+| POST /channels/wechat/qr/{id}/verify | `{code}`；提交微信扫码页面显示的验证码，不是银行支付密码；仅 `awaiting_code` 可提交 |
+| DELETE /channels/wechat/qr/{id} | `{}`；取消本人的未完成扫码，已完成绑定使用解绑接口 |
+| GET /channels/wechat/requests | 本人最近 30 个微信请求，返回数组 `{id,status,received_at}` |
+| GET /channels/wechat/requests/{id} | `{id,status,receivedAt,finishedAt,result,deliveries}`；完整 Agent 结果及最新操作卡片，仅本人可查看；投递状态不是手机送达证明 |
 | POST /channels/feishu/register | `{pin}` → `{id, url, expiresIn}`，一键创建飞书专属机器人；`url` 用飞书扫码或在飞书中打开。需 `FEISHU_PERSONAL_ENABLED=true`、https 的 `PUBLIC_ORIGIN` 与 `CHANNEL_SECRET`；已有专属机器人返回 409 `FEISHU_BOT_EXISTS`，创建排队已满返回 429 `FEISHU_REGISTER_BUSY` |
 | GET /channels/feishu/register/{id} | `{status: wait|confirmed|denied|expired|failed, bindingId?, error?}`，页面可见时轮询；3 分钟无人查询则中止 |
 | POST /channels/feishu/events/{bindingId} | 飞书事件回调（无需登录），按该绑定的 Encrypt Key 解密并校验签名，自动应答 URL 校验；绑定不存在或已解绑时返回空对象 |
 
 IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…」、「确认 ACT…」，均限当前用户、渠道及绑定内动作。「确认」不会执行任何操作，只返回 App 直达链接 `${PUBLIC_ORIGIN}/#tasks?action=ACT…`（无公网地址时为文字指引）及所需验证方式；已授权待执行或已结束的动作返回当前状态。多笔不带编号时返回简短列表；只有一笔时可省略编号。其他文本进入智能体。
+
+微信请求状态为 `queued/running/completed/failed/interrupted/cancelled`；投递状态为 `pending/sending/retry_wait/api_accepted/unknown/failed/cancelled/expired`。`api_accepted` 只证明接口接受，`unknown` 不自动重发或重新执行。微信直接返回查询及分析结果，超长内容和 App 完整结果入口为 `/#wechat-requests/{id}`，未登录先登录并保留入口。绑定快照增加 `auth_state`、`connection_state`、`last_inbound_at`、`last_api_accepted_at` 等安全元数据，凭据及 context 不返回前端。
+
+金额开关按用户和渠道持久保存，解绑/重绑不会重置；飞书共享与专属机器人共用该用户的飞书设置。回复和业务通知发送前读取最新开关，已发出的消息不追溯修改，App 原始结果不改变。开启时常见金额、金额标签后的数值和财务表格数值显示为 `****`，链接、操作编号、日期、利率保持；账户标识及凭据的既有脱敏始终生效。明确拒绝后的微信重试若因设置变更导致正文改变，会换用新 client_id；正文不变仍复用原编号，unknown 不重发。
 
 ### 工具清单
 

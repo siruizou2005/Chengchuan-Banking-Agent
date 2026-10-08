@@ -1,51 +1,140 @@
-import { randomBytes } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { id,now } from '../db.mjs';
-import { BusinessError,requireThat } from '../errors.mjs';
-const origin='https://ilinkai.weixin.qq.com';
-export function safeBaseUrl(value) {
- const url=new URL(value||origin);requireThat(url.protocol==='https:'&&!url.username&&!url.password&&!url.port&&(url.hostname==='ilinkai.weixin.qq.com'||url.hostname.endsWith('.ilinkai.weixin.qq.com')),'微信返回的服务地址无效',502,'INVALID_CHANNEL_HOST');return url.origin;
-}
+import { id, now } from '../db.mjs';
+import { requireThat } from '../errors.mjs';
+import { createWeChatProtocol, WECHAT_ORIGIN, safeBaseUrl } from './wechat-protocol.mjs';
+import { createWeChatDelivery } from './wechat-delivery.mjs';
+import { createWeChatInbox } from './wechat-inbox.mjs';
+import { bindingFor, assertLease } from './wechat-state.mjs';
+export { safeBaseUrl } from './wechat-protocol.mjs';
+
+const labels={waiting_scan:'请用微信扫码',waiting_confirmation:'已扫码，请在微信中确认',awaiting_code:'请输入微信扫码页面显示的验证码',confirmed:'绑定成功，请向助手发送“你好”',expired:'二维码已过期，请重新生成',failed:'连接未完成，请重新生成二维码',cancelled:'已取消连接'};
 export function createWeChat(services,router,options={}) {
- const {bank}=services,transport=options.fetch||fetch,crypto=router.crypto,pending=new Map(),loops=new Map();let stopped=false;
- const enabled=()=>options.enabled??process.env.WECHAT_ENABLED==='true';
- async function request(base,path,{token,body,signal}={}){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
-  try{
-   const response=await transport(safeBaseUrl(base)+path,{method:body?'POST':'GET',signal:controller.signal,headers:{'Content-Type':'application/json','iLink-App-ClientVersion':'1',...(token?{Authorization:`Bearer ${token}`,AuthorizationType:'ilink_bot_token','X-WECHAT-UIN':Buffer.from(String(randomBytes(4).readUInt32BE())).toString('base64')}:{})},...(body?{body:JSON.stringify({...body,base_info:{channel_version:'1.0.2'}})}:{})});
-   if(!response.ok)throw new BusinessError('微信服务暂时不可用',502,'WECHAT_ERROR');const data=await response.json();
-   if(data.ret===-14||data.errcode===-14)throw new BusinessError('微信会话已失效，请重新扫码',403,'WECHAT_EXPIRED');
-   if((data.ret&&data.ret!==0)||(data.errcode&&data.errcode!==0))throw new BusinessError('微信服务返回异常',502,'WECHAT_ERROR');return data;
-  }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
- }
- const expireBinding=binding=>router.expire(binding,'微信绑定已失效','请前往消息渠道绑定页面重新扫码。');
- async function qr(user,pin){requireThat(enabled(),'微信渠道未开启',503,'WECHAT_DISABLED');services.pin(user,pin);crypto.encrypt('configuration-check');const data=await request(origin,'/ilink/bot/get_bot_qrcode?bot_type=3');requireThat(data.qrcode&&data.qrcode_img_content,'二维码响应无效',502);for(const [key,value] of pending)if(value.until<Date.now()||value.userId===user.id)pending.delete(key);const qrId=id('QR');pending.set(qrId,{userId:user.id,qrcode:data.qrcode,until:Date.now()+300000});return {id:qrId,qrcode_img_content:data.qrcode_img_content,expiresIn:300};}
- async function qrStatus(user,qrId){
-  const entry=pending.get(qrId);requireThat(entry?.userId===user.id&&entry.until>Date.now(),'二维码已过期，请重新生成',404,'QR_EXPIRED');if(entry.bindingId)return {status:'confirmed',bindingId:entry.bindingId};requireThat(!entry.polling,'二维码查询进行中',429,'QR_BUSY');entry.polling=true;
-  try{const data=await request(origin,`/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(entry.qrcode)}`);
-   if(data.status==='confirmed'){
-    requireThat(typeof data.bot_token==='string'&&typeof data.ilink_user_id==='string','微信登录响应无效',502);const base=safeBaseUrl(data.baseurl);
-    const previous=bank.get("SELECT * FROM channel_bindings WHERE channel='wechat' AND external_id=?",data.ilink_user_id);requireThat(!previous||previous.user_id===user.id||previous.status!=='active','此微信账号已绑定其他银行用户，请先解绑',409);
-    const bindingId=previous?.id||id('BIND');bank.atomic(()=>{bank.run("INSERT INTO channel_bindings(id,user_id,channel,external_id,token,base_url,created_at) VALUES(?,?,'wechat',?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,token=excluded.token,base_url=excluded.base_url,status='active',cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,user.id,data.ilink_user_id,crypto.encrypt(data.bot_token),base,now());bank.audit(user.id,'channel.bound',bindingId,{channel:'wechat'});bank.notify(user.id,'微信已绑定','可在微信私聊中查询账户、提议业务；为保障资金安全，所有操作都需回App确认。');});entry.bindingId=bindingId;if(options.autoStart!==false)startBinding(bindingId);return {status:'confirmed',bindingId};
-   }
-   if(data.status==='expired')pending.delete(qrId);return {status:data.status==='scanned'?'scaned':data.status};
-  }finally{entry.polling=false;}
- }
- async function send(binding,text,signal){try{return await request(binding.base_url,'/ilink/bot/sendmessage',{token:crypto.decrypt(binding.token),signal,body:{msg:{to_user_id:binding.external_id,message_type:2,message_state:2,context_token:binding.context_token?crypto.decrypt(binding.context_token):'',item_list:[{type:1,text_item:{text}}]}}});}catch(error){if(error.code==='WECHAT_EXPIRED')expireBinding(binding);throw error;}}
- async function pollOnce(binding,signal){
-  let data;try{data=await request(binding.base_url,'/ilink/bot/getupdates',{token:crypto.decrypt(binding.token),signal,body:{get_updates_buf:binding.cursor||''}});}catch(error){if(error.code==='WECHAT_EXPIRED')expireBinding(binding);throw error;}
-  for(const message of data.msgs||[]){
-   if(message.message_type!==1||message.from_user_id!==binding.external_id)continue;
-   const text=(message.item_list||[]).filter(i=>i.type===1&&i.text_item).map(i=>i.text_item.text).join('\n');if(!text)continue;
-   const current=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active'",binding.id);if(!current)break;
-   const reply=await router.receive({channel:'wechat',externalId:binding.external_id,messageId:String(message.message_id||message.msg_id||''),text,contextToken:message.context_token});
-   if(reply){const updated=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active'",binding.id);if(updated)await send(updated,reply,signal);}
+  const {bank}=services,crypto=router.crypto,protocol=createWeChatProtocol(options),owner=randomUUID(),pending=new Map(),loops=new Map(),rate=new Map();
+  let stopped=false,timer,cleaned=0;
+  const enabled=()=>options.enabled??process.env.WECHAT_ENABLED==='true';
+  const accepting=()=>options.accepting??process.env.WECHAT_ACCEPT_NEW_MESSAGES!=='false';
+  const setting=(key,fallback,min,max)=>{
+    const value=process.env[key]===undefined?fallback:Number(process.env[key]);
+    requireThat(Number.isInteger(value)&&value>=min&&value<=max,`${key} 配置无效`,503,'WECHAT_CONFIG');return value;
+  };
+  const workerOptions={
+    progressMs:setting('WECHAT_PROGRESS_AFTER_MS',8000,500,60000),
+    sendTimeoutMs:setting('WECHAT_SEND_TIMEOUT_MS',8000,500,12000),
+    maxPending:setting('WECHAT_MAX_PENDING_PER_USER',3,1,10),
+    sendConcurrency:setting('WECHAT_SEND_CONCURRENCY',4,1,8),
+    unknownReviewMs:setting('WECHAT_UNKNOWN_REVIEW_AFTER_MS',300000,1000,86400000),
+    ...options,isEnabled:enabled,
+  };
+  const delivery=createWeChatDelivery(services,crypto,send,workerOptions);
+  const inbox=createWeChatInbox(services,router,delivery,workerOptions);
+  function reauth(binding,code='WECHAT_REAUTH_REQUIRED') {
+    bank.atomic(()=>{
+      const changed=bank.run("UPDATE channel_bindings SET auth_state='reauth_required',reauth_required_at=?,connection_state='degraded',last_error_code=? WHERE id=? AND binding_generation=? AND auth_state='valid'",Date.now(),code,binding.id,binding.binding_generation).changes;
+      if(changed){bank.notify(binding.user_id,'微信需要重新认证','请回App「消息渠道绑定」重新扫码；此前操作状态可在App查看。');bank.audit(binding.user_id,'wechat.reauth_required',binding.id,{code});}
+    });
+    stopBinding(binding.id);inbox.revoke(binding.id);delivery.revoke(binding.id);
   }
-  if(typeof data.get_updates_buf==='string')bank.run('UPDATE channel_bindings SET cursor=? WHERE id=?',data.get_updates_buf,binding.id);return data;
- }
- function startBinding(bindingId){if(stopped||loops.has(bindingId)||!enabled())return;const abort=new AbortController();const task=(async()=>{let backoff=1000;while(!abort.signal.aborted&&!stopped){const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active'",bindingId);if(!binding?.token)break;try{await pollOnce(binding,abort.signal);backoff=1000;await delay(200,undefined,{signal:abort.signal});}catch(error){if(abort.signal.aborted||error.code==='WECHAT_EXPIRED')break;await delay(backoff,undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,60000);}}})().catch(()=>{}).finally(()=>loops.delete(bindingId));loops.set(bindingId,{abort,task});}
- function start(){stopped=false;if(enabled())for(const binding of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active'"))startBinding(binding.id);}
- async function stop(){stopped=true;for(const loop of loops.values())loop.abort.abort();await Promise.all([...loops.values()].map(l=>l.task));}
- function register(route){route('post','/channels/wechat/qr','PIN授权微信扫码绑定',async(req,res)=>res.json(await qr(req.user,req.body.pin)));route('get','/channels/wechat/qr/:id','微信扫码状态',async(req,res)=>res.json(await qrStatus(req.user,req.params.id)));}
- return {qr,qrStatus,pollOnce,send,start,startBinding,stop,register,enabled};
+  async function request(binding,path,args){
+    try{return await protocol.request(binding.base_url,path,{...args,token:crypto.decrypt(binding.token)});}
+    catch(error){if(error.code==='WECHAT_REAUTH_REQUIRED')reauth(binding);throw error;}
+  }
+  async function send(binding,text,{signal,clientId=id('wx'),context,timeoutMs=8000}={}) {
+    bindingFor(bank,binding);requireThat(context,'微信会话缺少回复上下文',409,'WECHAT_CONTEXT_REQUIRED');
+    return request(binding,'/ilink/bot/sendmessage',{signal,timeoutMs,send:true,body:{msg:{from_user_id:'',to_user_id:binding.external_id,client_id:clientId,message_type:2,message_state:2,context_token:context,item_list:[{type:1,text_item:{text}}]}}});
+  }
+  function view(e){return {id:e.id,status:e.status,expiresAt:new Date(e.until).toISOString(),retryAfterMs:1000,message:e.error||labels[e.status],...(e.bindingId?{bindingId:e.bindingId}:{})};}
+  function own(user,qrId){const e=pending.get(qrId);requireThat(e?.userId===user.id,'二维码会话已失效，请重新生成',404,'QR_EXPIRED');if(Date.now()>e.until&&!['confirmed','cancelled','failed'].includes(e.status)){e.status='expired';e.controller.abort();}return e;}
+  async function qr(user,pin){
+    requireThat(enabled()&&accepting(),'微信渠道暂不接受新连接',503,'WECHAT_DISABLED');services.pin(user,pin);crypto.encrypt('configuration-check');
+    requireThat(!bank.get("SELECT user_id FROM channel_bindings WHERE channel='wechat' AND status='active' GROUP BY user_id HAVING count(*)>1"),'微信绑定存在历史冲突，请联系管理员核对',503,'WECHAT_BINDING_CONFLICT');
+    requireThat(!bank.get("SELECT id FROM channel_bindings WHERE user_id=? AND channel='wechat' AND status='active' AND auth_state='valid'",user.id),'已连接微信助手，请先解绑',409,'WECHAT_BOT_EXISTS');
+    const times=(rate.get(user.id)||[]).filter(t=>Date.now()-t<60000);requireThat(times.length<3,'二维码请求过于频繁，请稍后重试',429,'QR_RATE_LIMIT');times.push(Date.now());rate.set(user.id,times);
+    for(const e of pending.values())if(e.userId===user.id&&!['confirmed','failed','expired','cancelled'].includes(e.status)){e.status='cancelled';e.controller.abort();}
+    requireThat([...pending.values()].filter(e=>!['confirmed','failed','expired','cancelled'].includes(e.status)).length<(options.maxPendingLogin||20),'连接请求较多，请稍后重试',429,'QR_BUSY');
+    const {data}=await protocol.request(WECHAT_ORIGIN,'/ilink/bot/get_bot_qrcode?bot_type=3',{body:{local_token_list:[]},login:true,timeoutMs:15000});
+    requireThat(typeof data.qrcode==='string'&&data.qrcode&&typeof data.qrcode_img_content==='string'&&data.qrcode_img_content,'二维码响应无效',502,'WECHAT_QR_INVALID');
+    for(const e of pending.values())if(e.userId===user.id&&!['confirmed','failed','expired','cancelled'].includes(e.status)){e.status='cancelled';e.controller.abort();}
+    const e={id:id('QR'),userId:user.id,qrcode:data.qrcode,base:WECHAT_ORIGIN,until:Date.now()+300000,status:'waiting_scan',controller:new AbortController(),redirects:0};pending.set(e.id,e);
+    if(options.autoStart!==false){ensureTimer();e.task=watchLogin(e);}
+    return {...view(e),qrcode_img_content:data.qrcode_img_content,expiresIn:300};
+  }
+  async function pollLogin(e){
+    if(e.polling||e.controller.signal.aborted||e.status==='awaiting_code'&&!e.verifyCode)return;e.polling=true;
+    try{
+      const code=e.verifyCode;delete e.verifyCode;
+      const {data}=await protocol.request(e.base,`/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(e.qrcode)}${code?`&verify_code=${encodeURIComponent(code)}`:''}`,{signal:e.controller.signal,timeoutMs:35000});
+      if(e.controller.signal.aborted||Date.now()>e.until)return;
+      if(data.status==='confirmed'){
+        requireThat(typeof data.bot_token==='string'&&data.bot_token&&typeof data.ilink_user_id==='string'&&data.ilink_user_id&&typeof data.ilink_bot_id==='string'&&data.ilink_bot_id,'微信登录响应无效',502,'WECHAT_LOGIN_INVALID');
+        const base=safeBaseUrl(data.baseurl);
+        bank.atomic(()=>{
+          const previous=bank.get("SELECT * FROM channel_bindings WHERE channel='wechat' AND external_id=?",data.ilink_user_id);
+          requireThat(!previous||previous.user_id===e.userId||previous.status!=='active','此微信账号已绑定其他银行用户，请先解绑',409,'WECHAT_OWNER_CONFLICT');
+          requireThat(!bank.get("SELECT id FROM channel_bindings WHERE user_id=? AND channel='wechat' AND status='active' AND external_id<>?",e.userId,data.ilink_user_id),'已有其他微信连接，请先解绑',409,'WECHAT_BOT_EXISTS');
+          if(previous?.status==='active')router.expire(previous,'微信连接已更新','旧连接的未执行授权已撤销，请核对App操作列表。');
+          const bindingId=previous?.id||id('BIND'),generation=(previous?.binding_generation||0)+1,session=id('WXSESSION');
+          bank.run(`INSERT INTO channel_bindings(id,user_id,channel,external_id,token,base_url,created_at,external_bot_id,binding_generation,binding_session_id,authorized_at)
+            VALUES(?,?,'wechat',?,?,?,?,?,?,?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,token=excluded.token,base_url=excluded.base_url,created_at=excluded.created_at,external_bot_id=excluded.external_bot_id,binding_generation=excluded.binding_generation,binding_session_id=excluded.binding_session_id,authorized_at=excluded.authorized_at,status='active',auth_state='valid',connection_state='awaiting_first_message',cursor='',context_token=NULL,context_updated_at=NULL,last_inbound_at=NULL,last_api_accepted_at=NULL,last_error_code=NULL,reauth_required_at=NULL,lease_until=0,lease_epoch=channel_bindings.lease_epoch+1`,bindingId,e.userId,data.ilink_user_id,crypto.encrypt(data.bot_token),base,now(),data.ilink_bot_id,generation,session,Date.now());
+          bank.audit(e.userId,'channel.bound',bindingId,{channel:'wechat',generation});bank.notify(e.userId,'微信助手已连接','请在微信向助手发一句“你好”。查询详情与业务确认均可在App查看。');e.bindingId=bindingId;
+        });
+        e.status='confirmed';e.qrcode='';e.controller.abort();if(options.autoStart!==false)startBinding(e.bindingId);
+      }else if(data.status==='scaned_but_redirect'){
+        requireThat(typeof data.redirect_host==='string'&&++e.redirects<=3,'微信服务跳转无效',502,'WECHAT_REDIRECT_INVALID');e.base=safeBaseUrl(data.redirect_host.startsWith('https://')?data.redirect_host:`https://${data.redirect_host}`);e.status='waiting_confirmation';
+      }else if(data.status==='need_verifycode')e.status='awaiting_code';
+      else if(data.status==='scaned'||data.status==='scanned')e.status='waiting_confirmation';
+      else if(data.status==='wait')e.status='waiting_scan';
+      else if(data.status==='expired'){e.status='expired';e.controller.abort();}
+      else {e.status='failed';e.error=data.status==='verify_code_blocked'?'验证次数过多，请重新生成二维码。':'未能取得有效连接凭据，请重新扫码。';e.controller.abort();}
+    }catch(error){if(e.controller.signal.aborted||error.code==='WECHAT_NETWORK')return;e.status='failed';e.error=error.status?error.message:'微信连接失败，请重新扫码。';e.controller.abort();}
+    finally{e.polling=false;}
+  }
+  async function watchLogin(e){while(!stopped&&!e.controller.signal.aborted&&Date.now()<e.until){await pollLogin(e);await delay(500,undefined,{signal:e.controller.signal}).catch(()=>{});}if(Date.now()>=e.until&&e.status!=='confirmed')e.status='expired';}
+  async function qrStatus(user,qrId){const e=own(user,qrId);if(options.autoStart===false&&!['confirmed','expired','cancelled','failed'].includes(e.status))await pollLogin(e);return view(e);}
+  function verify(user,qrId,code){const e=own(user,qrId);requireThat(e.status==='awaiting_code','当前不需要验证码',409,'QR_INVALID_STATE');requireThat(typeof code==='string'&&/^[A-Za-z0-9 -]{1,32}$/.test(code.trim()),'请输入微信页面显示的验证码',400,'INVALID_CODE');e.verifyCode=code.trim();return view(e);}
+  function cancelQR(user,qrId){const e=own(user,qrId);requireThat(e.status!=='confirmed','连接已完成，请使用解绑',409);e.status='cancelled';e.qrcode='';delete e.verifyCode;e.controller.abort();return view(e);}
+  function claimPoll(binding){return bank.atomic(()=>{
+    bindingFor(bank,binding);const time=Date.now();
+    if(!bank.run('UPDATE channel_bindings SET lease_owner=?,lease_epoch=CASE WHEN lease_owner=? AND lease_until>? THEN lease_epoch ELSE lease_epoch+1 END,lease_until=? WHERE id=? AND binding_generation=? AND (lease_owner=? OR lease_until<=?)',owner,owner,time,time+60000,binding.id,binding.binding_generation,owner,time).changes)return null;
+    return bank.get('SELECT * FROM channel_bindings WHERE id=?',binding.id);
+  });}
+  async function pollOnce(binding,signal){
+    if(!enabled()||!accepting())return {msgs:[]};const lease=claimPoll(binding);if(!lease)return {msgs:[]};
+    const result=await request(lease,'/ilink/bot/getupdates',{signal,timeoutMs:45000,body:{get_updates_buf:lease.cursor||''}});
+    inbox.ingest(lease,result.data,()=>assertLease(bank,'channel_bindings',lease,owner));if(options.autoStart!==false)inbox.kick();return result.data;
+  }
+  function stopBinding(bindingId){loops.get(bindingId)?.abort.abort();}
+  function startBinding(bindingId){
+    if(stopped||loops.has(bindingId)||!enabled()||!accepting())return;ensureTimer();const abort=new AbortController();
+    const task=(async()=>{let backoff=1000;while(!abort.signal.aborted&&!stopped){
+      const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active' AND auth_state='valid'",bindingId);if(!binding?.token)break;
+      try{await pollOnce(binding,abort.signal);backoff=1000;await delay(200,undefined,{signal:abort.signal});}
+      catch(error){if(abort.signal.aborted||['WECHAT_REAUTH_REQUIRED','CHANNEL_REAUTH_REQUIRED','BINDING_FENCED'].includes(error.code))break;bank.run("UPDATE channel_bindings SET connection_state='degraded',last_error_code=? WHERE id=?",error.code||'WECHAT_ERROR',bindingId);await delay(backoff*(0.8+Math.random()*0.4),undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,30000);}
+    }})().finally(()=>{if(loops.get(bindingId)?.abort===abort)loops.delete(bindingId);bank.run('UPDATE channel_bindings SET lease_until=0 WHERE id=? AND lease_owner=?',bindingId,owner);});loops.set(bindingId,{abort,task});
+  }
+  function cleanup(){
+    const t=Date.now();for(const [key,e] of pending)if(e.until<t){e.controller.abort();pending.delete(key);}for(const [key,times] of rate)if(times.every(v=>t-v>60000))rate.delete(key);
+    if(t-cleaned<3600000)return;cleaned=t;
+    bank.run("UPDATE wechat_inbox SET input_cipher=NULL,context_token_cipher=NULL WHERE finished_at<? AND status NOT IN ('queued','running')",t-86400000);
+    bank.run("UPDATE wechat_deliveries SET body_cipher=NULL,context_token_cipher=NULL WHERE created_at<? AND status IN ('api_accepted','cancelled','expired','failed','unknown')",t-86400000);
+    bank.run('DELETE FROM wechat_quarantine WHERE created_at<?',t-7*86400000);
+  }
+  function ensureTimer(){if(timer)return;timer=setInterval(()=>{
+    cleanup();
+    for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state<>'valid'")){stopBinding(b.id);inbox.revoke(b.id);delivery.revoke(b.id);}
+    if(enabled()&&accepting())for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state='valid'"))startBinding(b.id);
+    inbox.kick();
+  },250);timer.unref?.();}
+  function start(){stopped=false;delivery.start();inbox.start();if(enabled()){ensureTimer();for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state='valid'"))startBinding(b.id);}}
+  async function stop(){stopped=true;clearInterval(timer);timer=undefined;for(const e of pending.values())e.controller.abort();for(const l of loops.values())l.abort.abort();await inbox.stop();await delivery.stop();await Promise.allSettled([...loops.values()].map(l=>l.task));await Promise.allSettled([...pending.values()].map(e=>e.task));}
+  router.onRevoke(bindingId=>{stopBinding(bindingId);inbox.revoke(bindingId);delivery.revoke(bindingId);});
+  function register(route){
+    route('post','/channels/wechat/qr','PIN授权微信扫码绑定',async(req,res)=>res.json(await qr(req.user,req.body.pin)));
+    route('get','/channels/wechat/qr/:id','微信连接状态',async(req,res)=>res.json(await qrStatus(req.user,req.params.id)));
+    route('post','/channels/wechat/qr/:id/verify','提交微信扫码验证码',(req,res)=>res.json(verify(req.user,req.params.id,req.body.code)));
+    route('delete','/channels/wechat/qr/:id','取消微信扫码连接',(req,res)=>res.json(cancelQR(req.user,req.params.id)));
+    route('get','/channels/wechat/requests/:id','本人微信请求和投递状态',(req,res)=>res.json(inbox.requestView(req.user,req.params.id)));
+    route('get','/channels/wechat/requests','本人最近微信请求',(req,res)=>res.json(bank.all('SELECT id,status,received_at FROM wechat_inbox WHERE user_id=? ORDER BY seq DESC LIMIT 30',req.user.id)));
+  }
+  return {qr,qrStatus,verify,cancelQR,pollOnce,send,start,startBinding,stop,register,enabled,inbox,delivery,drain:()=>inbox.drain(),flush:()=>delivery.drain()};
 }

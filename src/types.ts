@@ -12,7 +12,7 @@ export type Snapshot = {
   virtualCards: { id: string; number: string; card_limit: number; status: string }[];
   reservations: { id: string; amount: number; purpose: string; until_at: string }[];
   scheduledTasks: { id: string; kind: string; run_at: string; status: string; error?: string }[];
-  bindings: { id: string; channel: string; status: string; created_at: string; personal?: boolean; live?: boolean }[];
+  bindings: { id: string; channel: string; status: string; created_at: string; personal?: boolean; live?: boolean; auth_state?: string; connection_state?: string; last_inbound_at?: number; last_api_accepted_at?: number; last_error_code?: string }[];
   agentLockedUntil: string | null;
   user: User; accounts: Account[]; holdings: Holding[]; loans: Loan[]; products: Product[];
   ledger: Ledger[]; transactions: Transaction[];

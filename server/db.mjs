@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { migrateWeChat } from './channels/wechat-schema.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -109,6 +110,8 @@ export function createBank(path) {
       channel TEXT NOT NULL, expires_at TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS channel_messages (channel TEXT NOT NULL, message_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(channel,message_id));
     CREATE TABLE IF NOT EXISTS channel_outbox (id TEXT PRIMARY KEY, binding_id TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS channel_preferences (user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL CHECK(channel IN ('feishu','wechat')),
+      mask_amounts INTEGER NOT NULL DEFAULT 0 CHECK(mask_amounts IN (0,1)), updated_at TEXT NOT NULL, PRIMARY KEY(user_id,channel));
     CREATE TABLE IF NOT EXISTS verifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), action_id TEXT NOT NULL,
       code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, face_status TEXT NOT NULL DEFAULT 'pending', frame_hash TEXT,
       attempts INTEGER NOT NULL DEFAULT 0, token_hash TEXT, token_expires_at TEXT, used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
@@ -144,11 +147,12 @@ export function createBank(path) {
       amount INTEGER NOT NULL,period TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL
     );
   `);
+  migrateWeChat(db);
   let depth = 0;
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;
     db.exec(depth === 1 ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
-    try { const result = fn(); db.exec(depth === 1 ? 'COMMIT' : `RELEASE ${savepoint}`); return result; }
+    try { const result = fn(); if (result?.then) throw new TypeError('Database transactions must be synchronous'); db.exec(depth === 1 ? 'COMMIT' : `RELEASE ${savepoint}`); return result; }
     catch (error) { db.exec(depth === 1 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`); throw error; }
     finally { depth--; }
   }

@@ -27,7 +27,7 @@ export async function startFeishu(router,options={}) {
 }
 const OPEN_API={feishu:'https://open.feishu.cn',lark:'https://open.larksuite.com'};
 const SCOPES=['im:message','im:message:send_as_bot','im:message.p2p_msg:readonly','application:application:patch'];
-const WELCOME='你好，我是你的澄川银行专属助手（模拟）。可以问我余额、账单，或让我提议转账、缴费；为保障资金安全，所有操作都需回澄川银行App确认，在这里可回复「取消 操作编号」放弃。发消息没有回复时，请回App「消息渠道绑定」查看机器人状态。';
+const WELCOME='你好，我是你的澄川银行专属助手。可以问我余额、账单，或让我提议转账、缴费；为保障资金安全，所有操作都需回澄川银行App确认，在这里可回复「取消 操作编号」放弃。发消息没有回复时，请回App「消息渠道绑定」查看机器人状态。';
 const SETUP_HELP='请到飞书开发者后台 open.feishu.cn/app 删除刚创建的「…的澄川银行助手」，再回到本页重新创建；多次失败请联系客服。';
 // Per-depositor bots created by Feishu's one-click registration. Events arrive by webhook, so an idle bot costs one
 // database row: no connection, timer or client object until a message comes in or a push goes out.

@@ -1,0 +1,46 @@
+// Run after npm run build; provide PLAYWRIGHT_PACKAGE and optionally BROWSER_CHANNEL=msedge.
+import assert from 'node:assert/strict';
+import express from 'express';
+import { resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { wechatFixture } from '../tests/wechat-helpers.mjs';
+const require=createRequire(process.env.PLAYWRIGHT_PACKAGE||resolve('node_modules/playwright/package.json'));
+const {chromium}=require('playwright');
+process.env.WECHAT_ENABLED='true';
+const cleanup=[],f=await wechatFixture({after:fn=>cleanup.push(fn)},{wechat:{feedback:false}});
+f.app.use(express.static(resolve('dist')));f.app.get('/{*path}',(_,res)=>res.sendFile(resolve('dist/index.html')));
+const base=f.url.replace(/\/api$/,'');await mkdir('test-results',{recursive:true});
+let browser;const errors=[];
+try{
+  browser=await chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{})});
+  const page=await browser.newPage({viewport:{width:430,height:932}});page.on('pageerror',e=>errors.push(e.message));
+  await page.request.post(base+'/api/auth/login',{data:{phone:'13800138000',password:'Bank123456'}});
+  f.state.status={status:'wait'};await page.goto(base+'/#channels');
+  const fsSwitch=page.getByRole('switch',{name:'飞书隐藏金额'}),wxSwitch=page.getByRole('switch',{name:'微信隐藏金额'});
+  await fsSwitch.waitFor();await fsSwitch.click();await page.waitForFunction(()=>document.querySelector('[aria-label="飞书隐藏金额"]')?.getAttribute('aria-checked')==='true');assert.equal(await wxSwitch.getAttribute('aria-checked'),'false');
+  await page.reload();await fsSwitch.waitFor();await page.waitForFunction(()=>document.querySelector('[aria-label="飞书隐藏金额"]')?.getAttribute('aria-checked')==='true');
+  await wxSwitch.click();await page.waitForFunction(()=>document.querySelector('[aria-label="微信隐藏金额"]')?.getAttribute('aria-checked')==='true');
+  await fsSwitch.click();await page.waitForFunction(()=>document.querySelector('[aria-label="飞书隐藏金额"]')?.getAttribute('aria-checked')==='false');assert.equal(await wxSwitch.getAttribute('aria-checked'),'true');
+  await page.route('**/api/channels/preferences/wechat',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'保存失败，请重试'}})}),{times:1});
+  await wxSwitch.click();await page.getByText('保存失败，请重试',{exact:true}).waitFor();assert.equal(await wxSwitch.getAttribute('aria-checked'),'true');
+  await wxSwitch.click();await page.waitForFunction(()=>document.querySelector('[aria-label="微信隐藏金额"]')?.getAttribute('aria-checked')==='false');
+  const card=page.locator('section.card').filter({has:page.getByRole('heading',{name:'微信助手',exact:true})});
+  await card.locator('input[name="pin"]').fill('123456');await card.getByRole('button',{name:'连接我的微信助手'}).click();await card.getByAltText('微信助手绑定二维码').waitFor();
+  await card.scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/wechat-qr-mobile.png'});
+  f.state.status={status:'need_verifycode'};await card.locator('input[name="code"]').waitFor();await card.locator('input[name="code"]').fill('123456');
+  f.state.status={status:'confirmed',bot_token:'ui-test-private',ilink_user_id:'wx-owner',ilink_bot_id:'wx-bot',baseurl:'https://ilinkai.weixin.qq.com'};
+  await card.getByRole('button',{name:'提交验证码'}).click();await card.getByText('微信已绑定。',{exact:false}).waitFor();
+  assert.equal(f.binding().auth_state,'valid');assert.ok(f.state.requests.some(r=>r.url.includes('verify_code=123456')));
+  f.state.sendOverride=()=>{throw Error('simulated connection drop');};await f.receive('查询余额','ui-result');await f.channels.wechat.drain();
+  const request=f.bank.get('SELECT id FROM wechat_inbox');await page.goto(base+'/#wechat-requests/'+request.id);
+  await page.getByRole('heading',{name:'微信请求结果',exact:true,level:2}).waitFor();await page.getByText('结果保存在 App，微信送达暂未确认。无需重复提交业务。').waitFor();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:'test-results/wechat-result-mobile.png'});
+  await page.request.post(base+'/api/auth/logout',{data:{}});await page.reload();await page.getByTestId('login-submit').waitFor();
+  await page.locator('input[name="phone"]').fill('13800138000');await page.locator('input[name="password"]').fill('Bank123456');await page.getByTestId('login-submit').click();
+  await page.getByRole('heading',{name:'微信请求结果',exact:true,level:2}).waitFor();assert.ok(page.url().endsWith(request.id));
+  await page.goto(base+'/#channels');await card.getByText('微信已绑定。',{exact:false}).waitFor();
+  const bound=page.locator('section.card').filter({has:page.getByRole('heading',{name:'已绑定渠道',exact:true})});await bound.locator('input[name="pin"]').fill('123456');await bound.getByRole('button',{name:'解绑并撤销未执行操作'}).click();await card.getByRole('button',{name:'连接我的微信助手'}).waitFor();
+  assert.equal(f.binding().status,'revoked');assert.deepEqual(errors,[]);
+  console.log('UI PASS: independent amount switches, persistence, failed save preserves state; 430px QR, verification code, binding, result fallback, login deep link, unbind; no page errors or horizontal overflow.');
+}finally{await browser?.close();for(const fn of cleanup.reverse())await fn();}

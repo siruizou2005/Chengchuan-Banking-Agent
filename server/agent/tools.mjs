@@ -4,6 +4,7 @@ import { ledgerFor, enrich, selectLedger, resolveRange, billReport, compactRepor
 import { runAnalysis } from './sandbox.mjs';
 import { id, now, products } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
+import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 const str=(maxLength=100)=>({type:'string',minLength:1,maxLength});
 const money={type:'string',pattern:'^(0|[1-9]\\d{0,8})(\\.\\d{1,2})?$',description:'人民币元字符串，最多2位小数'};
 const obj=(properties={},required=[])=>({type:'object',properties,required,additionalProperties:false});
@@ -49,10 +50,23 @@ export function validateArgs(name,args) {
 export async function executeTool(services,user,name,raw,context={}) {
  services.guard.assertOpen(user.id);
  const args=validateArgs(name,raw),{bank}=services;
- if(!READ_TOOLS.has(name) && !LOW_RISK_EFFECTS.has(name)){
-  const action=services.propose(user,name,args,context);
-  return {ok:true,level:action.level,actionId:action.id,data:action,event:{type:action.tool==='create_plan'?'plan':'action',data:action}};
- }
+ assertChannelExecution(bank,context,user.id);
+ if(!READ_TOOLS.has(name)) return commitToolEffect(bank,user.id,name,args,context,()=>{
+  if(!LOW_RISK_EFFECTS.has(name)){
+   const action=services.propose(user,name,args,context);
+   return {ok:true,level:action.level,actionId:action.id,data:action,event:{type:action.tool==='create_plan'?'plan':'action',data:action}};
+  }
+  let data,event;
+  if(name==='remember'){
+   requireThat(!/pin|password|token|secret|验证码|密码|密钥/i.test(args.key+' '+args.value),'不能将密码或密钥写入记忆');
+   bank.run('INSERT INTO agent_memory VALUES(?,?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',user.id,args.key,args.value,now());
+   bank.audit(user.id,'agent.memory_saved','',{key:args.key});data={saved:true,key:args.key};
+  }else if(name==='set_reminder')data=services.reminder(user,args);
+  else if(name==='handover_to_human'){data=services.handover(user,args.reason,context.sessionId);event={type:'handover',data};}
+  else throw new Error('Unregistered effect');
+  const decision=services.policyDecision(user,name,args);bank.audit(user.id,'policy.evaluated',context.sessionId||'',{tool:name,decision});
+  return {ok:true,level:'green',decision,data:redact(data),...(event?{event}:{})};
+ });
  let data,event;
  switch(name){
  case 'get_overview': data=redact(services.state(user).accounts); break;
@@ -73,11 +87,8 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'get_risk_profile':data={level:bank.get('SELECT risk_level FROM users WHERE id=?',user.id).risk_level};break;
  case 'get_scheduled_tasks':data={tasks:services.snapshot(user).scheduledTasks,plans:services.plans(user)};break;
  case 'get_cards':{const s=services.state(user);data={accounts:redact(s.accounts),creditCard:redact(s.creditCard),virtualCards:s.virtualCards,reservations:s.reservations};break;}
- case 'run_analysis':data=await runAnalysis(args.code,{today:businessDate(),ledger:ledgerFor(bank,user.id).map(enrich),transactions:redact(services.state(user).transactions)});bank.audit(user.id,'sandbox.analysis','',{purpose:args.purpose,code:args.code,durationMs:data.durationMs,size:data.size});break;
- case 'remember':requireThat(!/pin|password|token|secret|验证码|密码|密钥/i.test(args.key+' '+args.value),'不能将密码或密钥写入记忆');bank.run('INSERT INTO agent_memory VALUES(?,?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',user.id,args.key,args.value,now());bank.audit(user.id,'agent.memory_saved','',{key:args.key});data={saved:true,key:args.key};break;
+ case 'run_analysis':data=await runAnalysis(args.code,{today:businessDate(),ledger:ledgerFor(bank,user.id).map(enrich),transactions:redact(services.state(user).transactions)});assertChannelExecution(bank,context,user.id);bank.audit(user.id,'sandbox.analysis','',{purpose:args.purpose,code:args.code,durationMs:data.durationMs,size:data.size});break;
  case 'recall':data=bank.all('SELECT key,value FROM agent_memory WHERE user_id=?',user.id);break;
- case 'set_reminder':data=services.reminder(user,args);break;
- case 'handover_to_human':data=services.handover(user,args.reason,context.sessionId);event={type:'handover',data};break;
  default:throw new Error('Unhandled tool');
  }
  const decision=services.policyDecision(user,name,args);

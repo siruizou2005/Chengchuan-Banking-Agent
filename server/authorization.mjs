@@ -38,7 +38,7 @@ export function createAuthorization(bank) {
     const authorization = bank.get("SELECT * FROM operation_authorizations WHERE user_id=? AND action_id=? AND status='active' ORDER BY revision DESC LIMIT 1",user.id,action.id);
     requireThat(authorization && authorization.valid_from<=at && authorization.expires_at>at,'授权不存在、已撤销或过期',403,'AUTHORIZATION_INVALID');
     requireThat(authorization.params_digest===paramsDigest(actionParams(action)),'操作参数已变化，请重新提议并授权',403,'AUTHORIZATION_MISMATCH');
-    if (authorization.binding_id) requireThat(bank.get("SELECT id FROM channel_bindings WHERE id=? AND user_id=? AND status='active'",authorization.binding_id,user.id),'原渠道已解绑，授权已失效',403,'AUTHORIZATION_INVALID');
+    if (authorization.binding_id) requireThat(bank.get("SELECT id FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND status='active' AND (channel<>'wechat' OR auth_state='valid')",authorization.binding_id,authorization.binding_id,user.id),'原渠道已解绑或需要重新认证，授权暂不可用',403,'AUTHORIZATION_INVALID');
     return authorization;
   }
   function permit(user,action,tool,args,decision,{stepId='single',key=action.id,at=now(),transactionId}={}) {

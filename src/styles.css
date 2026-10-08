@@ -434,5 +434,14 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
   body { background: #e9ebf2; }
   .app-shell { box-shadow: 0 0 40px #0000000f; }
 }
+.channel-amount-setting { margin: 14px 0; padding: 12px 0; border-top: 1px solid #edf0f5; border-bottom: 1px solid #edf0f5; }
+.channel-amount-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.channel-amount-row .data-note { margin: 6px 0 0; }
+.channel-amount-switch { flex: 0 0 46px; width: 46px; height: 28px; padding: 3px; border: 0; border-radius: 16px; background: #c3cad7; cursor: pointer; }
+.channel-amount-switch span { display: block; width: 22px; height: 22px; border-radius: 50%; background: white; transition: transform .15s; box-shadow: 0 1px 3px #0002; }
+.channel-amount-switch[aria-checked="true"] { background: #526dff; }
+.channel-amount-switch[aria-checked="true"] span { transform: translateX(18px); }
+.channel-amount-switch:focus-visible { outline: 2px solid #526dff; outline-offset: 3px; }
+.channel-amount-switch:disabled { opacity: .5; cursor: wait; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print { .bottom-nav, .page-header, .hero, .toast { display: none; } .app-shell { max-width: none; box-shadow: none; background: #fff; } .modal { position: static; max-height: none; width: 100%; } .modal-body { max-height: none; overflow: visible; } }

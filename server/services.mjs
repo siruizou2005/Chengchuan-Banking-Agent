@@ -150,7 +150,7 @@ export function createServices(bank,core,guard) {
  }
  function pushResult(action,text){
   if(action.channel==='app'||!action.session_id)return;
-  const binding=get("SELECT * FROM channel_bindings WHERE id=? AND user_id=? AND status='active'",action.session_id,action.user_id);
+  const binding=get("SELECT * FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND status='active'",action.session_id,action.session_id,action.user_id);
   if(binding)run('INSERT INTO channel_outbox(id,binding_id,body,next_at) VALUES(?,?,?,?)',id('OUT'),binding.id,text,now());
  }
  function completeAction(action,result) {
@@ -288,6 +288,6 @@ export function createServices(bank,core,guard) {
   });
  }
  function plans(user){return all('SELECT * FROM agent_plans WHERE user_id=? ORDER BY created_at DESC',user.id).map(planView);}
- function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
+ function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,auth_state,connection_state,last_inbound_at,last_api_accepted_at,last_error_code,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
  return Object.assign(services,{resolveRecipients,normalize,policy,policyDecision,recheckTask,pauseAction,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
 }
