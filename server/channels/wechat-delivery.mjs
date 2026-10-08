@@ -110,10 +110,19 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
   }
   function kick() {
     if(stopped||options.isEnabled?.()===false)return;bridge();maintain();
-    while(active.size<concurrency){const row=claim();if(!row)break;const abort=new AbortController();const task=deliver(row,abort).finally(()=>{active.delete(row.binding_id);if(!stopped)queueMicrotask(kick);});active.set(row.binding_id,{abort,task});}
+    while(active.size<concurrency){const row=claim();if(!row)break;const abort=new AbortController();const task=deliver(row,abort).finally(()=>{active.delete(row.binding_id);if(!transient.has(row.kind))options.indicator?.settle(row.binding_id);if(!stopped)queueMicrotask(kick);});active.set(row.binding_id,{abort,task});}
+    options.onKick?.();
+  }
+  // Earliest moment maintain()/claim() has work. A due send that is still pending is blocked (its binding is
+  // sending, or the reply lacks context) and is retried when that send finishes, or expires.
+  function nextDue(){
+    const lease=bank.get("SELECT min(lease_until) v FROM wechat_deliveries WHERE status='sending'").v;
+    const waiting=bank.get("SELECT min(CASE WHEN next_at>? THEN min(next_at,expires_at) ELSE expires_at END) v FROM wechat_deliveries WHERE status IN ('pending','retry_wait')",Date.now()).v;
+    const review=bank.get("SELECT min(started_at) v FROM wechat_deliveries WHERE status='unknown' AND needs_review=0").v;
+    return Math.min(lease??Infinity,waiting??Infinity,review==null?Infinity:review+(options.unknownReviewMs||300000));
   }
   async function drain(){kick();while(active.size)await Promise.all([...active.values()].map(v=>v.task));}
   async function stop(){stopped=true;for(const v of active.values())v.abort.abort();await Promise.all([...active.values()].map(v=>v.task));}
   function revoke(bindingId){for(const [key,v] of active)if(key===bindingId)v.abort.abort();bank.run("UPDATE wechat_deliveries SET status=CASE WHEN status='sending' THEN 'unknown' ELSE 'cancelled' END,needs_review=CASE WHEN status='sending' THEN 1 ELSE needs_review END,lease_epoch=lease_epoch+1 WHERE binding_id=? AND status IN ('pending','retry_wait','sending')",bindingId);}
-  return {enqueue,cancelFeedback,kick,drain,stop,revoke,maintain,start(){stopped=false;}};
+  return {enqueue,cancelFeedback,kick,nextDue,drain,stop,revoke,maintain,start(){stopped=false;}};
 }

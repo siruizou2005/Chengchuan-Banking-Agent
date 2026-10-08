@@ -9,9 +9,11 @@ export function createWeChatInbox(services,router,delivery,options={}) {
   const {bank}=services,crypto=router.crypto,owner=randomUUID(),active=new Map(),ttl=options.executionLeaseMs||60000;
   const origin=options.publicOrigin??process.env.PUBLIC_ORIGIN??'',maxPending=options.maxPending||Number(process.env.WECHAT_MAX_PENDING_PER_USER)||3;
   const progressMs=options.progressMs??Number(process.env.WECHAT_PROGRESS_AFTER_MS||8000),feedback=options.feedback??process.env.WECHAT_FEEDBACK_ENABLED!=='false';
+  const typing=options.indicator,acknowledging=new Set();
   let stopped=false;
   function ingest(binding,data,assertPoll=()=>{}) {
-    return bank.atomic(()=>{
+    const acks=[];
+    const accepted=bank.atomic(()=>{
       assertPoll();bindingFor(bank,binding);
       const accepted=[];
       for(const message of data.msgs||[]) {
@@ -31,7 +33,7 @@ export function createWeChatInbox(services,router,delivery,options={}) {
         bank.run(`INSERT INTO wechat_inbox(id,binding_id,binding_session_id,binding_generation,user_id,upstream_message_id,upstream_created_at,input_cipher,context_token_cipher,status,is_command,received_at,queue_deadline,run_id)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,binding.id,binding.binding_session_id,binding.binding_generation,binding.user_id,String(upstreamId),Number.isFinite(message.create_time_ms)?message.create_time_ms:null,crypto.encrypt(text.slice(0,6000)),context,reason?'failed':'queued',isCommand?1:0,time,time+(options.queueMs||30000),id('RUN'));
         if(reason){bank.run('UPDATE wechat_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);delivery.enqueue(binding,{requestId,kind:'error',body:reason,context});}
-        else if(feedback&&!isCommand)delivery.enqueue(binding,{requestId,kind:'ack',body:count||bank.get('SELECT 1 FROM user_execution_leases WHERE user_id=? AND lease_until>?',binding.user_id,time)?'已收到，上一条请求还在处理，这条会接着处理，请稍等。':'已收到，正在处理，请稍等。',context});
+        else if(feedback&&!isCommand)acks.push({requestId,body:count||bank.get('SELECT 1 FROM user_execution_leases WHERE user_id=? AND lease_until>?',binding.user_id,time)?'已收到，上一条请求还在处理，这条会接着处理，请稍等。':'已收到，正在处理，请稍等。',context,plain:message.context_token});
         if(!reason&&!isCommand)enqueueExecution(bank,binding.user_id,requestId,'wechat',time+(options.queueMs||30000));
         accepted.push(requestId);
       }
@@ -39,6 +41,16 @@ export function createWeChatInbox(services,router,delivery,options={}) {
       bank.run("UPDATE channel_bindings SET last_poll_at=?,last_inbound_at=CASE WHEN ? > 0 THEN ? ELSE last_inbound_at END,connection_state=CASE WHEN ?>0 THEN 'receiving' ELSE connection_state END WHERE id=?",Date.now(),accepted.length,Date.now(),accepted.length,binding.id);
       return accepted;
     });
+    if(acks.length){const task=acknowledge(binding,acks).catch(()=>{}).finally(()=>acknowledging.delete(task));acknowledging.add(task);}
+    return accepted;
+  }
+  // Prefer WeChat's typing indicator; a text acknowledgement is only the fallback.
+  async function acknowledge(binding,acks) {
+    if(await typing?.start(binding,acks.at(-1).plain).catch(()=>false))return;
+    bank.atomic(()=>{
+      for(const ack of acks)if(bank.get("SELECT 1 FROM wechat_inbox WHERE id=? AND status IN ('queued','running')",ack.requestId))delivery.enqueue(binding,{requestId:ack.requestId,kind:'ack',body:ack.body,context:ack.context});
+    });
+    delivery.kick();
   }
   function complete(row,result,error=null) {
     bank.atomic(()=>{
@@ -59,8 +71,8 @@ export function createWeChatInbox(services,router,delivery,options={}) {
         try{const binding=bindingFor(bank,row);delivery.enqueue(binding,{requestId:row.id,kind:'error',body:text+'\n'+resultLink(origin,row.id),context:row.context_token_cipher});}catch{}
       }
       if(feedback)for(const row of bank.all("SELECT * FROM wechat_inbox WHERE status IN ('queued','running') AND is_command=0 AND progress_sent=0 AND received_at<=?",Date.now()-progressMs)){
-        if(row.status==='running'&&row.started_at>Date.now()-progressMs)continue;
-        try{const binding=bindingFor(bank,row);delivery.enqueue(binding,{requestId:row.id,kind:'progress',body:row.status==='queued'?'上一条请求还未结束，这条仍在等待处理。':'还在处理这条请求，请稍等，不用重复发送。',context:row.context_token_cipher});bank.run('UPDATE wechat_inbox SET progress_sent=1 WHERE id=?',row.id);}catch{}
+        if((row.status==='running'&&row.started_at>Date.now()-progressMs)||typing?.showing(row.binding_id))continue;
+        try{const binding=bindingFor(bank,row);delivery.enqueue(binding,{requestId:row.id,kind:'progress',body:row.status==='queued'?'上一条请求还未结束，这条仍在等待处理。':'还在处理这条请求，请稍等，不用重复发送。',context:row.context_token_cipher});bank.run('UPDATE wechat_inbox SET progress_sent=1 WHERE id=?',row.id);}catch{bank.run('UPDATE wechat_inbox SET progress_sent=1 WHERE id=?',row.id);}
       }
     });
   }
@@ -98,9 +110,18 @@ export function createWeChatInbox(services,router,delivery,options={}) {
     // Cancellation/help must remain available even when every model worker is waiting.
     if(![...active.values()].some(v=>v.command)){const row=claim(true);if(row)launch(row);}
     while([...active.values()].filter(v=>!v.command).length<(options.executionConcurrency||4)){const row=claim();if(!row)break;launch(row);}
+    options.onKick?.();
   }
-  async function drain(){kick();while(active.size)await Promise.all([...active.values()].map(v=>v.task));await delivery.drain();}
-  async function stop(){stopped=true;for(const v of active.values())v.abort.abort();await Promise.all([...active.values()].map(v=>v.task));}
+  // Earliest moment maintain() has work: an expired lease or queue deadline, or a progress notice falling due.
+  function nextDue(){
+    const lease=bank.get("SELECT min(lease_until) v FROM wechat_inbox WHERE status='running'").v,deadline=bank.get("SELECT min(queue_deadline) v FROM wechat_inbox WHERE status='queued'").v;
+    let due=Math.min(lease??Infinity,deadline??Infinity);
+    if(feedback)for(const row of bank.all("SELECT binding_id,status,received_at,started_at FROM wechat_inbox WHERE status IN ('queued','running') AND is_command=0 AND progress_sent=0"))
+      if(!typing?.showing(row.binding_id))due=Math.min(due,Math.max(row.received_at,row.status==='running'?row.started_at:0)+progressMs);
+    return due;
+  }
+  async function drain(){await Promise.all(acknowledging);kick();while(active.size)await Promise.all([...active.values()].map(v=>v.task));await delivery.drain();}
+  async function stop(){stopped=true;for(const v of active.values())v.abort.abort();await Promise.all([...active.values()].map(v=>v.task));await Promise.all(acknowledging);}
   function revoke(bindingId){
     for(const v of active.values())if(v.bindingId===bindingId)v.abort.abort();
     bank.run("UPDATE agent_execution_queue SET status='interrupted' WHERE request_id IN (SELECT id FROM wechat_inbox WHERE binding_id=?) AND status IN ('queued','running')",bindingId);
@@ -114,5 +135,5 @@ export function createWeChatInbox(services,router,delivery,options={}) {
     return {id:row.id,status:row.status,receivedAt:row.received_at,finishedAt:row.finished_at,result,
       deliveries:bank.all('SELECT kind,status,api_accepted_at,response_quality,needs_review FROM wechat_deliveries WHERE request_id=? ORDER BY created_at',row.id)};
   }
-  return {ingest,kick,drain,stop,revoke,maintain,requestView,start(){stopped=false;}};
+  return {ingest,kick,nextDue,drain,stop,revoke,maintain,requestView,start(){stopped=false;}};
 }

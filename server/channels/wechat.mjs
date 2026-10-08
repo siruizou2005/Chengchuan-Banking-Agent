@@ -5,13 +5,14 @@ import { requireThat } from '../errors.mjs';
 import { createWeChatProtocol, WECHAT_ORIGIN, safeBaseUrl } from './wechat-protocol.mjs';
 import { createWeChatDelivery } from './wechat-delivery.mjs';
 import { createWeChatInbox } from './wechat-inbox.mjs';
+import { createWeChatTyping } from './wechat-typing.mjs';
 import { bindingFor, assertLease } from './wechat-state.mjs';
 export { safeBaseUrl } from './wechat-protocol.mjs';
 
 const labels={waiting_scan:'请用微信扫码',waiting_confirmation:'已扫码，请在微信中确认',awaiting_code:'请输入微信扫码页面显示的验证码',confirmed:'绑定成功，请向助手发送“你好”',expired:'二维码已过期，请重新生成',failed:'连接未完成，请重新生成二维码',cancelled:'已取消连接'};
 export function createWeChat(services,router,options={}) {
   const {bank}=services,crypto=router.crypto,protocol=createWeChatProtocol(options),owner=randomUUID(),pending=new Map(),loops=new Map(),rate=new Map();
-  let stopped=false,timer,cleaned=0;
+  let stopped=false,started=false,wake,wakeAt=null,planned=false,cleaned=0;
   const enabled=()=>options.enabled??process.env.WECHAT_ENABLED==='true';
   const accepting=()=>options.accepting??process.env.WECHAT_ACCEPT_NEW_MESSAGES!=='false';
   const setting=(key,fallback,min,max)=>{
@@ -26,14 +27,16 @@ export function createWeChat(services,router,options={}) {
     unknownReviewMs:setting('WECHAT_UNKNOWN_REVIEW_AFTER_MS',300000,1000,86400000),
     ...options,isEnabled:enabled,
   };
-  const delivery=createWeChatDelivery(services,crypto,send,workerOptions);
-  const inbox=createWeChatInbox(services,router,delivery,workerOptions);
+  const typing=createWeChatTyping(services,request,{...workerOptions,onDrop:reschedule});
+  const delivery=createWeChatDelivery(services,crypto,send,{...workerOptions,indicator:typing,onKick:reschedule});
+  const inbox=createWeChatInbox(services,router,delivery,{...workerOptions,indicator:typing,onKick:reschedule});
+  function halt(bindingId){stopBinding(bindingId);inbox.revoke(bindingId);delivery.revoke(bindingId);typing.end(bindingId);}
   function reauth(binding,code='WECHAT_REAUTH_REQUIRED') {
     bank.atomic(()=>{
       const changed=bank.run("UPDATE channel_bindings SET auth_state='reauth_required',reauth_required_at=?,connection_state='degraded',last_error_code=? WHERE id=? AND binding_generation=? AND auth_state='valid'",Date.now(),code,binding.id,binding.binding_generation).changes;
       if(changed){bank.notify(binding.user_id,'微信需要重新认证','请回App「消息渠道绑定」重新扫码；此前操作状态可在App查看。');bank.audit(binding.user_id,'wechat.reauth_required',binding.id,{code});}
     });
-    stopBinding(binding.id);inbox.revoke(binding.id);delivery.revoke(binding.id);
+    halt(binding.id);
   }
   async function request(binding,path,args){
     try{return await protocol.request(binding.base_url,path,{...args,token:crypto.decrypt(binding.token)});}
@@ -46,7 +49,7 @@ export function createWeChat(services,router,options={}) {
   function view(e){return {id:e.id,status:e.status,expiresAt:new Date(e.until).toISOString(),retryAfterMs:1000,message:e.error||labels[e.status],...(e.bindingId?{bindingId:e.bindingId}:{})};}
   function own(user,qrId){const e=pending.get(qrId);requireThat(e?.userId===user.id,'二维码会话已失效，请重新生成',404,'QR_EXPIRED');if(Date.now()>e.until&&!['confirmed','cancelled','failed'].includes(e.status)){e.status='expired';e.controller.abort();}return e;}
   async function qr(user,pin){
-    requireThat(enabled()&&accepting(),'微信渠道暂不接受新连接',503,'WECHAT_DISABLED');services.pin(user,pin);crypto.encrypt('configuration-check');
+    requireThat(enabled()&&accepting(),'微信渠道暂不接受新连接',503,'WECHAT_DISABLED');services.pin(user,pin);sweep();crypto.encrypt('configuration-check');
     requireThat(!bank.get("SELECT user_id FROM channel_bindings WHERE channel='wechat' AND status='active' GROUP BY user_id HAVING count(*)>1"),'微信绑定存在历史冲突，请联系管理员核对',503,'WECHAT_BINDING_CONFLICT');
     requireThat(!bank.get("SELECT id FROM channel_bindings WHERE user_id=? AND channel='wechat' AND status='active' AND auth_state='valid'",user.id),'已连接微信助手，请先解绑',409,'WECHAT_BOT_EXISTS');
     const times=(rate.get(user.id)||[]).filter(t=>Date.now()-t<60000);requireThat(times.length<3,'二维码请求过于频繁，请稍后重试',429,'QR_RATE_LIMIT');times.push(Date.now());rate.set(user.id,times);
@@ -56,7 +59,7 @@ export function createWeChat(services,router,options={}) {
     requireThat(typeof data.qrcode==='string'&&data.qrcode&&typeof data.qrcode_img_content==='string'&&data.qrcode_img_content,'二维码响应无效',502,'WECHAT_QR_INVALID');
     for(const e of pending.values())if(e.userId===user.id&&!['confirmed','failed','expired','cancelled'].includes(e.status)){e.status='cancelled';e.controller.abort();}
     const e={id:id('QR'),userId:user.id,qrcode:data.qrcode,base:WECHAT_ORIGIN,until:Date.now()+300000,status:'waiting_scan',controller:new AbortController(),redirects:0};pending.set(e.id,e);
-    if(options.autoStart!==false){ensureTimer();e.task=watchLogin(e);}
+    if(options.autoStart!==false)e.task=watchLogin(e);
     return {...view(e),qrcode_img_content:data.qrcode_img_content,expiresIn:300};
   }
   async function pollLogin(e){
@@ -105,29 +108,53 @@ export function createWeChat(services,router,options={}) {
   }
   function stopBinding(bindingId){loops.get(bindingId)?.abort.abort();}
   function startBinding(bindingId){
-    if(stopped||loops.has(bindingId)||!enabled()||!accepting())return;ensureTimer();const abort=new AbortController();
-    const task=(async()=>{let backoff=1000;while(!abort.signal.aborted&&!stopped){
+    if(stopped||loops.has(bindingId)||!enabled()||!accepting())return;const abort=new AbortController();
+    let rebound=false;
+    const task=(async()=>{let backoff=1000;while(!abort.signal.aborted&&!stopped&&enabled()&&accepting()){
       const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active' AND auth_state='valid'",bindingId);if(!binding?.token)break;
       try{await pollOnce(binding,abort.signal);backoff=1000;await delay(200,undefined,{signal:abort.signal});}
-      catch(error){if(abort.signal.aborted||['WECHAT_REAUTH_REQUIRED','CHANNEL_REAUTH_REQUIRED','BINDING_FENCED'].includes(error.code))break;bank.run("UPDATE channel_bindings SET connection_state='degraded',last_error_code=? WHERE id=?",error.code||'WECHAT_ERROR',bindingId);await delay(backoff*(0.8+Math.random()*0.4),undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,30000);}
-    }})().finally(()=>{if(loops.get(bindingId)?.abort===abort)loops.delete(bindingId);bank.run('UPDATE channel_bindings SET lease_until=0 WHERE id=? AND lease_owner=?',bindingId,owner);});loops.set(bindingId,{abort,task});
+      catch(error){rebound=error.code==='BINDING_FENCED';if(abort.signal.aborted||rebound||['WECHAT_REAUTH_REQUIRED','CHANNEL_REAUTH_REQUIRED'].includes(error.code))break;bank.run("UPDATE channel_bindings SET connection_state='degraded',last_error_code=? WHERE id=?",error.code||'WECHAT_ERROR',bindingId);await delay(backoff*(0.8+Math.random()*0.4),undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,30000);}
+    }})().finally(()=>{
+      if(loops.get(bindingId)?.abort===abort)loops.delete(bindingId);bank.run('UPDATE channel_bindings SET lease_until=0 WHERE id=? AND lease_owner=?',bindingId,owner);
+      // Password/PIN changes and frozen accounts only flip auth_state in SQL; the poll loop is where that surfaces.
+      if(abort.signal.aborted||stopped)return;
+      if(bank.get("SELECT 1 FROM channel_bindings WHERE id=? AND status='active' AND auth_state<>'valid'",bindingId))halt(bindingId);
+      // A re-scan replaced this binding's generation while the old poll was in flight: carry on with the new one.
+      else if(rebound)queueMicrotask(()=>startBinding(bindingId));
+    });loops.set(bindingId,{abort,task});
   }
-  function cleanup(){
-    const t=Date.now();for(const [key,e] of pending)if(e.until<t){e.controller.abort();pending.delete(key);}for(const [key,times] of rate)if(times.every(v=>t-v>60000))rate.delete(key);
-    if(t-cleaned<3600000)return;cleaned=t;
+  function sweep(){const t=Date.now();for(const [key,e] of pending)if(e.until<t){e.controller.abort();pending.delete(key);}for(const [key,times] of rate)if(times.every(v=>t-v>60000))rate.delete(key);}
+  // Request text and context are purged after a day, quarantine records after a week; passes are batched hourly.
+  function purgeDue(){
+    const day=86400000,first=(sql,age)=>{const v=bank.get(sql).v;return v==null?Infinity:v+age;};
+    const due=Math.min(
+      first("SELECT min(finished_at) v FROM wechat_inbox WHERE status NOT IN ('queued','running') AND (input_cipher IS NOT NULL OR context_token_cipher IS NOT NULL)",day),
+      first("SELECT min(created_at) v FROM wechat_deliveries WHERE status IN ('api_accepted','cancelled','expired','failed','unknown') AND (body_cipher IS NOT NULL OR context_token_cipher IS NOT NULL)",day),
+      first('SELECT min(created_at) v FROM wechat_quarantine',7*day));
+    return due===Infinity?due:Math.max(due,cleaned+3600000);
+  }
+  function purge(){
+    const t=Date.now();if(t<purgeDue())return;cleaned=t;
     bank.run("UPDATE wechat_inbox SET input_cipher=NULL,context_token_cipher=NULL WHERE finished_at<? AND status NOT IN ('queued','running')",t-86400000);
     bank.run("UPDATE wechat_deliveries SET body_cipher=NULL,context_token_cipher=NULL WHERE created_at<? AND status IN ('api_accepted','cancelled','expired','failed','unknown')",t-86400000);
     bank.run('DELETE FROM wechat_quarantine WHERE created_at<?',t-7*86400000);
   }
-  function ensureTimer(){if(timer)return;timer=setInterval(()=>{
-    cleanup();
-    for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state<>'valid'")){stopBinding(b.id);inbox.revoke(b.id);delivery.revoke(b.id);}
-    if(enabled()&&accepting())for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state='valid'"))startBinding(b.id);
-    inbox.kick();
-  },250);timer.unref?.();}
-  function start(){stopped=false;delivery.start();inbox.start();if(enabled()){ensureTimer();for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state='valid'"))startBinding(b.id);}}
-  async function stop(){stopped=true;clearInterval(timer);timer=undefined;for(const e of pending.values())e.controller.abort();for(const l of loops.values())l.abort.abort();await inbox.stop();await delivery.stop();await Promise.allSettled([...loops.values()].map(l=>l.task));await Promise.allSettled([...pending.values()].map(e=>e.task));}
-  router.onRevoke(bindingId=>{stopBinding(bindingId);inbox.revoke(bindingId);delivery.revoke(bindingId);});
+  // Work is driven by events (a poll result, a finished task or send); the only timer is set for the
+  // earliest pending deadline and none exists while nothing is pending.
+  function reschedule(){if(planned||!started||stopped)return;planned=true;setImmediate(plan);}
+  function plan(){
+    planned=false;clearTimeout(wake);wake=undefined;wakeAt=null;if(!started||stopped||!enabled())return;
+    const due=Math.min(inbox.nextDue(),delivery.nextDue(),purgeDue());if(due===Infinity)return;
+    // A deadline already passed but not cleared waits 250ms, so an unexpected state cannot spin.
+    const delayMs=due>Date.now()?due-Date.now():250;wakeAt=Date.now()+delayMs;
+    wake=setTimeout(()=>{wake=undefined;wakeAt=null;sweep();purge();inbox.kick();reschedule();},delayMs);wake.unref?.();
+  }
+  function start(){
+    stopped=false;started=true;delivery.start();inbox.start();
+    if(enabled()){for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state<>'valid'"))halt(b.id);for(const b of bank.all("SELECT id FROM channel_bindings WHERE channel='wechat' AND status='active' AND auth_state='valid'"))startBinding(b.id);inbox.kick();reschedule();}
+  }
+  async function stop(){stopped=true;started=false;clearTimeout(wake);wake=undefined;wakeAt=null;typing.clear();for(const e of pending.values())e.controller.abort();for(const l of loops.values())l.abort.abort();await inbox.stop();await delivery.stop();await Promise.allSettled([...loops.values()].map(l=>l.task));await Promise.allSettled([...pending.values()].map(e=>e.task));}
+  router.onRevoke(halt);
   function register(route){
     route('post','/channels/wechat/qr','PIN授权微信扫码绑定',async(req,res)=>res.json(await qr(req.user,req.body.pin)));
     route('get','/channels/wechat/qr/:id','微信连接状态',async(req,res)=>res.json(await qrStatus(req.user,req.params.id)));
@@ -136,5 +163,5 @@ export function createWeChat(services,router,options={}) {
     route('get','/channels/wechat/requests/:id','本人微信请求和投递状态',(req,res)=>res.json(inbox.requestView(req.user,req.params.id)));
     route('get','/channels/wechat/requests','本人最近微信请求',(req,res)=>res.json(bank.all('SELECT id,status,received_at FROM wechat_inbox WHERE user_id=? ORDER BY seq DESC LIMIT 30',req.user.id)));
   }
-  return {qr,qrStatus,verify,cancelQR,pollOnce,send,start,startBinding,stop,register,enabled,inbox,delivery,drain:()=>inbox.drain(),flush:()=>delivery.drain()};
+  return {qr,qrStatus,verify,cancelQR,pollOnce,send,start,startBinding,stop,register,enabled,inbox,delivery,typing,nextWake:()=>wakeAt,drain:()=>inbox.drain(),flush:()=>delivery.drain()};
 }

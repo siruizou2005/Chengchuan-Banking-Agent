@@ -140,7 +140,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 4. 发布版本，把 App ID / App Secret 写入 `.env` 的 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`，重启服务。
 5. App「我的 → 安全中心 → 消息渠道绑定」用支付密码生成 6 位绑定码（5 分钟一次性），在飞书私聊机器人发送「绑定 123456」。
 
-**微信 ClawBot**（直接对接 iLink Bot 协议，纯 `fetch`，不安装 OpenClaw）：设置 `WECHAT_ENABLED=true`、`CHANNEL_SECRET` 和可从手机访问的 HTTPS `PUBLIC_ORIGIN`，在 App 渠道页输入支付密码后生成二维码，用支持微信助手功能的微信扫码，必要时在 App 填写微信页面显示的验证码。绑定后收到普通请求立即反馈“已收到，正在处理，请稍等”，等待约 8 秒追加一次进度提示；查询、分析与业务提议复用原 Agent，查询结果直接回复到微信。用户可独立开启微信或飞书的「隐藏金额」，开启后该渠道回复及业务通知中的金额显示为 `****`，App 完整结果不受影响。
+**微信 ClawBot**（直接对接 iLink Bot 协议，纯 `fetch`，不安装 OpenClaw）：设置 `WECHAT_ENABLED=true`、`CHANNEL_SECRET` 和可从手机访问的 HTTPS `PUBLIC_ORIGIN`，在 App 渠道页输入支付密码后生成二维码，用支持微信助手功能的微信扫码，必要时在 App 填写微信页面显示的验证码。绑定后收到普通请求，微信对话框立即显示「对方正在输入…」并在处理期间保持，回复送出后取消，聊天记录里只留下真正的回复；取不到输入提示凭据或提示中断时，退回文字“已收到，正在处理，请稍等”并在约 8 秒后追加一次进度提示。查询、分析与业务提议复用原 Agent，查询结果直接回复到微信。用户可独立开启微信或飞书的「隐藏金额」，开启后该渠道回复及业务通知中的金额显示为 `****`，App 完整结果不受影响。
 
 微信入站消息及回复任务持久化，按消息编号去重；与 App、飞书共用用户执行队列，工具副作用与幂等账本同事务提交。发送响应未知不自动重发、不重新执行模型，App 保留结果并提醒；`api_accepted` 仅表示微信接口接受请求，不表示手机送达。`-14` 暂停渠道并要求重新认证；主动解绑撤销未执行授权，重绑创建新代次。`WECHAT_ACCEPT_NEW_MESSAGES=false` 可停止新收件而排空已有任务。真实手机 20 轮逐条核对仍是开放前验收条件。
 
@@ -154,7 +154,8 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书共享机器人（自建应用）凭据 |
 | `FEISHU_PERSONAL_ENABLED` | `true` 时开放储户一键创建飞书专属机器人（另需 https 的 `PUBLIC_ORIGIN`） |
 | `WECHAT_ENABLED` / `WECHAT_ACCEPT_NEW_MESSAGES` | 微信总开关 / 停止新绑定及收件但继续排空 |
-| `WECHAT_FEEDBACK_ENABLED` / `WECHAT_PROGRESS_AFTER_MS` | 受理和进度提示 / 长等待阈值，默认 8000ms |
+| `WECHAT_FEEDBACK_ENABLED` / `WECHAT_TYPING_ENABLED` | 受理反馈总开关 / 用「正在输入」代替文字受理，默认均开启 |
+| `WECHAT_PROGRESS_AFTER_MS` | 退回文字时的进度提示阈值，默认 8000ms |
 | `WECHAT_SEND_TIMEOUT_MS` / `WECHAT_SEND_CONCURRENCY` | 普通发送超时，默认 8000ms / 全局发送并发，默认 4，每绑定为 1 |
 | `WECHAT_MAX_PENDING_PER_USER` / `WECHAT_PROTOCOL_VERSION` | 本人普通请求上限，默认 3 / 协议版本，默认 2.4.9 |
 | `WECHAT_UNKNOWN_REVIEW_AFTER_MS` | 发送未知状态核查阈值；金额显示改由 App 中的渠道独立开关管理，旧 `CHANNEL_MASK_AMOUNTS` 不再生效 |

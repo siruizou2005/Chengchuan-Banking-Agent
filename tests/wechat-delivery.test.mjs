@@ -47,8 +47,23 @@ test('受控上游20轮首次反馈与最终发送p95均在1秒内，不代表�
     await f.receive('测试'+i,'perf-'+i);await f.channels.wechat.drain();
     const row=f.bank.get('SELECT * FROM wechat_inbox WHERE upstream_message_id=?','perf-'+i);
     const deliveries=f.bank.all("SELECT * FROM wechat_deliveries WHERE request_id=? AND started_at IS NOT NULL ORDER BY started_at",row.id);
-    first.push(deliveries[0].started_at-row.received_at);const last=deliveries.find(d=>d.kind==='final');assert.equal(last.status,'api_accepted');final.push(last.started_at-row.finished_at);
+    first.push(f.state.typing.find(x=>x.status===1&&x.at>=row.received_at).at-row.received_at);const last=deliveries.find(d=>d.kind==='final');assert.equal(last.status,'api_accepted');final.push(last.started_at-row.finished_at);
   }
   const p95=values=>values.sort((a,b)=>a-b)[Math.ceil(values.length*.95)-1];
   t.diagnostic(`controlled transport n=20: first p95=${p95(first)}ms; final p95=${p95(final)}ms`);assert.ok(p95(first)<=1000);assert.ok(p95(final)<=1000);
+});
+
+test('启动后空闲不设唤醒定时器；限流重试按到期时间自动发送，发完只留一天后的清理',async t=>{
+  const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();
+  // A real getupdates is held open by WeChat until a message arrives.
+  f.state.updatesOverride=init=>new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}));
+  const w=f.channels.wechat;w.start();t.after(()=>w.stop());
+  await new Promise(r=>setTimeout(r,30));assert.equal(w.nextWake(),null);
+  let limited=true;f.state.sendOverride=()=>{if(limited){limited=false;return new Response(JSON.stringify({ret:0}),{status:429,headers:{'Content-Type':'application/json','Retry-After':'1'}});}return Response.json({ret:0,message_id:'ok'});};
+  f.queue.push(llm([],'余额充足'));w.inbox.ingest(f.binding(),{msgs:[f.message('查余额','scheduled')],get_updates_buf:'next'});w.inbox.kick();
+  await until(()=>f.bank.get("SELECT 1 FROM wechat_deliveries WHERE kind='final' AND status='retry_wait'"));
+  await until(()=>w.nextWake()!==null);assert.ok(w.nextWake()>Date.now()+500);
+  await until(async()=>{await new Promise(r=>setTimeout(r,20));return f.bank.get("SELECT 1 FROM wechat_deliveries WHERE kind='final' AND status='api_accepted'");});
+  // Only the day-later purge of the request text remains scheduled.
+  await until(()=>w.nextWake()>Date.now()+23*3600000);assert.equal(f.state.sent.length,2);
 });

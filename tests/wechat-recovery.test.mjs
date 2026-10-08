@@ -25,7 +25,7 @@ test('SQLite重启恢复：已生成结果只重投、执行中断不重跑、�
 test('模型等待期间解绑拒绝新副作用；旧代次轮询不写游标或收件',async t=>{
   let release;const wait=new Promise(r=>release=r);
   const f=await wechatFixture(t,{chat:{fetch:async()=>{await wait;return Response.json(llm([['remember',{key:'old-binding',value:'forbidden'}]]));}}});const old=await f.bind();
-  await f.receive('记住偏好','unbind');const work=f.channels.wechat.drain();await until(()=>f.state.sent.length>0);
+  await f.receive('记住偏好','unbind');const work=f.channels.wechat.drain();await until(()=>f.state.typing.length>0);
   await f.call(`/channels/${old.id}/unbind`,{pin:'123456'});release();await work;
   assert.equal(f.bank.get("SELECT count(*) n FROM agent_memory WHERE key='old-binding'").n,0);const current=await f.bind();assert.ok(current.binding_generation>old.binding_generation);
   assert.throws(()=>f.channels.wechat.inbox.ingest(old,{msgs:[f.message('old','old')],get_updates_buf:'stale'}),e=>e.code==='BINDING_FENCED');assert.notEqual(f.binding().cursor,'stale');
