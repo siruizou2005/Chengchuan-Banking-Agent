@@ -16,6 +16,8 @@ npm run build      # tsc 类型检查 + vite 构建
 npm start          # 生产模式，默认 3000 端口
 ```
 
+每次 push 和 Pull Request 由 GitHub Actions（`.github/workflows/test.yml`，Node 24）自动运行 `npm ci` 与 `npm test`，结果见仓库 Actions 页。
+
 数据库首次运行时自动建立在 `data/bank.sqlite`，重启不会清空；新增表和列通过 `CREATE TABLE IF NOT EXISTS` 与受保护的 `ALTER TABLE` 迁移，旧库直接升级。`npm run preview` 仅预览静态前端，不提供任何 API。
 
 ## 演示账户
