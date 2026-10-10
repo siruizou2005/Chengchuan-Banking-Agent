@@ -8,7 +8,7 @@ const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\
 export function createWeChatInbox(services,router,delivery,options={}) {
   const {bank}=services,crypto=router.crypto,owner=randomUUID(),active=new Map(),ttl=options.executionLeaseMs||60000;
   const origin=options.publicOrigin??process.env.PUBLIC_ORIGIN??'',maxPending=options.maxPending||Number(process.env.WECHAT_MAX_PENDING_PER_USER)||3;
-  const progressMs=options.progressMs??Number(process.env.WECHAT_PROGRESS_AFTER_MS||4000),feedback=options.feedback??process.env.WECHAT_FEEDBACK_ENABLED!=='false';
+  const progressMs=options.progressMs??Number(process.env.WECHAT_PROGRESS_AFTER_MS||6000),feedback=options.feedback??process.env.WECHAT_FEEDBACK_ENABLED!=='false';
   const typing=options.indicator,acknowledging=new Set();
   let stopped=false;
   function ingest(binding,data,assertPoll=()=>{}) {

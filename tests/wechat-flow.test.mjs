@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wechatFixture,llm,until } from './wechat-helpers.mjs';
 
-test('微信慢模型等待4秒提示一次，输入状态回复后取消；重复去重、并行收件、本轮context和最终App结果',async t=>{
+test('微信慢模型等待6秒提示一次，输入状态回复后取消；重复去重、并行收件、本轮context和最终App结果',async t=>{
   let resolveModel;const model=new Promise(r=>resolveModel=r);
   const f=await wechatFixture(t,{wechat:{typingKeepaliveMs:20},chat:{fetch:async()=>{await model;return Response.json(llm([],'余额123.45元，账号6218808888000012068'));}}});await f.bind();
   await f.call('/channels/preferences/wechat',{maskAmounts:true},'PATCH');
@@ -13,7 +13,7 @@ test('微信慢模型等待4秒提示一次，输入状态回复后取消；重�
   const first=f.bank.get("SELECT * FROM wechat_inbox WHERE upstream_message_id='one'");
   await f.receive('查余额','one');await f.receive('第二条','two');assert.equal(f.bank.get('SELECT count(*) n FROM wechat_inbox').n,2);
   // Simulate elapsed processing without tying the test to wall-clock model latency.
-  f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-4000,first.id);
+  f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-6000,first.id);
   f.channels.wechat.inbox.maintain();await f.channels.wechat.delivery.drain();
   assert.equal(f.bank.get("SELECT count(*) n FROM wechat_deliveries WHERE kind IN ('ack','progress')").n,1);
   assert.equal(f.state.sent[0].msg.item_list[0].text_item.text,'正在处理');
@@ -32,7 +32,7 @@ test('微信慢模型等待4秒提示一次，输入状态回复后取消；重�
   const stops=f.state.typing.length;await new Promise(r=>setTimeout(r,60));assert.equal(f.state.typing.length,stops);
 });
 
-test('取不到输入提示凭据也不立即发文字：3999毫秒不提示，4000毫秒只提示一次',async t=>{
+test('取不到输入提示凭据也不立即发文字：5999毫秒不提示，6000毫秒只提示一次',async t=>{
   let resolveModel;const model=new Promise(r=>resolveModel=r);
   const f=await wechatFixture(t,{chat:{fetch:async()=>{await model;return Response.json(llm([],'好的'));}}});await f.bind();
   f.state.configOverride=()=>Response.json({ret:0});
@@ -40,8 +40,8 @@ test('取不到输入提示凭据也不立即发文字：3999毫秒不提示，4
   await until(()=>f.bank.get("SELECT 1 FROM wechat_inbox WHERE status='running'"));
   assert.equal(f.state.sent.length,0);assert.equal(f.state.typing.length,0);
   const row=f.bank.get("SELECT * FROM wechat_inbox WHERE upstream_message_id='no-ticket'");
-  t.mock.timers.enable({apis:['Date'],now:row.received_at+3999});
-  assert.equal(f.channels.wechat.inbox.nextDue(),row.received_at+4000);
+  t.mock.timers.enable({apis:['Date'],now:row.received_at+5999});
+  assert.equal(f.channels.wechat.inbox.nextDue(),row.received_at+6000);
   f.channels.wechat.inbox.maintain();await f.channels.wechat.delivery.drain();assert.equal(f.state.sent.length,0);
   t.mock.timers.tick(1);
   f.channels.wechat.inbox.maintain();await f.channels.wechat.delivery.drain();assert.equal(f.bank.get("SELECT count(*) n FROM wechat_deliveries WHERE request_id=? AND kind='progress'",row.id).n,1);
@@ -59,7 +59,7 @@ test('快速完成不发等待文字，结果生成后取消尚未发出的等�
   await f.channels.wechat.delivery.stop();
   await f.receive('查余额','pending');
   const row=f.bank.get("SELECT * FROM wechat_inbox WHERE upstream_message_id='pending'");
-  f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-4000,row.id);
+  f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-6000,row.id);
   f.channels.wechat.inbox.maintain();
   assert.equal(f.bank.get("SELECT status FROM wechat_deliveries WHERE kind='progress'").status,'pending');
   await f.channels.wechat.drain();
@@ -68,12 +68,12 @@ test('快速完成不发等待文字，结果生成后取消尚未发出的等�
   assert.equal(f.state.sent.length,2);assert.ok(f.state.sent.every(s=>s.msg.item_list[0].text_item.text!=='正在处理'));
 });
 
-test('排队时间计入4秒，开始执行不重新计时；关闭反馈时不发送等待提示',async t=>{
+test('排队时间计入6秒，开始执行不重新计时；关闭反馈时不发送等待提示',async t=>{
   for(const feedback of [true,false]){
     const f=await wechatFixture(t,{wechat:{typing:false,feedback}});await f.bind();
     await f.receive('查余额','queued');
     const row=f.bank.get('SELECT * FROM wechat_inbox');
-    f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-4000,row.id);
+    f.bank.run('UPDATE wechat_inbox SET received_at=? WHERE id=?',Date.now()-6000,row.id);
     f.channels.wechat.inbox.maintain();await f.channels.wechat.delivery.drain();
     assert.equal(f.state.sent.length,feedback?1:0);
     if(feedback)assert.equal(f.state.sent[0].msg.item_list[0].text_item.text,'正在处理');
@@ -82,7 +82,7 @@ test('排队时间计入4秒，开始执行不重新计时；关闭反馈时不�
   }
 });
 
-test('启动后自动按收到消息的4秒截止时间发送提示，无需再次收件触发',async t=>{
+test('启动后自动按收到消息的6秒截止时间发送提示，无需再次收件触发',async t=>{
   let release;const model=new Promise(r=>release=r);
   const f=await wechatFixture(t,{wechat:{typing:false},chat:{fetch:async()=>{await model;return Response.json(llm([],'好的'));}}});await f.bind();
   // Hold the long poll open so only the deadline timer can trigger feedback.
@@ -92,11 +92,11 @@ test('启动后自动按收到消息的4秒截止时间发送提示，无需再�
     w.start();w.inbox.ingest(f.binding(),{msgs:[f.message('你好','timer')]});w.inbox.kick();
     const row=f.bank.get('SELECT * FROM wechat_inbox');
     await until(()=>w.nextWake()!==null);
-    assert.ok(Math.abs(w.nextWake()-(row.received_at+4000))<50);assert.equal(f.state.sent.length,0);
+    assert.ok(Math.abs(w.nextWake()-(row.received_at+6000))<50);assert.equal(f.state.sent.length,0);
     await until(async()=>{await new Promise(r=>setTimeout(r,20));return f.state.sent.length===1;});
     assert.equal(f.state.sent[0].msg.item_list[0].text_item.text,'正在处理');
     const progress=f.bank.get("SELECT * FROM wechat_deliveries WHERE kind='progress'");
-    assert.ok(progress.started_at-row.received_at>=4000);
+    assert.ok(progress.started_at-row.received_at>=6000);
     release();await w.drain();assert.equal(f.state.sent.length,2);
   }finally{release();await w.stop();}
 });
