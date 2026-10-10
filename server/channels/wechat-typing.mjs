@@ -1,7 +1,7 @@
 import { bindingFor } from './wechat-state.mjs';
 
-// "正在输入" replaces the text acknowledgement, so nothing is left in the chat once the reply arrives.
-// Indicator state lives in memory only: after a restart WeChat lets it lapse and text progress takes over.
+// "正在输入" provides immediate feedback without adding a chat message.
+// Text progress is scheduled independently from receipt, even if this indicator is unavailable.
 export function createWeChatTyping(services,request,options={}) {
   const {bank}=services,tickets=new Map(),shown=new Map();
   const keepaliveMs=options.typingKeepaliveMs||5000,maxMs=options.typingMaxMs||120000;
@@ -29,11 +29,11 @@ export function createWeChatTyping(services,request,options={}) {
     const entry=shown.get(bindingId);if(!entry||entry.sending)return;
     if(!busy(bindingId)||Date.now()-entry.started>maxMs)return stop(bindingId);
     entry.sending=true;
-    // A failed keepalive drops the indicator, which lets the text progress notice take over.
+    // A failed keepalive drops the indicator without changing the text progress deadline.
     try{entry.binding=bindingFor(bank,entry.binding);await send(entry.binding,entry.ticket,1);}catch{end(bindingId);options.onDrop?.();}
     finally{entry.sending=false;}
   }
-  // Resolves true once WeChat accepted the indicator; false means the caller should acknowledge with text.
+  // Resolves true once WeChat accepted the indicator; failure leaves text feedback to its deadline.
   async function start(binding,context) {
     if(!enabled())return false;
     const current=shown.get(binding.id);

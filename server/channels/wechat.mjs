@@ -20,7 +20,7 @@ export function createWeChat(services,router,options={}) {
     requireThat(Number.isInteger(value)&&value>=min&&value<=max,`${key} 配置无效`,503,'WECHAT_CONFIG');return value;
   };
   const workerOptions={
-    progressMs:setting('WECHAT_PROGRESS_AFTER_MS',8000,500,60000),
+    progressMs:setting('WECHAT_PROGRESS_AFTER_MS',4000,500,60000),
     sendTimeoutMs:setting('WECHAT_SEND_TIMEOUT_MS',8000,500,12000),
     maxPending:setting('WECHAT_MAX_PENDING_PER_USER',3,1,10),
     sendConcurrency:setting('WECHAT_SEND_CONCURRENCY',4,1,8),
