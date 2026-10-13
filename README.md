@@ -210,7 +210,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 | 服务 | `chengchuan-bank.service` |
 | 内部端口 | `127.0.0.1:8316` |
 | 当前程序 | `/opt/chengchuan-bank/current` |
-| 版本目录 | `/opt/chengchuan-bank/releases/20261008-03`（旧版本 `20261008-02`、`20261008-01`、`20261006-03`、`20261006-02`、`20261006-01`、`20261002-01`、`20260921-01`、`20260918-01`、`20260912-01` 保留可回滚） |
+| 版本目录 | `/opt/chengchuan-bank/releases/20261012-01`（旧版本 `20261008-03`、`20261008-02`、`20261008-01`、`20261006-03`、`20261006-02`、`20261006-01`、`20261002-01`、`20260921-01`、`20260918-01`、`20260912-01` 保留可回滚） |
 | 独立 Node | `/opt/chengchuan-bank/runtime/bin/node` |
 | 持久化数据库 | `/var/lib/chengchuan-bank/bank.sqlite` |
 | 聊天 / 语音 / 渠道凭据 | `/etc/chengchuan-bank/env`（root 0600，由 systemd `EnvironmentFile` 加载） |
