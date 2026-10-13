@@ -4,6 +4,18 @@ import { requireThat } from '../errors.mjs';
 export function injectionFlags(text) {
   return [/忽略.{0,12}(指令|规则|之前)/i,/你现在是/i,/\b(system|developer)\s*:/i,/(无需|不用|跳过|绕过).{0,6}(确认|验证|密码)/i,/ignore.{0,25}(instructions|rules)/i].filter(r=>r.test(text)).map(r=>r.source);
 }
+// Topic gate runs before the model: banking keywords always pass, so only clear off-topic asks and bare greetings get a fixed reply.
+const BANK_TOPIC=/账|余额|流水|转账|汇款|收款|付款|理财|基金|定期|活期|存款|利率|利息|收益|贷款|还款|借款|信用卡|卡|额度|冻结|挂失|订阅|扣费|代扣|缴费|水费|电费|燃气|话费|宽带|物业|花|消费|支出|收入|预算|省钱|存钱|攒钱|工资|银行|AA|提醒|钱|元|块|金额|限额|风险|产品|人工|客服/i;
+const GREETING=/^(你好|您好|嗨|哈喽|hi|hello|hey|在吗|在不在|谢谢|多谢|感谢|谢了|再见|拜拜|早上好|早安|中午好|下午好|晚上好|晚安|你是谁|你能做什么|你会什么)(呀|啊|哦|你|您)?[\s!！。.,，~～?？]*$/i;
+const OFF_TOPIC=[/(讲|说|来)(个|一个|段|几个)?.{0,4}笑话/,/(讲|说)(个|一个)?.{0,4}故事/,/写.{0,8}(诗|作文|小说|文章|歌词|对联|情书|检讨|周报|论文|代码|程序|脚本|函数)/,/翻译/,/\b(python|java|javascript|sql|html|css|c\+\+)\b/i,/(编程|代码|bug|报错)/i,/天气|星座|算命|运势|塔罗|菜谱|做菜|食谱/,/陪我(聊|玩)|聊聊天|玩(个)?游戏|猜谜|脑筋急转弯/,/(作业|习题|数学题|解方程)/];
+export const OFF_TOPIC_REPLY='我是澄川银行智能助手，只能协助账户、账单、转账、理财、卡片、订阅、缴费等银行业务。你可以试试：查本月账单、给某人转账、对比理财产品。';
+export const GREETING_REPLY='你好，我是澄川银行智能助手。可以帮你查余额和账单、转账、对比理财产品、管理卡片和订阅，请问要办理什么？';
+export function topicGate(text) {
+  const t=text.trim();
+  if(t.length<=12&&GREETING.test(t)) return 'greeting';
+  if(BANK_TOPIC.test(t)) return null;
+  return OFF_TOPIC.some(r=>r.test(t))?'off_topic':null;
+}
 export function redact(value) {
   const visit = v => {
     if (typeof v === 'string') return v.replace(/((?:支付密码|登录密码|密码|验证码|API[ _-]?KEY|PIN)\s*[:：=是为]?\s*)[A-Za-z0-9_-]{4,128}/gi,'$1[已隐藏]').replace(/\b\d{11,19}\b/g, n=>'****'+n.slice(-4)).replace(/sk-[a-zA-Z0-9_-]+/g,'[secret]');

@@ -53,7 +53,7 @@ test('取不到输入提示凭据也不立即发文字：5999毫秒不提示，6
 
 test('快速完成不发等待文字，结果生成后取消尚未发出的等待提示',async t=>{
   const f=await wechatFixture(t,{wechat:{typing:false}});await f.bind();
-  f.queue.push(llm([],'好的'));await f.receive('你好','fast');await f.channels.wechat.drain();
+  f.queue.push(llm([],'好的'));await f.receive('查余额','fast');await f.channels.wechat.drain();
   assert.deepEqual(f.state.sent.map(s=>s.msg.item_list[0].text_item.text),['好的']);
   assert.equal(f.bank.get("SELECT count(*) n FROM wechat_deliveries WHERE kind IN ('ack','progress')").n,0);
   await f.channels.wechat.delivery.stop();
@@ -89,7 +89,7 @@ test('启动后自动按收到消息的6秒截止时间发送提示，无需再�
   f.state.updatesOverride=init=>new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}));
   const w=f.channels.wechat;
   try{
-    w.start();w.inbox.ingest(f.binding(),{msgs:[f.message('你好','timer')]});w.inbox.kick();
+    w.start();w.inbox.ingest(f.binding(),{msgs:[f.message('查余额','timer')]});w.inbox.kick();
     const row=f.bank.get('SELECT * FROM wechat_inbox');
     await until(()=>w.nextWake()!==null);
     assert.ok(Math.abs(w.nextWake()-(row.received_at+6000))<50);assert.equal(f.state.sent.length,0);

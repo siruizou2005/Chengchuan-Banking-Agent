@@ -116,7 +116,7 @@ export function createBank(path) {
       code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, face_status TEXT NOT NULL DEFAULT 'pending', frame_hash TEXT,
       attempts INTEGER NOT NULL DEFAULT 0, token_hash TEXT, token_expires_at TEXT, used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
   `);
-  for (const [table, column, ddl] of [['agent_runs', 'events', "TEXT NOT NULL DEFAULT '[]'"], ['agent_sessions', 'archived', 'INTEGER NOT NULL DEFAULT 0']]) {
+  for (const [table, column, ddl] of [['agent_runs', 'events', "TEXT NOT NULL DEFAULT '[]'"], ['agent_runs', 'topic', 'TEXT'], ['agent_sessions', 'archived', 'INTEGER NOT NULL DEFAULT 0']]) {
     if (!all(`PRAGMA table_info(${table})`).some(c => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   }
   for (const [table, column, ddl] of [

@@ -83,3 +83,9 @@ test('飞书专属机器人：无人查看的创建会被中止，残留的配�
  const idle=(await f.call('/channels/feishu/register',{pin:'123456'})).data;assert.ok(idle.id);assert.equal(f.bank.get("SELECT id FROM channel_bindings WHERE id='BIND-STALE'"),undefined);
  await new Promise(r=>setTimeout(r,10));f.channels.bots.sweep();assert.equal((await f.call(`/channels/feishu/register/${idle.id}`)).data.status,'expired');
 });
+test('IM渠道同样限制话题：无关请求回固定话术且不调用模型',async t=>{
+ const f=await fixture(t),{code}=f.channels.router.createCode(f.user,'123456'),binding=f.channels.router.bind('feishu','open-alice',code);
+ const reply=await f.channels.router.receive({channel:'feishu',externalId:'open-alice',messageId:'topic-1',text:'讲个笑话'});
+ assert.match(reply,/银行业务/);assert.equal(f.requests.length,0);
+ assert.equal(f.bank.get("SELECT topic FROM agent_runs WHERE session_id=? AND channel='feishu'",binding.id).topic,'off_topic_rule');
+});

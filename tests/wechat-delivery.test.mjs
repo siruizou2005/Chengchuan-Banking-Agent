@@ -6,7 +6,7 @@ import { createWeChatProtocol } from '../server/channels/wechat-protocol.mjs';
 test('微信明确限流复用client_id和正文重试；取消后的待发操作不再提示确认',async t=>{
   const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();
   f.state.sendOverride=()=>Response.json({ret:429},{status:429,headers:{'retry-after':'1'}});
-  await f.receive('你好','retry');await f.channels.wechat.drain();
+  await f.receive('查余额','retry');await f.channels.wechat.drain();
   const row=f.bank.get('SELECT * FROM wechat_deliveries');assert.equal(row.status,'retry_wait');
   f.state.sendOverride=null;f.bank.run('UPDATE wechat_deliveries SET next_at=0 WHERE id=?',row.id);await f.channels.wechat.delivery.drain();
   assert.deepEqual(f.state.sent[0],f.state.sent[1]);assert.equal(f.bank.get('SELECT status FROM wechat_deliveries').status,'api_accepted');assert.equal(f.requests.length,1);
@@ -22,7 +22,7 @@ test('微信明确限流复用client_id和正文重试；取消后的待发操�
 test('发送租约过期后旧响应不能确认送达；缺少本轮context不借用其他轮次',async t=>{
   let release;const wait=new Promise(r=>release=r);
   const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();f.state.sendOverride=async()=>{await wait;return Response.json({ret:0});};
-  await f.receive('你好','late-send');const work=f.channels.wechat.drain();await until(()=>f.state.sent.length===1);
+  await f.receive('查余额','late-send');const work=f.channels.wechat.drain();await until(()=>f.state.sent.length===1);
   f.bank.run("UPDATE wechat_deliveries SET lease_until=0 WHERE status='sending'");release();await work;
   assert.equal(f.bank.get('SELECT status FROM wechat_deliveries').status,'unknown');assert.equal(f.bank.get('SELECT api_accepted_at FROM wechat_deliveries').api_accepted_at,null);
   await f.receive('另一个请求','no-context',{context_token:null});await f.channels.wechat.drain();assert.equal(f.state.sent.length,1);
