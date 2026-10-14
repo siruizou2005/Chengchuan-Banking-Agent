@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { migrateWeChat } from './channels/wechat-schema.mjs';
+import { migrateFeishu } from './channels/feishu-schema.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -148,6 +149,7 @@ export function createBank(path) {
     );
   `);
   migrateWeChat(db);
+  migrateFeishu(db);
   let depth = 0;
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;

@@ -1,0 +1,144 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync,rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fixture,llm } from './helpers.mjs';
+import { createFeishuHandler,feishuRequest } from '../server/channels/feishu.mjs';
+import { createApp } from '../server/app.mjs';
+import { executeTool } from '../server/agent/tools.mjs';
+
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+const until=async predicate=>{for(let i=0;i<400;i++){if(await predicate())return;await new Promise(r=>setTimeout(r,5));}throw Error('condition timed out');};
+const event=(id,text,owner='fs-owner')=>({sender:{sender_id:{open_id:owner},sender_type:'user'},message:{message_id:id,chat_type:'p2p',message_type:'text',content:JSON.stringify({text})}});
+async function setup(t,options={}) {
+ const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{create:async()=>({code:0}),reply:async()=>({code:0})}}};},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
+ const f=await fixture(t,{chat:options.chat,channels:{publicOrigin:'https://bank.test',feishu:{appId:'test',appSecret:'test',sdk},feishuPipeline:{feedback:false,...options.pipeline}}});await f.channels.start();
+ const binding=f.channels.router.bind('feishu','fs-owner',f.channels.router.createCode(f.user,'123456').code),sent=[];
+ const handler=createFeishuHandler(f.channels.router,{im:{v1:{message:{reply:async arg=>{sent.push(arg);return options.reply?options.reply(arg):{code:0,data:{message_id:'out-'+sent.length}};}}}}});
+ return {...f,binding,sent,handler,pipe:f.channels.feishuPipeline};
+}
+
+test('飞书：解绑期间的模型不得写工具效果或发送金额，重绑隔离会话和旧回调',async t=>{
+ const gate=deferred(),entered=deferred();let calls=0;
+ const f=await setup(t,{chat:{fetch:async()=>{if(++calls===1){entered.resolve();await gate.promise;return Response.json(llm([['remember',{key:'fs_test',value:'must not persist'}]]));}return Response.json(llm([],'余额 ¥123.45'));}}});
+ await f.call('/channels/preferences/feishu',{maskAmounts:true},'PATCH');
+ f.handler(event('unbind-1','记住偏好'));await entered.promise;
+ const row=f.bank.get("SELECT * FROM feishu_inbox WHERE message_id='unbind-1'");
+ f.channels.router.unbind(f.user,f.binding.id,'123456');
+ const rebound=f.channels.router.bind('feishu','fs-owner',f.channels.router.createCode(f.user,'123456').code);
+ assert.equal(rebound.auth_state,'valid');assert.equal(rebound.binding_generation,f.binding.binding_generation+1);assert.notEqual(rebound.binding_session_id,f.binding.binding_session_id);
+ gate.resolve();await f.pipe.drain();
+ assert.equal(f.bank.get('SELECT status FROM feishu_inbox WHERE id=?',row.id).status,'cancelled');
+ assert.equal(f.bank.get("SELECT * FROM agent_memory WHERE user_id=? AND key='fs_test'",f.user.id),undefined);assert.equal(f.sent.length,0);
+ const stale=createFeishuHandler(f.channels.router,{},()=>{},'fs-owner',f.binding);stale(event('old-callback','查余额'));
+ assert.equal(f.bank.get("SELECT * FROM feishu_inbox WHERE message_id='old-callback'"),undefined);
+ f.handler(event('unbind-1','旧事件重放'));await f.pipe.drain();assert.equal(f.sent.length,0);
+ f.handler(event('new-message','查余额'));await f.pipe.drain();
+ assert.equal(f.sent.length,1);assert.doesNotMatch(f.sent[0].data.content,/123\.45/);
+});
+
+test('飞书：业务拒绝有终态和App结果，重复事件不重跑模型或丢失结果，结果归属隔离',async t=>{
+ const f=await setup(t,{reply:()=>({code:230002})});f.queue.push(llm([],'余额 ¥123.45'));
+ const e=event('rejected','查余额');f.handler(e);await f.pipe.drain();f.handler(e);await f.pipe.drain();
+ assert.equal(f.requests.length,1);assert.equal(f.sent.length,1);
+ const row=f.bank.get("SELECT * FROM feishu_inbox WHERE message_id='rejected'");
+ const d=f.bank.get('SELECT * FROM feishu_deliveries WHERE request_id=?',row.id);assert.equal(d.status,'failed');assert.equal(d.safe_error_code,'FEISHU_230002');
+ assert.doesNotMatch(row.input_cipher,/查余额/);assert.doesNotMatch(d.body_cipher,/123\.45/);
+ assert.equal((await f.call('/channels/feishu/requests')).data[0].id,row.id);
+ const result=await f.call(`/channels/feishu/requests/${row.id}`);assert.equal(result.status,200);assert.match(result.data.result.text,/123\.45/);
+ assert.equal((await f.req(`/channels/feishu/requests/${row.id}`,undefined,f.bob.token)).status,404);
+ assert.ok(f.bank.get("SELECT 1 FROM notifications WHERE user_id=? AND title='飞书回复送达未确认'",f.user.id));
+});
+
+test('飞书：明确限流只重试投递，金额开关变化后重新生成发送编号；响应丢失不自动重发',async t=>{
+ let mode='rate';const f=await setup(t,{reply:()=>{if(mode==='rate')return {code:99991400};if(mode==='unknown')throw Error('connection reset');return {code:0};}});
+ f.queue.push(llm([],'余额 ¥123.45'));f.handler(event('rate','查余额'));await f.pipe.drain();
+ let d=f.bank.get('SELECT * FROM feishu_deliveries ORDER BY seq DESC LIMIT 1');assert.equal(d.status,'retry_wait');const first=f.sent[0].data.uuid;
+ await f.call('/channels/preferences/feishu',{maskAmounts:true},'PATCH');mode='ok';f.bank.run('UPDATE feishu_deliveries SET next_at=0 WHERE id=?',d.id);await f.pipe.drain();
+ assert.equal(f.requests.length,1);assert.equal(f.sent.length,2);assert.notEqual(f.sent[1].data.uuid,first);assert.doesNotMatch(f.sent[1].data.content,/123\.45/);
+ mode='unknown';f.queue.push(llm([],'结果已生成'));f.handler(event('unknown','查余额'));await f.pipe.drain();
+ d=f.bank.get('SELECT * FROM feishu_deliveries ORDER BY seq DESC LIMIT 1');assert.equal(d.status,'unknown');assert.equal(d.needs_review,1);
+ await f.pipe.drain();assert.equal(f.sent.length,3);assert.equal(f.requests.length,2);
+});
+
+test('飞书：发送在途解绑不会复活通知，迟到的成功不能覆盖未知状态',async t=>{
+ const gate=deferred(),entered=deferred();const f=await setup(t,{reply:async()=>{entered.resolve();return gate.promise;}});
+ f.queue.push(llm([],'查询结果'));f.handler(event('inflight','查询'));await entered.promise;
+ const d=f.bank.get('SELECT * FROM feishu_deliveries ORDER BY seq DESC LIMIT 1');
+ f.channels.router.unbind(f.user,f.binding.id,'123456');f.channels.router.bind('feishu','fs-owner',f.channels.router.createCode(f.user,'123456').code);
+ gate.resolve({code:0});await f.pipe.drain();
+ assert.equal(f.bank.get('SELECT status FROM feishu_deliveries WHERE id=?',d.id).status,'unknown');assert.equal(f.sent.length,1);
+});
+
+test('飞书：慢请求只提示一次，排队有界，取消命令不等待模型',async t=>{
+ const gate=deferred(),entered=deferred();let calls=0;
+ const f=await setup(t,{pipeline:{feedback:true,progressMs:15,maxPending:2,concurrency:1},chat:{fetch:async()=>{if(++calls===1){entered.resolve();await gate.promise;}return Response.json(llm([],'完成查询'));}}});
+ const action=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'20'},{channel:'feishu',sessionId:f.binding.binding_session_id});
+ f.handler(event('slow','查询'));await entered.promise;
+ f.handler(event('queued','第二个查询'));f.handler(event('overflow','第三个查询'));f.handler(event('cancel','取消 '+action.id));
+ await until(()=>f.services.owned(f.user,action.id).status==='cancelled');
+ await until(()=>f.bank.get("SELECT count(*) n FROM feishu_deliveries WHERE kind='progress' AND status='api_accepted'").n>=1);
+ assert.equal(f.bank.get("SELECT status FROM feishu_inbox WHERE message_id='overflow'").status,'failed');
+ gate.resolve();await f.pipe.drain();
+ assert.equal(calls,2);assert.equal(f.bank.get("SELECT count(*) n FROM feishu_deliveries d JOIN feishu_inbox i ON i.id=d.request_id WHERE i.message_id='slow' AND d.kind='progress'").n,1);
+ assert.equal(f.bank.get("SELECT status FROM feishu_inbox WHERE message_id='queued'").status,'completed');
+ const result=f.sent.filter(s=>s.path.message_id==='slow');assert.match(result[0].data.content,/正在(?:等待)?处理/);assert.match(result.at(-1).data.content,/完成查询/);
+ f.handler(event('fast','帮助'));await f.pipe.drain();assert.equal(f.bank.get("SELECT count(*) n FROM feishu_deliveries d JOIN feishu_inbox i ON i.id=d.request_id WHERE i.message_id='fast' AND d.kind='progress'").n,0);
+});
+
+test('飞书：已取消提议的待重试回复刷新状态，不能继续提示用户确认',async t=>{
+ let limited=true;const f=await setup(t,{reply:()=>({code:limited?99991400:0})});
+ f.queue.push(llm([['propose_transfer',{recipient:f.recipient,amount:'20'}]]),llm([],'请在App核对操作。'));
+ f.handler(event('proposal','转账20元'));await f.pipe.drain();
+ const action=f.bank.get("SELECT * FROM agent_actions WHERE user_id=? AND channel='feishu' ORDER BY rowid DESC LIMIT 1",f.user.id);
+ const row=f.bank.get("SELECT * FROM feishu_inbox WHERE message_id='proposal'"),delivery=f.bank.get('SELECT * FROM feishu_deliveries WHERE request_id=?',row.id);
+ assert.equal(delivery.status,'retry_wait');assert.match(f.sent[0].data.content,/待授权确认/);
+ f.channels.router.feishuCommand(f.binding,'取消 '+action.id);limited=false;
+ f.bank.run('UPDATE feishu_deliveries SET next_at=0 WHERE id=?',delivery.id);await f.pipe.drain();
+ const text=JSON.parse(f.sent.at(-1).data.content).text;
+ assert.match(text,/cancelled/);assert.doesNotMatch(text,/待授权确认|请在App内输入支付密码确认/);
+ assert.equal(f.pipe.requestView(f.user,row.id).result.events.find(e=>e.type==='action').data.status,'cancelled');
+});
+
+test('飞书：回推在途解绑不会把outbox改回待重试，慢绑定不阻塞其他绑定',async t=>{
+ const entered=deferred(),gate=deferred(),sent=[];
+ const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{create:async a=>{sent.push(a);if(a.data.receive_id==='slow-owner'){entered.resolve();await gate.promise;throw Error('lost response');}return {code:0};}}}}},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
+ const f=await fixture(t,{channels:{feishu:{appId:'test',appSecret:'test',sdk}}});await f.channels.start();
+ const a=f.channels.router.bind('feishu','slow-owner',f.channels.router.createCode(f.user,'123456').code);
+ const bob=f.bank.get('SELECT * FROM users WHERE id=?',f.bob.user.id),b=f.channels.router.bind('feishu','fast-owner',f.channels.router.createCode(bob,'123456').code);
+ for(const [key,binding] of [['slow',a],['fast',b]])f.bank.run('INSERT INTO channel_outbox(id,binding_id,body,next_at) VALUES(?,?,?,?)',key,binding.id,'通知','2000-01-01');
+ const flushing=f.channels.flush();await entered.promise;await until(()=>sent.some(s=>s.data.receive_id==='fast-owner'));
+ f.channels.router.unbind(f.user,a.id,'123456');gate.resolve();await flushing;
+ assert.equal(f.bank.get("SELECT status FROM channel_outbox WHERE id='slow'").status,'cancelled');assert.equal(f.bank.get("SELECT status FROM channel_outbox WHERE id='fast'").status,'sent');
+ f.channels.router.bind('feishu','slow-owner',f.channels.router.createCode(f.user,'123456').code);await f.channels.flush();assert.equal(sent.filter(s=>s.data.receive_id==='slow-owner').length,1);
+});
+
+test('飞书：重启恢复未开始请求；已提交工具而未完成的请求只收尾，不重跑业务',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'feishu-recovery-')),path=join(dir,'bank.sqlite');let app,calls=0,sends=0;
+ const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{reply:async()=>{sends++;return {code:0};}}}}},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
+ const options={chat:{config:()=>({apiKey:'test',baseUrl:'https://llm.test',model:'test'}),fetch:async()=>{calls++;return Response.json(llm([],'恢复后的结果'));}},channels:{secret:'a'.repeat(64),feishu:{appId:'test',appSecret:'test',sdk},feishuPipeline:{feedback:false}}};
+ t.after(async()=>{if(app){await app.channels.stop();app.bank.db.close();}rmSync(dir,{recursive:true,force:true});});
+ app=createApp(path,options);const user=app.bank.get("SELECT * FROM users WHERE phone='13800138000'");
+ const b=app.channels.router.bind('feishu','owner',app.channels.router.createCode(user,'123456').code);
+ app.channels.feishuPipeline.ingest({externalId:'owner',messageId:'interrupted',text:'记住偏好'});
+ const row=app.bank.get("SELECT * FROM feishu_inbox WHERE message_id='interrupted'");
+ await app.channels.feishuPipeline.stop();
+ await executeTool(app.services,user,'remember',{key:'recovery',value:'once'},{channel:'feishu',sessionId:b.binding_session_id,bindingId:b.id,requestId:row.id,runId:row.run_id,toolCallId:'stable-tool'});
+ app.bank.run("UPDATE feishu_inbox SET status='running',lease_until=0 WHERE id=?",row.id);
+ app.bank.db.close();app=null;
+ app=createApp(path,options);
+ app.channels.feishuPipeline.ingest({externalId:'owner',messageId:'queued',text:'查余额'});await app.channels.feishuPipeline.stop();app.bank.db.close();app=null;
+ app=createApp(path,options);await app.channels.start();await app.channels.feishuPipeline.drain();
+ assert.equal(calls,1);assert.equal(sends,2);
+ assert.equal(app.bank.get("SELECT status FROM feishu_inbox WHERE message_id='interrupted'").status,'interrupted');
+ assert.equal(app.bank.get("SELECT status FROM feishu_inbox WHERE message_id='queued'").status,'completed');
+ assert.equal(app.bank.get('SELECT count(*) n FROM agent_tool_effects WHERE request_id=?',row.id).n,1);
+ assert.equal(app.bank.get("SELECT value FROM agent_memory WHERE key='recovery'").value,'once');
+});
+
+test('飞书：发送超时、非法响应和HTTP限流分类明确',async()=>{
+ await assert.rejects(feishuRequest(()=>new Promise(()=>{}),{timeoutMs:5}),e=>e.deliveryState==='unknown'&&e.code==='FEISHU_SEND_TIMEOUT');
+ await assert.rejects(feishuRequest(async()=>({})),e=>e.deliveryState==='unknown');
+ await assert.rejects(feishuRequest(async()=>{throw {response:{status:429}};}),e=>e.deliveryState==='retry_wait');
+});

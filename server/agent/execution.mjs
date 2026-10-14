@@ -43,11 +43,11 @@ export function createExecutionCoordinator(bank, options = {}) {
 
 export function assertChannelExecution(bank, context, userId) {
   context.assertExecution?.();
-  if (context.channel !== 'wechat') return;
-  const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND user_id=? AND channel='wechat' AND status='active' AND auth_state='valid'",context.bindingId||context.sessionId,userId);
-  requireThat(binding,'微信渠道需要重新认证，请回App连接',403,'CHANNEL_REAUTH_REQUIRED');
-  if(context.bindingGeneration!==undefined) requireThat(binding.binding_generation===context.bindingGeneration && binding.binding_session_id===context.bindingSessionId,'微信绑定已变更',409,'BINDING_FENCED');
-  requireThat(!bank.get("SELECT 1 FROM accounts WHERE user_id=? AND type='debit' AND status<>'active'",userId),'账户状态暂不支持微信查询，请回App查看',403,'CHANNEL_ACCOUNT_UNAVAILABLE');
+  if (!['wechat','feishu'].includes(context.channel)) return;
+  const binding=bank.get("SELECT * FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND channel=? AND status='active' AND auth_state='valid'",context.bindingId||context.sessionId||null,context.sessionId||null,userId,context.channel);
+  requireThat(binding,'消息渠道需要重新认证，请回App连接',403,'CHANNEL_REAUTH_REQUIRED');
+  if(context.bindingGeneration!==undefined) requireThat(binding.binding_generation===context.bindingGeneration && binding.binding_session_id===context.bindingSessionId,'渠道绑定已变更',409,'BINDING_FENCED');
+  requireThat(!bank.get("SELECT 1 FROM accounts WHERE user_id=? AND type='debit' AND status<>'active'",userId),'账户状态暂不支持渠道查询，请回App查看',403,'CHANNEL_ACCOUNT_UNAVAILABLE');
 }
 
 // Only synchronous, same-database effects may enter this helper.
