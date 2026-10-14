@@ -157,9 +157,13 @@
 | GET /channels/wechat/requests/{id} | `{id,status,receivedAt,finishedAt,result,deliveries}`；完整 Agent 结果及最新操作卡片，仅本人可查看；投递状态不是手机送达证明 |
 | POST /channels/feishu/register | `{pin}` → `{id, url, expiresIn}`，一键创建飞书专属机器人；`url` 用飞书扫码或在飞书中打开。需 `FEISHU_PERSONAL_ENABLED=true`、https 的 `PUBLIC_ORIGIN` 与 `CHANNEL_SECRET`；已有专属机器人返回 409 `FEISHU_BOT_EXISTS`，创建排队已满返回 429 `FEISHU_REGISTER_BUSY` |
 | GET /channels/feishu/register/{id} | `{status: wait|confirmed|denied|expired|failed, bindingId?, error?}`，页面可见时轮询；3 分钟无人查询则中止 |
+| GET /channels/feishu/requests | 本人最近 30 个飞书请求，返回数组 `{id,status,received_at}` |
+| GET /channels/feishu/requests/{id} | `{id,status,receivedAt,finishedAt,result,deliveries}`；完整结果与最新操作卡片，仅本人可查看；入口 `/#feishu-requests/{id}` |
 | POST /channels/feishu/events/{bindingId} | 飞书事件回调（无需登录），按该绑定的 Encrypt Key 解密并校验签名，自动应答 URL 校验；绑定不存在或已解绑时返回空对象 |
 
 IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…」、「确认 ACT…」，均限当前用户、渠道及绑定内动作。「确认」不会执行任何操作，只返回 App 直达链接 `${PUBLIC_ORIGIN}/#tasks?action=ACT…`（无公网地址时为文字指引）及所需验证方式；已授权待执行或已结束的动作返回当前状态。多笔不带编号时返回简短列表；只有一笔时可省略编号。其他文本进入智能体。
+
+飞书已绑定请求持久受理后才确认事件，普通请求每用户最多 3 条待处理，帮助/确认/取消不等待模型执行槽。默认 4 秒后最多一次等待提示，完成时取消尚未发出的提示。请求状态为 `queued/running/completed/failed/interrupted/cancelled`；投递状态为 `pending/sending/retry_wait/api_accepted/unknown/failed/cancelled/expired`。`unknown` 不自动重发，`needs_review=1` 表示待核查。业务回推的旧 `channel_outbox` 先转 `forwarded`，接口接受后转 `sent`，其含义仍是提交接口成功。解绑后禁止旧会话继续写入或重新投递，重新绑定更新代次和会话；扫码创建接口和发布流程保持不变。
 
 微信请求状态为 `queued/running/completed/failed/interrupted/cancelled`；投递状态为 `pending/sending/retry_wait/api_accepted/unknown/failed/cancelled/expired`。`api_accepted` 只证明接口接受，`unknown` 不自动重发或重新执行。微信直接返回查询及分析结果，超长内容和 App 完整结果入口为 `/#wechat-requests/{id}`，未登录先登录并保留入口。绑定快照增加 `auth_state`、`connection_state`、`last_inbound_at`、`last_api_accepted_at` 等安全元数据，凭据及 context 不返回前端。
 

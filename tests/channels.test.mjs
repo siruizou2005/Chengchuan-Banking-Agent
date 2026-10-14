@@ -83,3 +83,36 @@ test('飞书专属机器人：无人查看的创建会被中止，残留的配�
  const idle=(await f.call('/channels/feishu/register',{pin:'123456'})).data;assert.ok(idle.id);assert.equal(f.bank.get("SELECT id FROM channel_bindings WHERE id='BIND-STALE'"),undefined);
  await new Promise(r=>setTimeout(r,10));f.channels.bots.sweep();assert.equal((await f.call(`/channels/feishu/register/${idle.id}`)).data.status,'expired');
 });
+
+test('飞书专属机器人：解绑后仍可扫码自动重建，重新配置发布并隔离旧密钥和会话',async t=>{
+ const {f,fake}=await personalFixture(t);
+ async function create(secret){
+  const started=(await f.call('/channels/feishu/register',{pin:'123456'})).data;
+  assert.match(started.url,/accounts\.feishu\.cn/);
+  fake.approve({client_id:'cli_recreate',client_secret:secret,user_info:{open_id:'ou_recreate'}});
+  const status=await until(async()=>{const s=(await f.call(`/channels/feishu/register/${started.id}`)).data;return s.status==='confirmed'&&s;},'scan creation');
+  return f.bank.get('SELECT * FROM channel_bindings WHERE id=?',status.bindingId);
+ }
+ const first=await create('first-secret'),firstKey=fake.state.patches[0].data.event_and_callback_encrypt_strategy.encryption_key;
+ await f.call(`/channels/${first.id}/unbind`,{pin:'123456'});
+ const next=await create('second-secret'),nextKey=fake.state.patches[1].data.event_and_callback_encrypt_strategy.encryption_key;
+ assert.equal(fake.state.publishes.length,2);assert.equal(next.auth_state,'valid');assert.equal(next.binding_generation,first.binding_generation+1);assert.notEqual(next.binding_session_id,first.binding_session_id);assert.notEqual(firstKey,nextKey);
+ const path=`/channels/feishu/events/${next.id}`;
+ await f.req(path,feishuEvent('ou_recreate','old-signature','查余额'),undefined,'POST',{'x-test-key':firstKey});assert.equal(f.requests.length,0);
+ f.queue.push(llm([],'新机器人查询结果'));
+ await f.req(path,feishuEvent('ou_recreate','new-signature','查余额'),undefined,'POST',{'x-test-key':nextKey});await f.channels.feishuPipeline.drain();
+ assert.equal(f.requests.length,1);assert.ok(fake.state.sent.some(s=>s.reply&&/新机器人查询结果/.test(s.data.content)));
+ // Exercise the installed SDK's AES decryption and signature verification, not the fake adapter.
+ const sdk=await import('@larksuiteoapi/node-sdk'),{createHash,createCipheriv,randomBytes}=await import('node:crypto');
+ fake.sdk.EventDispatcher=sdk.EventDispatcher;fake.sdk.adaptExpress=sdk.adaptExpress;f.channels.bots.forget(next.id);
+ const payload=feishuEvent('ou_recreate','sdk-signed','真实SDK签名测试'),iv=randomBytes(16),cipher=createCipheriv('aes-256-cbc',createHash('sha256').update(nextKey).digest(),iv);
+ payload.header.token=fake.state.patches[1].data.event_and_callback_encrypt_strategy.verification_token;
+ const body={encrypt:Buffer.concat([iv,cipher.update(JSON.stringify(payload)),cipher.final()]).toString('base64')};
+ const timestamp=String(Math.floor(Date.now()/1000)),nonce='test-nonce',signature=createHash('sha256').update(timestamp+nonce+nextKey+JSON.stringify(body)).digest('hex');
+ const headers={'x-lark-request-timestamp':timestamp,'x-lark-request-nonce':nonce,'x-lark-signature':'invalid'};
+ const sendSigned=async()=>{const response=await fetch(f.url+path,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});await response.text();assert.equal(response.status,200);};
+ await sendSigned();assert.equal(f.requests.length,1);
+ f.queue.push(llm([],'签名校验后的结果'));headers['x-lark-signature']=signature;
+ await sendSigned();await f.channels.feishuPipeline.drain();assert.equal(f.requests.length,2);
+ await sendSigned();await f.channels.feishuPipeline.drain();assert.equal(f.requests.length,2);
+});

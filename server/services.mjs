@@ -151,7 +151,7 @@ export function createServices(bank,core,guard) {
  function pushResult(action,text){
   if(action.channel==='app'||!action.session_id)return;
   const binding=get("SELECT * FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND status='active'",action.session_id,action.session_id,action.user_id);
-  if(binding)run('INSERT INTO channel_outbox(id,binding_id,body,next_at) VALUES(?,?,?,?)',id('OUT'),binding.id,text,now());
+  if(binding){run('INSERT INTO channel_outbox(id,binding_id,body,next_at,binding_generation,binding_session_id) VALUES(?,?,?,?,?,?)',id('OUT'),binding.id,text,now(),binding.binding_generation,binding.binding_session_id);queueMicrotask(()=>services.onChannelResult?.());}
  }
  function completeAction(action,result) {
   run("UPDATE agent_actions SET status='completed',result=?,updated_at=? WHERE id=?",JSON.stringify(result),now(),action.id);
