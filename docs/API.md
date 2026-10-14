@@ -98,7 +98,7 @@
 | GET /agent/plans | 本人联动计划及步骤状态 |
 | POST /agent/plans/{id}/abort | {}，中断计划：取消未执行步骤、释放锁定资金 |
 | POST /agent/plans/{id}/handover | `{reason?}`，中断并创建模拟人工工单 |
-| GET /agent/runs | 最近 100 轮决策链路：channel、input、injection、trace、events、output、duration_ms、tokens |
+| GET /agent/runs | 最近 100 轮决策链路：channel、input、injection、trace、events、output、duration_ms、tokens、topic（null 为银行相关；greeting、off_topic_rule、off_topic_model 为寒暄或无关话题拦截） |
 | POST /agent/unlock | `{pin}` 解除智能体安全锁定 |
 | GET /agent/splits/{id}/{index} | 本人收到的 AA 收款请求（金额、收款方），页面 `/#pay-request/{id}/{index}` 使用 |
 

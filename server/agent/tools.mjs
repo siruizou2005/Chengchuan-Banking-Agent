@@ -37,6 +37,7 @@ const definitions={
  propose_cancel_subscription:['提议取消已授权订阅代扣',obj({id:str()},['id'])],propose_lock_funds:['提议锁定本人活期资金至until日期',obj({amount:money,purpose:str(100),until:str(40)},['amount','purpose','until'])],
  set_reminder:['自动设置站内提醒（不支付任何费用）',obj({at:str(40),text:str(300)},['at','text'])],
  handover_to_human:['创建模拟人工工单，停止本会话后续自动工具调用',obj({reason:str(1000)},['reason'])],
+ decline_off_topic:['用户请求与银行业务无关时调用，服务端回复固定话术并结束本轮',obj({reason:str(100)})],
 };
 const stepArgs=Object.assign({},...Object.entries(definitions).filter(([k])=>k.startsWith('propose_')||k==='set_reminder').map(([,v])=>v[1].properties));
 definitions.create_plan=['建立待一次确认的DAG计划；最多12步，tool只可为propose工具或set_reminder，runAt为ISO时间，dependsOn是步骤ID。生日安排先询问或明确展示花费、日期、商户与依赖。',obj({title:str(100),steps:arr(obj({id:str(40),title:str(100),tool:{type:'string',enum:Object.keys(definitions).filter(k=>k.startsWith('propose_')||k==='set_reminder')},args:obj(stepArgs),dependsOn:{type:'array',items:str(40),maxItems:12},runAt:str(40)},['id','title','tool','args']),12)},['title','steps'])];
