@@ -14,5 +14,5 @@ export async function fixture(t,options={}){
  return {...instance,url,requests,queue,req,call,alice,bob,user,recipient,verify,propose:(tool,args)=>call('/agent/actions',{tool,args}),chat:text=>call('/agent/chat',{messages:[{role:'user',content:text}]}),balance:()=>instance.bank.get("SELECT balance,held FROM accounts WHERE user_id=? AND type='debit'",user.id)};
 }
 
-// Feishu replies are cards; fallbacks and progress notes are plain text.
-export const feishuContentText=content=>{const value=JSON.parse(content);return value.text??value.body.elements.map(e=>e.content).join('\n');};
+// Feishu replies are posts, or cards for tables and code; fallbacks and progress notes are plain text.
+export const feishuContentText=content=>{const value=JSON.parse(content);return value.text??value.zh_cn?.content.flat().map(e=>e.text).join('\n')??value.body.elements.map(e=>e.content).join('\n');};

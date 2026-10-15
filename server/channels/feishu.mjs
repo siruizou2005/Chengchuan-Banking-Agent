@@ -32,14 +32,22 @@ export async function feishuRequest(call,{signal,timeoutMs=8000}={}) {
   throw failure(code!=null?`FEISHU_${String(code).replace(/[^0-9]/g,'').slice(0,12)}`:'FEISHU_NETWORK_ERROR',status===429||code===99991400?'retry_wait':status>=500?'unknown':code!=null&&code!==0?'failed':'unknown');
  }finally{clearTimeout(timer);if(abort)signal?.removeEventListener('abort',abort);}
 }
-// Replies render as a JSON 2.0 card with one markdown element so headings, bold, lists and tables display in Feishu.
-// Bare links become markdown links because the card markdown component does not autolink them.
+// Like OpenClaw, replies go out as rich-text posts, which use the chat's own font size. Only tables and code blocks,
+// which the post md tag cannot render, use a JSON 2.0 card; its markdown is 14px by default, so the card defines
+// Feishu's documented custom size that is 16px on phones, matching chat text.
+// Bare links become markdown links in both formats.
+const linkify=text=>String(text).replace(/(^|[^([\]<])(https?:\/\/[^\s<>()[\]（），。；、！？]+)/g,(_,lead,url)=>`${lead}[${url}](${url})`);
+export const needsFeishuCard=text=>/```[\s\S]*?```/.test(text)||/\|.+\|[\r\n]+\|[-:| ]+\|/.test(text);
 export function feishuCard(text) {
- const content=String(text).replace(/(^|[^([\]<])(https?:\/\/[^\s<>()[\]（），。；、！？]+)/g,(_,lead,url)=>`${lead}[${url}](${url})`);
- return {schema:'2.0',config:{width_mode:'fill'},body:{elements:[{tag:'markdown',content}]}};
+ return {schema:'2.0',config:{width_mode:'fill',style:{text_size:{normal_v2:{default:'normal',pc:'normal',mobile:'heading'}}}},body:{elements:[{tag:'markdown',content:linkify(text),text_size:'normal_v2'}]}};
 }
-// Card content rejections: invalid parameter, card build failure, content too long. Other errors would fail as text too.
-const CARD_REJECTED=new Set(['FEISHU_230001','FEISHU_230099','FEISHU_230025']);
+// Post md is CommonMark: single line breaks would join lines, so they become hard breaks; headings render as bold.
+export function feishuPost(text) {
+ const md=linkify(text).replace(/^#{1,6}\s+(.+)$/gm,'**$1**').replace(/([^\n])\n(?=[^\n])/g,'$1  \n');
+ return {zh_cn:{content:[[{tag:'md',text:md}]]}};
+}
+// Content rejections: invalid parameter, card build failure, content too long. Other errors would fail as text too.
+const CONTENT_REJECTED=new Set(['FEISHU_230001','FEISHU_230099','FEISHU_230025']);
 export function sendFeishuMessage(client,binding,text,options={}) {
  const deadline=Date.now()+(options.timeoutMs||8000),uuid=options.uuid||randomUUID();
  const attempt=(msgType,content,id)=>{
@@ -51,9 +59,9 @@ export function sendFeishuMessage(client,binding,text,options={}) {
  };
  return requestScope.run({...options,deadline},async()=>{
   if(options.format==='text')return attempt('text',{text},uuid);
-  // Only a definite rejection falls back to text; an uncertain outcome may already have delivered the card.
-  try{return await attempt('interactive',feishuCard(text),uuid);}
-  catch(error){if(error.deliveryState!=='failed'||!CARD_REJECTED.has(error.code))throw error;return attempt('text',{text},`${uuid}-text`);}
+  // Only a definite rejection falls back to text; an uncertain outcome may already have delivered the message.
+  try{return await (needsFeishuCard(text)?attempt('interactive',feishuCard(text),uuid):attempt('post',feishuPost(text),uuid));}
+  catch(error){if(error.deliveryState!=='failed'||!CONTENT_REJECTED.has(error.code))throw error;return attempt('text',{text},`${uuid}-text`);}
  });
 }
 // Feishu bots have no typing state, so a "Typing" emoji reaction on the depositor's message stands in for one.

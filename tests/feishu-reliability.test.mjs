@@ -144,14 +144,18 @@ test('飞书：发送超时、非法响应和HTTP限流分类明确',async()=>{
  await assert.rejects(feishuRequest(async()=>{throw {response:{status:429}};}),e=>e.deliveryState==='retry_wait');
 });
 
-test('飞书：回复以卡片markdown发送，卡片内容被拒时退回纯文本，其他错误不重复发送',async t=>{
+test('飞书：普通回复用富文本post，表格用卡片且手机端16px；内容被拒时退回纯文本，其他错误不重复发送',async t=>{
  const f=await setup(t,{reply:arg=>arg.data.msg_type==='interactive'?{code:230099}:{code:0,data:{message_id:'m1'}}});
- f.queue.push(llm([],'**余额** ¥123.45'));f.handler(event('card','查余额'));await f.pipe.drain();
- assert.deepEqual(f.sent.map(s=>s.data.msg_type),['interactive','text']);
- const card=JSON.parse(f.sent[0].data.content),content=card.body.elements[0].content;
- assert.equal(card.schema,'2.0');assert.equal(card.body.elements[0].tag,'markdown');assert.match(content,/\*\*余额\*\*/);
- assert.doesNotMatch(content,/App查看/);
- assert.notEqual(f.sent[1].data.uuid,f.sent[0].data.uuid);assert.match(JSON.parse(f.sent[1].data.content).text,/\*\*余额\*\* ¥123\.45/);
+ f.queue.push(llm([],'# 账户\n**余额** ¥123.45\n可用'));f.handler(event('post','查余额'));await f.pipe.drain();
+ assert.deepEqual(f.sent.map(s=>s.data.msg_type),['post']);
+ const md=JSON.parse(f.sent[0].data.content).zh_cn.content[0][0];
+ assert.equal(md.tag,'md');assert.equal(md.text,'**账户**  \n**余额** ¥123.45  \n可用');
+ f.queue.push(llm([],'| 类别 | 金额 |\n|---|---|\n| 餐饮 | ¥12 |'));f.handler(event('card','按类别列表'));await f.pipe.drain();
+ assert.deepEqual(f.sent.slice(1).map(s=>s.data.msg_type),['interactive','text']);
+ const card=JSON.parse(f.sent[1].data.content),element=card.body.elements[0];
+ assert.equal(card.schema,'2.0');assert.equal(element.tag,'markdown');assert.equal(element.text_size,'normal_v2');assert.equal(card.config.style.text_size.normal_v2.mobile,'heading');
+ assert.match(element.content,/\| 餐饮 \| ¥12 \|/);
+ assert.notEqual(f.sent[2].data.uuid,f.sent[1].data.uuid);assert.match(JSON.parse(f.sent[2].data.content).text,/\| 餐饮 \| ¥12 \|/);
  assert.equal(f.bank.get("SELECT d.status FROM feishu_deliveries d JOIN feishu_inbox i ON i.id=d.request_id WHERE i.message_id='card'").status,'api_accepted');
 });
 
@@ -165,7 +169,7 @@ test('飞书：处理中给用户消息加Typing表情，回复送达后撤销�
  assert.equal(f.sent.length,0);assert.equal(f.bank.get("SELECT progress_sent FROM feishu_inbox WHERE message_id='typing'").progress_sent,1);
  gate.resolve();await f.pipe.drain();
  await until(()=>calls.length===2);assert.deepEqual(calls[1],['remove','typing','reaction-1']);
- assert.deepEqual(f.sent.map(s=>s.data.msg_type),['interactive']);
+ assert.deepEqual(f.sent.map(s=>s.data.msg_type),['post']);
  f.handler(event('help','帮助'));await f.pipe.drain();assert.equal(calls.length,2);
 });
 
@@ -174,16 +178,16 @@ test('飞书：表情回应失败时仍按时发送文字进度',async t=>{
  const f=await setup(t,{pipeline:{typing:{add:async()=>{throw new Error('no permission');},remove:async()=>{}},feedback:true,progressMs:20},chat:{fetch:async()=>{await gate.promise;return Response.json(llm([],'余额已查询'));}}});
  f.handler(event('no-typing','查余额'));
  await until(()=>f.sent.length===1);assert.equal(f.sent[0].data.msg_type,'text');assert.match(JSON.parse(f.sent[0].data.content).text,/请稍等/);
- gate.resolve();await f.pipe.drain();assert.equal(f.sent.at(-1).data.msg_type,'interactive');
+ gate.resolve();await f.pipe.drain();assert.equal(f.sent.at(-1).data.msg_type,'post');
 });
 
 test('飞书：普通问答不附App链接，账单统计等App卡片结果附上并转为可点链接',async t=>{
  const f=await setup(t);
  f.queue.push(llm([['detect_anomalies',{}]]),llm([],'本月未发现异常支出。'));f.handler(event('cards','有没有异常支出'));await f.pipe.drain();
- const content=JSON.parse(f.sent.at(-1).data.content).body.elements[0].content;
+ const content=contentText(f.sent.at(-1).data.content);
  assert.match(content,/异常支出明细请在App查看：\[https:\/\/bank\.test\/#feishu-requests\/FSREQ\w+\]\(https:\/\/bank\.test\/#feishu-requests\/FSREQ\w+\)/);
  f.queue.push(llm([],'可用余额 ¥123.45'));f.handler(event('plain','查余额'));await f.pipe.drain();
- assert.doesNotMatch(JSON.parse(f.sent.at(-1).data.content).body.elements[0].content,/App查看|feishu-requests/);
+ assert.doesNotMatch(contentText(f.sent.at(-1).data.content),/App查看|feishu-requests/);
  f.queue.push(llm([],'流水'.repeat(4000)));f.handler(event('long','列出全部流水'));await f.pipe.drain();
- assert.match(JSON.parse(f.sent.at(-1).data.content).body.elements[0].content,/…\n\n回复内容较长，以上仅为部分，完整内容请在App查看：\[https/);
+ assert.match(contentText(f.sent.at(-1).data.content),/…\n\n回复内容较长，以上仅为部分，完整内容请在App查看：\[https/);
 });
