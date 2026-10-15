@@ -8,13 +8,23 @@ bank.siruizou.com {
 		Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
 	}
 	# 语音转文字上传 WAV（最长60秒约1.9MB，服务端上限8MB），其余请求保持128KB。
+	# GitHub push webhook 由独立的 socket 激活服务接收（deploy/webhook.mjs），载荷可能超过 128KB。
 	@voice path /api/voice/transcribe
-	@other not path /api/voice/transcribe
+	@hook path /_deploy/github
+	@other not path /api/voice/transcribe /_deploy/github
 	request_body @voice {
 		max_size 8MB
+	}
+	request_body @hook {
+		max_size 1MB
 	}
 	request_body @other {
 		max_size 128KB
 	}
-	reverse_proxy 127.0.0.1:8316
+	handle @hook {
+		reverse_proxy 127.0.0.1:8317
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8316
+	}
 }

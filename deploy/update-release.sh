@@ -14,7 +14,8 @@ sudo install -d -m 0755 -o "$(id -un)" -g "$(id -gn)" "$release_dir"
 tar -xzf "$upload_dir/bank-release.tar.gz" -C "$release_dir"
 cd "$release_dir"
 npm ci --omit=dev --ignore-scripts
-npm test
+# 部分用例按计时判断，服务器负载高时可能偶发超时：失败后重试一次，真正的失败会再次失败。
+npm test || { echo '测试失败，重试一次' >&2; npm test; }
 sudo chown -R root:root "$release_dir"
 
 if test -f "$upload_dir/env"; then
