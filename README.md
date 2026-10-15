@@ -124,7 +124,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 
 ### 语音输入
 
-配置 `DASHSCOPE_API_KEY` 后聊天页显示麦克风。浏览器用 `getUserMedia` + `AudioContext` 采集并编码为 PCM16 单声道 16kHz WAV（不依赖 MediaRecorder 编码格式，Safari/Chrome 一致），最长 60 秒，`POST /api/voice/transcribe` 转发到百炼 `qwen3-asr-flash`（`enable_itn` 数字规整）。识别文本自动发送，资金操作仍需确认。上游错误映射为 `PROVIDER_AUTH` 等代码，不透传详情。`scripts/check-asr.mjs <wav>` 可用 curl 直接实测密钥。
+配置 `DASHSCOPE_API_KEY` 后聊天页显示麦克风。浏览器用 `getUserMedia` + `AudioContext` 采集并编码为 PCM16 单声道 16kHz WAV（不依赖 MediaRecorder 编码格式，Safari/Chrome 一致），最长 60 秒，`POST /api/voice/transcribe` 转发到百炼 `qwen3-asr-flash`（`enable_itn` 数字规整）。录音时输入框内显示声波与计时，识别文本填入输入框，用户可修改后再发送，资金操作仍需确认。线上 Caddy 需允许本站麦克风/摄像头（`Permissions-Policy`），并单独放宽 `/api/voice/transcribe` 的请求体上限。上游错误映射为 `PROVIDER_AUTH` 等代码，不透传详情。`scripts/check-asr.mjs <wav>` 可用 curl 直接实测密钥。
 
 ### 消息渠道：飞书与微信
 
@@ -218,7 +218,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 | 服务 | `chengchuan-bank.service` |
 | 内部端口 | `127.0.0.1:8316` |
 | 当前程序 | `/opt/chengchuan-bank/current` |
-| 版本目录 | `/opt/chengchuan-bank/releases/20261012-01`（旧版本 `20261008-03`、`20261008-02`、`20261008-01`、`20261006-03`、`20261006-02`、`20261006-01`、`20261002-01`、`20260921-01`、`20260918-01`、`20260912-01` 保留可回滚） |
+| 版本目录 | `/opt/chengchuan-bank/releases/20261015-01`（旧版本 `20261012-01`、`20261008-03`、`20261008-02`、`20261008-01`、`20261006-03`、`20261006-02`、`20261006-01`、`20261002-01`、`20260921-01`、`20260918-01`、`20260912-01` 保留可回滚） |
 | 独立 Node | `/opt/chengchuan-bank/runtime/bin/node` |
 | 持久化数据库 | `/var/lib/chengchuan-bank/bank.sqlite` |
 | 聊天 / 语音 / 渠道凭据 | `/etc/chengchuan-bank/env`（root 0600，由 systemd `EnvironmentFile` 加载） |

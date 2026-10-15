@@ -5,9 +5,15 @@ bank.siruizou.com {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "same-origin"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
 	}
-	request_body {
+	# 语音转文字上传 WAV（最长60秒约1.9MB，服务端上限8MB），其余请求保持128KB。
+	@voice path /api/voice/transcribe
+	@other not path /api/voice/transcribe
+	request_body @voice {
+		max_size 8MB
+	}
+	request_body @other {
 		max_size 128KB
 	}
 	reverse_proxy 127.0.0.1:8316

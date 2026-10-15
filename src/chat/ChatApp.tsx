@@ -53,7 +53,7 @@ const currentSessionId = (messages: readonly Message[]) => [...messages].reverse
 export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapter }) {
   const { data, refresh, logout, navigate } = useBank();
   const user = data.user;
-  const [voiceEnabled, setVoiceEnabled] = useState(false), [recording, setRecording] = useState(false), [voiceBusy, setVoiceBusy] = useState(false), [seconds, setSeconds] = useState(0);
+  const [voiceEnabled, setVoiceEnabled] = useState(false), [recording, setRecording] = useState(false), [voiceBusy, setVoiceBusy] = useState(false), [transcribing, setTranscribing] = useState(false), [seconds, setSeconds] = useState(0), [level, setLevel] = useState(0);
   const recorder = useRef<Recording | null>(null), voiceAbort = useRef<AbortController | null>(null), voiceGeneration = useRef(0);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -142,17 +142,17 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     storeSession(user.id, '');
     scroller.current?.scrollTo({ top: 0 });
   }
-  function cancelVoice() { voiceGeneration.current++; recorder.current?.cancel(); recorder.current = null; voiceAbort.current?.abort(); voiceAbort.current = null; setRecording(false); setVoiceBusy(false); }
+  function cancelVoice() { voiceGeneration.current++; recorder.current?.cancel(); recorder.current = null; voiceAbort.current?.abort(); voiceAbort.current = null; setRecording(false); setVoiceBusy(false); setTranscribing(false); setLevel(0); }
   async function endVoice() {
-    const active = recorder.current; if (!active) return; recorder.current = null; setRecording(false); setVoiceBusy(true);
+    const active = recorder.current; if (!active) return; recorder.current = null; setRecording(false); setLevel(0); setTranscribing(true);
     const abort = new AbortController(); voiceAbort.current = abort;
-    try { const audio = await active.stop(); const text = await transcribe(audio, abort.signal); if (!abort.signal.aborted) send(text); }
+    try { const audio = await active.stop(); const text = await transcribe(audio, abort.signal); if (!abort.signal.aborted) { setDraft(current => current.trim() ? `${current.trimEnd()} ${text}` : text); input.current?.focus(); } }
     catch (e) { if (!abort.signal.aborted) setError((e as Error).message); }
-    finally { if (voiceAbort.current === abort) { voiceAbort.current = null; setVoiceBusy(false); } }
+    finally { if (voiceAbort.current === abort) { voiceAbort.current = null; setTranscribing(false); } }
   }
   async function beginVoice() {
     setError(''); setSeconds(0); setVoiceBusy(true); const generation = ++voiceGeneration.current;
-    try { const r = await startRecording(setSeconds, () => void endVoice()); if (generation !== voiceGeneration.current) { r.cancel(); return; } recorder.current = r; setRecording(true); }
+    try { const r = await startRecording(setSeconds, () => void endVoice(), setLevel); if (generation !== voiceGeneration.current) { r.cancel(); return; } recorder.current = r; setRecording(true); }
     catch (e) { if (generation === voiceGeneration.current) setError((e as Error).message); }
     finally { if (generation === voiceGeneration.current) setVoiceBusy(false); }
   }
@@ -188,13 +188,18 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
       </div>
     </div>
     <div className="chat-composer">
-      {(recording || voiceBusy) && <div className="voice-status" role="status"><span>{recording ? `录音中 ${seconds}s / 60s` : '正在处理语音…'}</span>{recording && <button className="pill primary small" onClick={() => void endVoice()}><Square size={14} />完成并发送</button>}<button className="icon-button" aria-label="取消录音" onClick={cancelVoice}><X size={18} /></button></div>}
       <form className="composer" onSubmit={event => { event.preventDefault(); send(); }}>
-        {voiceEnabled && <button className="icon-button" type="button" aria-label="开始语音输入" disabled={busy || recording || voiceBusy || !configured} onClick={() => void beginVoice()}><Mic size={21} /></button>}
-        <textarea ref={input} aria-label="消息" placeholder="请输入您的问题" value={draft} onChange={event => setDraft(event.target.value)} rows={1} maxLength={4000} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
-        {busy ? <button type="button" className="pill small" onClick={stop} aria-label="停止回复">停止</button> : <button type="submit" className="pill primary small" disabled={!draft.trim() || !configured} aria-label="发送消息">发送</button>}
+        {recording || transcribing ? <div className="voice-field" role="status" aria-live="polite">
+          <button type="button" className="voice-cancel" aria-label="取消录音" onClick={cancelVoice}><X size={18} /></button>
+          {recording ? <><span className="voice-level" aria-hidden="true">{[0.45, 0.75, 1, 0.75, 0.45].map((k, i) => <i key={i} style={{ height: `${4 + Math.round(level * k * 14)}px` }} />)}</span><span className="voice-time" aria-label={`已录音${seconds}秒`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span></> : <span className="voice-label">正在识别…</span>}
+        </div>
+        : <textarea ref={input} aria-label="消息" placeholder="请输入您的问题" value={draft} onChange={event => setDraft(event.target.value)} rows={1} maxLength={4000} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />}
+        {busy ? <button type="button" className="pill small" onClick={stop} aria-label="停止回复">停止</button>
+          : recording ? <button type="button" className="pill primary small voice-button" onClick={() => void endVoice()} aria-label="结束录音并识别"><Square size={16} fill="currentColor" /></button>
+          : voiceEnabled && !draft.trim() ? <button type="button" className="pill primary small voice-button" disabled={voiceBusy || transcribing || !configured} onClick={() => void beginVoice()} aria-label="开始语音输入">{voiceBusy || transcribing ? <LoaderCircle size={20} className="spin" /> : <Mic size={20} />}</button>
+          : <button type="submit" className="pill primary small" disabled={!draft.trim() || !configured || voiceBusy || transcribing} aria-label="发送消息">发送</button>}
       </form>
-      <p className="chat-note">语音识别后自动发送 · 金额与执行状态以确认卡片为准</p>
+      <p className="chat-note">语音识别后可修改再发送 · 金额与执行状态以确认卡片为准</p>
     </div>
   </section>;
 }

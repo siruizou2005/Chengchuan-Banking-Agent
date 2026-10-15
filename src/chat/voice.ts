@@ -7,14 +7,14 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([bytes], { type: 'audio/wav' });
 }
 export type Recording = { stop: () => Promise<Blob>; cancel: () => void };
-export async function startRecording(onSeconds: (seconds: number) => void, onLimit: () => void): Promise<Recording> {
+export async function startRecording(onSeconds: (seconds: number) => void, onLimit: () => void, onLevel?: (level: number) => void): Promise<Recording> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('此浏览器无法使用麦克风，请使用文字输入。');
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true }, video: false });
   let context: AudioContext;
   try { context = new AudioContext(); await context.resume(); } catch (e) { stream.getTracks().forEach(t => t.stop()); throw e; }
   const source = context.createMediaStreamSource(stream), processor = context.createScriptProcessor(4096, 1, 1), mute = context.createGain(); mute.gain.value = 0;
   const chunks: Float32Array[] = []; let length = 0, ended = false;
-  processor.onaudioprocess = e => { if (ended) return; const remaining = Math.max(0, 60 * context.sampleRate - length); const chunk = e.inputBuffer.getChannelData(0).slice(0, remaining); chunks.push(chunk); length += chunk.length; };
+  processor.onaudioprocess = e => { if (ended) return; const remaining = Math.max(0, 60 * context.sampleRate - length); const chunk = e.inputBuffer.getChannelData(0).slice(0, remaining); chunks.push(chunk); length += chunk.length; if (onLevel) { let sum = 0; for (const v of chunk) sum += v * v; onLevel(Math.min(1, Math.sqrt(sum / (chunk.length || 1)) * 8)); } };
   source.connect(processor); processor.connect(mute); mute.connect(context.destination);
   const start = Date.now(), timer = setInterval(() => { const seconds = Math.min(60, Math.floor((Date.now() - start) / 1000)); onSeconds(seconds); if (seconds >= 60) { clearInterval(timer); onLimit(); } }, 250);
   function cleanup() { ended = true; clearInterval(timer); source.disconnect(); processor.disconnect(); mute.disconnect(); stream.getTracks().forEach(t => t.stop()); void context.close(); }
