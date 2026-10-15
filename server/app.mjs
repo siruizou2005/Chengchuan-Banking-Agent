@@ -11,6 +11,7 @@ import { createAgent } from './agent/agent.mjs';
 import { registerAgentRoutes } from './agent/routes.mjs';
 import { createScheduler } from './agent/scheduler.mjs';
 import { createVerification, registerVerification } from './verify.mjs';
+import { redactIdentity } from './privacy.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
@@ -256,7 +257,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     };
   }
   services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt }, guard);
-  services.verification = createVerification(bank, services);
+  services.verification = createVerification(bank, services, options.sms, options.face);
   const agent = createAgent(services, options.chat);
   const scheduler = createScheduler(services);
   registerChat(route, state, options.chat);
@@ -419,7 +420,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   app.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } }));
   app.use((error, _req, res, _next) => {
     const status = error instanceof BusinessError ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
-    if (status === 500) console.error('Bank API error:', error.message);
+    if (status === 500) console.error('Bank API error:', redactIdentity(error.message));
     const action=_req.user&&_req.resourceId?get('SELECT decision FROM agent_actions WHERE id=? AND user_id=?',_req.resourceId,_req.user.id):null;
     const latest=error.decision||(action?.decision?JSON.parse(action.decision):null);
     const requirement=['VERIFICATION_REQUIRED','INVALID_VERIFICATION','APP_VERIFICATION_REQUIRED','SUPPLEMENTAL_VERIFICATION_REQUIRED','FACE_REQUIRED','INVALID_CODE','VERIFICATION_EXPIRED'].includes(error.code);

@@ -132,8 +132,13 @@
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
 | POST /verify/intent | `{path, body}` 业务页面直接操作前询问是否需要强验证，如 `{"path":"/settings","body":{"dailyLimit":"60000"}}` → `{required, actionId?, decision}`；token 与具体参数及服务端保存的交易参数绑定 |
-| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated:true}`，6 位验证码哈希存库并投递到消息中心（标题「模拟短信验证码」）；不向模型或审计记录明文验证码 |
-| POST /verify/face | `{id, frameHash}`（64 位十六进制 SHA-256，前端摄像头画面摘要）或 `{id, skipped:true, reason:"unavailable"|"denied"|"unsupported"}` 降级，降级写审计 `verification.face_skipped` |
+| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated, channel, faceChannel}`；默认 `simulated:true, channel:"simulated_sms", faceChannel:"simulated_face"`，6 位验证码哈希存库并投递到消息中心（标题「模拟短信验证码」）。真实人脸模式须先录入实名资料。可注入异步短信适配器，外部发送失败返回 503 `SMS_SEND_FAILED`；不向模型或审计记录明文验证码。接入约定见 [SMS.md](SMS.md) |
+| POST /verify/face | 仅限模拟模式：`{id, frameHash}`（64 位十六进制 SHA-256，前端摄像头画面摘要）或 `{id, skipped:true, reason:"unavailable"|"denied"|"unsupported"}` 降级，降级写审计 `verification.face_skipped`；真实人脸模式拒绝调用 |
+| GET /verify/identity | 本人实名资料状态 `{enrolled, required, channel, maskedName?, maskedIdNumber?}`；默认模拟，无需提交真实信息 |
+| POST /verify/identity | 真实模式首次提交 `{realName, idNumber}`，姓名及身份证号加密保存，响应仅脱敏；不支持自行覆盖 |
+| POST /verify/face/start | 真实模式提交 `{id}` → `{sessionId, url, expiresAt, simulated:false}`，服务端发起H5核身；一条验证只允许发起一次 |
+| POST /verify/face/result | `{sessionId, state}`，服务端拉取结果并核对实名信息，返回 `{status, sessionId}`；拒绝、过期、重复消费不能通过 |
+| GET /verify/face/sessions/:id | 本人核身状态；只读，不调用供应商；接入约定、错误及回跳流程见 [FACE.md](FACE.md) |
 | POST /verify/complete | `{id, code}` → `{verificationToken}`；未完成人脸步骤 403 `FACE_REQUIRED`；错误 8 次限频并计入熔断；token 10 分钟有效、一次性、绑定 user、actionId、revision 和规范化参数摘要；确认事务内消费，并签发独立持久操作授权，计划不依赖短期 token 长期有效 |
 
 ### 语音

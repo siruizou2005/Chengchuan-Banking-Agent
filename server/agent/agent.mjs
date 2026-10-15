@@ -5,6 +5,7 @@ import { toolDefinitions, executeTool } from './tools.mjs';
 import { injectionFlags, redact, unsupportedSuccess, topicGate, OFF_TOPIC_REPLY, GREETING_REPLY } from './guard.mjs';
 import { businessDate } from './policy.mjs';
 import { createExecutionCoordinator, assertChannelExecution } from './execution.mjs';
+import { redactIdentity } from '../privacy.mjs';
 export function validateMessages(messages) {
  requireThat(Array.isArray(messages)&&messages.length>0&&messages.length<=24&&messages.at(-1)?.role==='user'&&messages.every(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string'&&m.content.trim()&&m.content.length<=6000)&&messages.reduce((n,m)=>n+m.content.length,0)<=12000,'对话内容过长或格式无效，请开始新对话',400,'INVALID_MESSAGES');
  return messages.map(m=>({role:m.role,content:m.content}));
@@ -59,7 +60,7 @@ export function createAgent(services,options={}) {
    let correction=false;
    for(let round=0;round<6;round++){
     services.guard.assertOpen(user.id);abort.signal.throwIfAborted();assertChannelExecution(services.bank,context,user.id);
-    const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json',Authorization:`Bearer ${config.apiKey}`},body:JSON.stringify({model:config.model,stream:false,max_tokens:2200,...(config.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{}),messages:conversation,tools:toolDefinitions,tool_choice:'auto'})});
+    const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json',Authorization:`Bearer ${config.apiKey}`},body:JSON.stringify({model:config.model,stream:false,max_tokens:2200,...(config.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{}),messages:redactIdentity(conversation),tools:toolDefinitions,tool_choice:'auto'})});
     if(!response.ok){const detail=await response.json().catch(()=>null);if(detail?.error?.code==='model_not_found')throw new BusinessError('当前聊天模型不可用',502,'MODEL_UNAVAILABLE');const codes={401:['PROVIDER_AUTH','聊天服务认证失败'],402:['PROVIDER_BALANCE','聊天服务余额不足'],429:['PROVIDER_RATE_LIMIT','聊天服务请求繁忙']};const [code,message]=codes[response.status]||['PROVIDER_ERROR','聊天服务暂时不可用'];throw new BusinessError(message,502,code);}
     const data=await response.json(),message=data.choices?.[0]?.message;
     tokens+=Number(data.usage?.total_tokens)||0;
@@ -99,7 +100,7 @@ export function createAgent(services,options={}) {
   }finally{clearTimeout(timeout);signal?.removeEventListener('abort',disconnect);}
   return finish();
   function finish(){
-   const result={text:output,events,trace,runId,sessionId,sources:['澄川银行服务端工具结果'],asOf:now()};
+   const result=redactIdentity({text:output,events,trace,runId,sessionId,sources:['澄川银行服务端工具结果'],asOf:now()});
    services.bank.atomic(()=>{
    assertChannelExecution(services.bank,context,user.id);
    services.bank.run('INSERT INTO agent_runs(id,user_id,channel,session_id,input,injection,trace,output,duration_ms,tokens,created_at,events,topic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',runId,user.id,channel,sessionId,redact(input),JSON.stringify(flags),JSON.stringify(redact(trace)),redact(output),Date.now()-started,tokens,now(),JSON.stringify(redact(events)),topic);

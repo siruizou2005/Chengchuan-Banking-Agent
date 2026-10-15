@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { id, now } from './db.mjs';
 import { requireThat, hash, cents } from './errors.mjs';
 import { POLICY_VERSION, rank, actionAmount } from './agent/policy.mjs';
+import { hasSmsFactor } from './sms.mjs';
 
 const secrets = /^(pin|password|oldPassword|newPin|newPassword|verificationToken|verificationActionId|code|frameHash)$/i;
 export function canonical(value) {
@@ -46,7 +47,7 @@ export function createAuthorization(bank) {
     const step=scope.steps.find(s=>s.id===stepId);
     requireThat(step && step.tool===tool && step.digest===paramsDigest(args) && step.amount===actionAmount(tool,args),'授权步骤或参数不匹配',403,'AUTHORIZATION_MISMATCH');
     requireThat(!bank.get('SELECT id FROM authorization_executions WHERE execution_key=? OR (action_id=? AND step_id=?)',key,action.id,stepId),'该步骤已执行',409,'ALREADY_EXECUTED');
-    requireThat(rank[authorization.approved_level]>=rank[decision.level] && (decision.level!=='red'||JSON.parse(authorization.factors).includes('simulated_sms')),'需补充App加强验证',403,'SUPPLEMENTAL_VERIFICATION_REQUIRED');
+    requireThat(rank[authorization.approved_level]>=rank[decision.level] && (decision.level!=='red'||hasSmsFactor(JSON.parse(authorization.factors))),'需补充App加强验证',403,'SUPPLEMENTAL_VERIFICATION_REQUIRED');
     const spent=bank.get('SELECT COALESCE(SUM(amount),0) AS n FROM authorization_executions WHERE action_id=?',action.id).n;
     requireThat(spent+step.amount<=scope.budget,'超出已授权预算',403,'AUTHORIZATION_BUDGET');
     const p=Object.freeze({userId:user.id,runId:action.run_id,planId:authorization.plan_id,actionId:action.id,authorizationId:authorization.id,key,stepId,tool,digest:step.digest,amount:step.amount,at,transactionId,bodyFingerprint:args._transaction?hash(JSON.stringify(canonical(args._transaction))):undefined});

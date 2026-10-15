@@ -246,20 +246,20 @@ test('旧库非破坏迁移重复运行：历史保留，未证明授权任务�
  }
 });
 
-function strong(instance,user,actionId) {
- const v=instance.services.verification.start(user,actionId);
+async function strong(instance,user,actionId) {
+ const v=await instance.services.verification.start(user,actionId);
  instance.services.verification.face(user,{id:v.id,skipped:true,reason:'unavailable'});
  const body=instance.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1",user.id).body;
  return instance.services.verification.complete(user,{id:v.id,code:body.match(/验证码 (\d{6})/)[1]}).verificationToken;
 }
 
-test('补充验证后重启恢复持久授权，任务和预留只消费一次',t=>{
+test('补充验证后重启恢复持久授权，任务和预留只消费一次',async t=>{
  clock(t);const dir=join('test-results','resume-'+randomUUID());mkdirSync(dir,{recursive:true});const path=join(dir,'bank.sqlite');
  let f=createApp(path),user=f.bank.get("SELECT * FROM users WHERE phone='13800138000'"),recipient=f.services.resolveRecipients(user,{name:'陈屿'})[0].recipient;
  const b=f.services.accountFor(user).balance,a=f.services.propose(user,'propose_transfer',{recipient,amount:'500',scheduleAt:at(60)});f.services.confirm(user,a.id,{pin:'123456'});
- const spend=f.services.propose(user,'propose_transfer',{recipient,amount:'600'});f.services.confirm(user,spend.id,{pin:'123456',verificationToken:strong(f,user,spend.id)});
+ const spend=f.services.propose(user,'propose_transfer',{recipient,amount:'600'});f.services.confirm(user,spend.id,{pin:'123456',verificationToken:await strong(f,user,spend.id)});
  t.mock.timers.tick(61000);f.scheduler.runDue();assert.equal(f.services.owned(user,a.id).status,'awaiting_verification');
- f.services.confirm(user,a.id,{pin:'123456',verificationToken:strong(f,user,a.id)});f.bank.db.close();
+ f.services.confirm(user,a.id,{pin:'123456',verificationToken:await strong(f,user,a.id)});f.bank.db.close();
  for(let i=0;i<2;i++){
   f=createApp(path);f.scheduler.runDue();assert.equal(f.services.owned(user,a.id).status,'completed');
   assert.equal(f.services.accountFor(user).balance,b-110000);assert.equal(f.services.accountFor(user).held,0);

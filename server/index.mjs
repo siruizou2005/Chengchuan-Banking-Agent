@@ -1,6 +1,7 @@
 import { createApp } from './app.mjs';
 import { resolve } from 'node:path';
 import { createServer } from 'node:http';
+import { redactIdentity } from './privacy.mjs';
 
 const production = process.argv.includes('--production');
 const { app, bank, maintenance, channels } = createApp(process.env.BANK_DB || resolve('data/bank.sqlite'), {
@@ -29,7 +30,7 @@ if (production) {
   app.use(vite.middlewares);
 }
 const port = Number(process.env.PORT || (production ? 3000 : 5173));
-const maintenanceTimer = setInterval(() => { try { maintenance(); } catch (error) { console.error('Bank maintenance error:', error.message); } }, 30000);
+const maintenanceTimer = setInterval(() => { try { maintenance(); } catch (error) { console.error('Bank maintenance error:', redactIdentity(error.message)); } }, 30000);
 maintenanceTimer.unref();
 server.listen(port, '127.0.0.1', () => console.log(`澄川银行已启动：http://127.0.0.1:${port}`));
 async function shutdown() { clearInterval(maintenanceTimer); await channels.stop(); await vite?.close(); server.close(() => { bank.db.close(); process.exit(0); }); }

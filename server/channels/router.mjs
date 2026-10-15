@@ -4,6 +4,7 @@ import { hash,requireThat } from '../errors.mjs';
 import { STATS_LABEL } from '../agent/analytics.mjs';
 import { channelPreferences, setChannelPreference, channelText, maskMoney } from './preferences.mjs';
 import { assertChannelExecution } from '../agent/execution.mjs';
+import { redactIdentity } from '../privacy.mjs';
 export function createChannelCrypto(secret=process.env.CHANNEL_SECRET) {
  const key=()=>{requireThat(typeof secret==='string'&&/^[a-f0-9]{64}$/i.test(secret),'请配置64位十六进制CHANNEL_SECRET',503,'CHANNEL_SECRET_REQUIRED');return Buffer.from(secret,'hex');};
  return {encrypt(value){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv),data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(b=>b.toString('base64')).join('.');},decrypt(value){const [iv,tag,data]=value.split('.').map(s=>Buffer.from(s,'base64')),decipher=createDecipheriv('aes-256-gcm',key(),iv);decipher.setAuthTag(tag);return Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8');}};
@@ -19,7 +20,7 @@ export function eventsText(result,{maskAmounts=false,origin=''}={}) {
   if(event.type==='stats')text.push(`【统计·${a.label}·${STATS_LABEL[a.by]}】合计¥${yuan(a.total)}\n${[...a.buckets].filter(b=>b.count).sort((x,y)=>y.amount-x.amount).slice(0,8).map(b=>`${b.key} ¥${yuan(b.amount)}`).join('；')}`);
   if(event.type==='subscriptions')text.push('【订阅】'+a.subscriptions.map(s=>`${s.merchant} ¥${yuan(s.amount)}/月（${s.status}）`).join('；'));
  }
- const output=text.join('\n\n');return maskAmounts?maskMoney(output):output;
+ const output=redactIdentity(text.join('\n\n'));return maskAmounts?maskMoney(output):output;
 }
 export function createChannelRouter(services,agent,options={}) {
  const {bank}=services,{get,run,all,atomic,audit,notify}=bank,crypto=createChannelCrypto(options.secret||process.env.CHANNEL_SECRET),revokeListeners=[];

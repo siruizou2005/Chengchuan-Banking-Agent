@@ -1,5 +1,6 @@
 import { now } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
+import { redactIdentity } from '../privacy.mjs';
 
 export function injectionFlags(text) {
   return [/忽略.{0,12}(指令|规则|之前)/i,/你现在是/i,/\b(system|developer)\s*:/i,/(无需|不用|跳过|绕过).{0,6}(确认|验证|密码)/i,/ignore.{0,25}(instructions|rules)/i].filter(r=>r.test(text)).map(r=>r.source);
@@ -23,7 +24,7 @@ export function redact(value) {
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([k])=>!/(password|pin|token|secret|code_hash|frame_hash)/i.test(k)).map(([k,x])=>[k,visit(x)]));
     return v;
   };
-  return visit(value);
+  return visit(redactIdentity(value));
 }
 export function validate(schema, input, path = '参数') {
   if (schema.type === 'object') {

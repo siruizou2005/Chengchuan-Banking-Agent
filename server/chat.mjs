@@ -1,4 +1,4 @@
-
+import { redactIdentity } from './privacy.mjs';
 export function loadChatConfig(env = process.env) {
   const model = env.CHAT_MODEL || 'deepseek-v4-flash';
   return {
@@ -11,7 +11,7 @@ export function loadChatConfig(env = process.env) {
 const pick = (row, fields) => row && Object.fromEntries(fields.filter(key => row[key] !== undefined).map(key => [key, row[key]]));
 const mask = value => value ? `****${String(value).slice(-4)}` : undefined;
 export function accountContext(snapshot) {
-  return {
+  return redactIdentity({
     asOf: new Date().toISOString(), source: '当前服务器的模拟银行数据库', currency: 'CNY', moneyUnit: '整数分',
     user: { ...pick(snapshot.user, ['name', 'dailyLimit', 'riskLevel', 'createdAt']), phone: mask(snapshot.user.phone) },
     accounts: snapshot.accounts.map(a => ({ ...pick(a, ['name', 'balance', 'held', 'available', 'status']), number: mask(a.number) })),
@@ -22,7 +22,7 @@ export function accountContext(snapshot) {
     recentLedger: snapshot.ledger.slice(0, 30).map(l => pick(l, ['amount', 'balance_after', 'title', 'bj_time', 'kind', 'tag', 'merchant', 'platform'])),
     recentTransactions: snapshot.transactions.slice(0, 20).map(t => pick(t, ['type', 'amount', 'title', 'status', 'created_at', 'error'])),
     scope: '流水最多最近30条（bj_time为北京时间），交易最多最近20条；不代表完整历史，统计请调用bill_report或spending_stats。未提供其他用户资料。',
-  };
+  });
 }
 
 export function registerChat(route, _snapshotFor, options = {}) {

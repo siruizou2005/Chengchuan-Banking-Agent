@@ -1,4 +1,5 @@
 import { cents, requireThat } from '../errors.mjs';
+import { hasSmsFactor } from '../sms.mjs';
 
 export const POLICY_VERSION = 'permissions-v2';
 export const BUSINESS_TIMEZONE = 'Asia/Shanghai';
@@ -78,7 +79,7 @@ export function decide(bank,user,tool,args={},options={}) {
   const current = cumulativeTools.has(tool) ? actionAmount(tool,args) : 0;
   const reasons = [{code: level === 'green' ? LOW_RISK_EFFECTS.has(tool) ? 'LOW_RISK_EFFECT' : 'REGISTERED_QUERY' : current ? total+current>THRESHOLD ? 'DAILY_THRESHOLD_EXCEEDED' : 'DAILY_THRESHOLD_WITHIN' : 'MINIMUM_LEVEL',message:level==='green'?'本人资源范围内已登记的低风险操作':current?`北京时间 ${date} 累计 ¥${((total+current)/100).toFixed(2)}，阈值 ¥1000.00`:'此操作适用固定最低权限等级'}];
   const authorization = options.authorization;
-  const covered = authorization && rank[authorization.approved_level] >= rank[level] && (level !== 'red' || JSON.parse(authorization.factors).includes('simulated_sms'));
+  const covered = authorization && rank[authorization.approved_level] >= rank[level] && (level !== 'red' || hasSmsFactor(JSON.parse(authorization.factors)));
   const groups=new Map();
   if(tool==='create_plan')for(const step of args.steps){
     if(!cumulativeTools.has(step.tool))continue;
@@ -88,5 +89,5 @@ export function decide(bank,user,tool,args={},options={}) {
   }
   const amountsByDate=[...groups.values()].map(g=>({...g,total:g.completed+g.committed+g.proposed+g.current}));
   if(amountsByDate.length)reasons.push({code:'PLAN_EXECUTION_DAYS',message:'计划按各步骤预计执行的北京时间业务日分别累计，到期按实际执行日复核。'});
-  return {level,outcome:options.denial?'deny':covered||level==='green'?'allow':level==='red'&&options.confirmed?'require_verification':'require_confirmation',reasons:options.denial?[{code:options.denial.code,message:options.denial.message}]:reasons,requiredFactors:level==='green'?[]:level==='red'?['explicit_confirmation','pin','simulated_sms','simulated_face_or_registered_fallback']:['explicit_confirmation'],policyVersion:POLICY_VERSION,evaluatedAt:at,businessDate:date,...(current?{amounts:{...snapshot,current,total:total+current,threshold:THRESHOLD}}:{}),...(tool==='create_plan'?{dates:[...new Set(args.steps.map(s=>businessDate(expectedAt(s,args.steps,at))))],amountsByDate}:{})};
+  return {level,outcome:options.denial?'deny':covered||level==='green'?'allow':level==='red'&&options.confirmed?'require_verification':'require_confirmation',reasons:options.denial?[{code:options.denial.code,message:options.denial.message}]:reasons,requiredFactors:level==='green'?[]:level==='red'?['explicit_confirmation','pin','sms','face_or_registered_fallback']:['explicit_confirmation'],policyVersion:POLICY_VERSION,evaluatedAt:at,businessDate:date,...(current?{amounts:{...snapshot,current,total:total+current,threshold:THRESHOLD}}:{}),...(tool==='create_plan'?{dates:[...new Set(args.steps.map(s=>businessDate(expectedAt(s,args.steps,at))))],amountsByDate}:{})};
 }

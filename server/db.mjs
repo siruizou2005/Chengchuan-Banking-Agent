@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { migrateWeChat } from './channels/wechat-schema.mjs';
 import { migrateFeishu } from './channels/feishu-schema.mjs';
+import { redactIdentity } from './privacy.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -126,11 +127,26 @@ export function createBank(path) {
     ['agent_actions','params_digest','TEXT'],['agent_actions','decision','TEXT'],['agent_actions','run_id','TEXT'],
     ['agent_actions','authorization_until','TEXT'],['agent_actions','verification_until','TEXT'],['agent_actions','pause_reason','TEXT'],
     ['verifications','params_digest','TEXT'],['verifications','revision','INTEGER'],['verifications','face_reason','TEXT'],
+    ['verifications','sms_channel',"TEXT NOT NULL DEFAULT 'simulated_sms'"],
+    ['verifications','delivery_status',"TEXT NOT NULL DEFAULT 'sent'"],
+    ['verifications','face_channel',"TEXT NOT NULL DEFAULT 'simulated_face'"],
+    ['verifications','face_session_id','TEXT'],
+    ['verifications','face_reference','TEXT'],
     ['channel_bindings','transport','TEXT'],
     ...LEDGER_DETAIL.map(column=>['ledger',column,'TEXT']),
   ]) if (!all(`PRAGMA table_info(${table})`).some(c=>c.name===column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY,created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS verification_identities (
+      user_id TEXT PRIMARY KEY REFERENCES users(id), identity_ciphertext TEXT NOT NULL,
+      masked_name TEXT NOT NULL, masked_id TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS face_sessions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+      verification_id TEXT NOT NULL UNIQUE REFERENCES verifications(id),
+      state_hash TEXT NOT NULL, biz_token_hash TEXT UNIQUE, biz_token_ciphertext TEXT, provider_reference TEXT,
+      status TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS operation_authorizations (
       id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),action_id TEXT NOT NULL REFERENCES agent_actions(id),
       plan_id TEXT,revision INTEGER NOT NULL,params_digest TEXT NOT NULL,scope TEXT NOT NULL,
@@ -158,7 +174,7 @@ export function createBank(path) {
     catch (error) { db.exec(depth === 1 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`); throw error; }
     finally { depth--; }
   }
-  function audit(user, action, resource = '', detail = {}) { run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, resource, JSON.stringify(detail), now()); }
+  function audit(user, action, resource = '', detail = {}) { run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, redactIdentity(resource), JSON.stringify(redactIdentity(detail)), now()); }
   function notify(user, title, body) { run('INSERT INTO notifications(id,user_id,title,body,created_at) VALUES(?,?,?,?,?)', id('N'), user, title, body, now()); }
   function post(tx, from, to, amount, title, category, date = now(), detail = {}) {
     for (const [account, delta] of [[from, -amount], [to, amount]]) {
