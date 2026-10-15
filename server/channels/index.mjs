@@ -8,7 +8,10 @@ export function createChannels(services,agent,options={}){
   if(binding.token)return bots.send(binding,text,sendOptions);
   if(!feishu)throw Object.assign(new Error('飞书未就绪'),{code:'FEISHU_NOT_READY',deliveryState:'retry_wait'});
   return feishu.send(binding,text,sendOptions);
- },{publicOrigin:options.publicOrigin,...options.feishuPipeline});
+ },{publicOrigin:options.publicOrigin,typing:{
+  add:(binding,messageId)=>binding.token?bots.typing.add(binding,messageId):feishu?.typing?feishu.typing.add(messageId):Promise.resolve(null),
+  remove:(binding,messageId,reactionId)=>binding.token?bots.typing.remove(binding,messageId,reactionId):feishu?.typing?.remove(messageId,reactionId),
+ },...options.feishuPipeline});
  router.acceptFeishu=pipeline.ingest;
  router.onRevoke(bots.forget);router.onRevoke(pipeline.cancelBinding);
  services.onChannelResult=()=>pipeline.kick();

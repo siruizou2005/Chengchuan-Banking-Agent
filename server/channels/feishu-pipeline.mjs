@@ -17,7 +17,25 @@ export function createFeishuPipeline(services,router,send,options={}) {
   const leaseMs=options.leaseMs||60000,sendMs=options.sendTimeoutMs||8000;
   const progressMs=options.progressMs??Number(process.env.FEISHU_PROGRESS_AFTER_MS||4000);
   const maxPending=options.maxPending||3,concurrency=options.concurrency||4;
+  const typingOn=Boolean(options.typing)&&options.typingEnabled!==false&&process.env.FEISHU_TYPING_ENABLED!=='false',typing=new Map();
   let stopped=false,timer;
+  // The reaction id lives in memory. After a restart the emoji stays on the message, which carries no data.
+  function startTyping(b,requestId,messageId) {
+    if(!typingOn)return;
+    const entry={b,messageId,reactionId:null,done:false,timer:setTimeout(()=>stopTyping(requestId),options.typingMaxMs||300000)};entry.timer.unref?.();
+    typing.set(requestId,entry);
+    options.typing.add(b,messageId).then(reactionId=>{
+      entry.reactionId=reactionId;
+      if(entry.done){removeTyping(entry);return;}
+      // A visible reaction replaces the delayed "正在处理" text.
+      if(reactionId)bank.run('UPDATE feishu_inbox SET progress_sent=1 WHERE id=? AND progress_sent=0',requestId);
+    },()=>{});
+  }
+  function removeTyping(entry) {if(entry.reactionId)Promise.resolve().then(()=>options.typing.remove(entry.b,entry.messageId,entry.reactionId)).catch(()=>{});}
+  function stopTyping(requestId) {
+    const entry=typing.get(requestId);if(!entry)return;
+    typing.delete(requestId);clearTimeout(entry.timer);entry.done=true;removeTyping(entry);
+  }
   function bindingFor(row) {
     const b=bank.get("SELECT * FROM channel_bindings WHERE id=? AND channel='feishu' AND status='active'",row.binding_id||row.id);
     requireThat(b&&b.binding_generation===row.binding_generation&&b.binding_session_id===row.binding_session_id&&b.user_id===row.user_id,'飞书绑定已变更',409,'BINDING_FENCED');
@@ -53,7 +71,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
     if(!b)return false;
     // Only the shared bot accepts binding codes; it must not interpret them as an Agent request.
     if(!input.binding&&/^绑定\s*\d{6}$/.test(input.text.trim()))return false;
-    let requestId;
+    let requestId,queued=false;
     bank.atomic(()=>{
       bindingFor(b);
       if(bank.get('SELECT 1 FROM feishu_inbox WHERE binding_id=? AND message_id=?',b.id,input.messageId)||bank.get("SELECT 1 FROM channel_messages WHERE channel='feishu' AND message_id=?",input.messageId))return;
@@ -63,10 +81,11 @@ export function createFeishuPipeline(services,router,send,options={}) {
       bank.run(`INSERT INTO feishu_inbox(id,binding_id,binding_session_id,binding_generation,user_id,message_id,input_cipher,status,is_command,received_at,queue_deadline,run_id)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,b.id,b.binding_session_id,b.binding_generation,b.user_id,input.messageId,crypto.encrypt(input.text),reason?'failed':'queued',command?1:0,time,time+(options.queueMs||30000),id('RUN'));
       if(reason){bank.run('UPDATE feishu_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);enqueue(b,{requestId,messageId:input.messageId,kind:'final',body:reason});}
-      else if(!command)enqueueExecution(bank,b.user_id,requestId,'feishu',time+(options.queueMs||30000));
+      else if(!command){enqueueExecution(bank,b.user_id,requestId,'feishu',time+(options.queueMs||30000));queued=true;}
       bank.run("UPDATE channel_bindings SET last_inbound_at=?,connection_state='receiving' WHERE id=?",time,b.id);
     });
     if(requestId&&reply)replyTransports.set(requestId,reply);
+    if(queued)startTyping(b,requestId,input.messageId);
     queueMicrotask(kick);return true;
   }
   function complete(row,result,error) {
@@ -114,7 +133,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
         const status=row.status==='sending'?'unknown':'expired';
         bank.run('UPDATE feishu_deliveries SET status=?,needs_review=?,lease_epoch=lease_epoch+1 WHERE id=?',status,status==='unknown'?1:0,row.id);
         if(row.source_outbox_id)bank.run("UPDATE channel_outbox SET status=? WHERE id=? AND status='forwarded'",status,row.source_outbox_id);
-        notice(row);replyTransports.delete(row.request_id);
+        notice(row);replyTransports.delete(row.request_id);if(row.kind==='final')stopTyping(row.request_id);
       }
     });
   }
@@ -125,7 +144,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
         try{bindingFor(row);}catch{
           bank.run("UPDATE feishu_inbox SET status='cancelled',finished_at=?,lease_epoch=lease_epoch+1 WHERE id=?",Date.now(),row.id);
           bank.run("UPDATE agent_execution_queue SET status='interrupted' WHERE request_id=? AND status='queued'",row.id);
-          cancelFeedback(row.id);replyTransports.delete(row.id);continue;
+          cancelFeedback(row.id);replyTransports.delete(row.id);stopTyping(row.id);continue;
         }
         bank.run("UPDATE feishu_inbox SET status='running',lease_owner=?,lease_epoch=lease_epoch+1,lease_until=? WHERE id=? AND status='queued'",owner,Date.now()+leaseMs,row.id);
         return bank.get('SELECT * FROM feishu_inbox WHERE id=?',row.id);
@@ -155,7 +174,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
       for(const row of bank.all("SELECT * FROM feishu_deliveries WHERE status IN ('pending','retry_wait') AND next_at<=? ORDER BY seq LIMIT 100",Date.now())){
         if(sends.has(row.binding_id)||bank.get("SELECT 1 FROM feishu_deliveries WHERE binding_id=? AND status='sending' AND lease_until>?",row.binding_id,Date.now()))continue;
         if(bank.get("SELECT 1 FROM feishu_deliveries WHERE binding_id=? AND seq<? AND status IN ('pending','retry_wait','sending')",row.binding_id,row.seq))continue;
-        try{bindingFor(row);}catch{bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);continue;}
+        try{bindingFor(row);}catch{bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);if(row.kind==='final')stopTyping(row.request_id);continue;}
         if(row.kind==='progress'&&!pending.includes(bank.get('SELECT status FROM feishu_inbox WHERE id=?',row.request_id)?.status)){bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);continue;}
         bank.run("UPDATE feishu_deliveries SET status='sending',lease_owner=?,lease_epoch=lease_epoch+1,lease_until=?,attempts=attempts+1 WHERE id=? AND status IN ('pending','retry_wait')",owner,Date.now()+sendMs+5000,row.id);
         return bank.get('SELECT * FROM feishu_deliveries WHERE id=?',row.id);
@@ -173,7 +192,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
       if(row.sent_body_cipher&&crypto.decrypt(row.sent_body_cipher)!==body)row.uuid=randomUUID();
       bank.run('UPDATE feishu_deliveries SET sent_body_cipher=?,uuid=? WHERE id=?',crypto.encrypt(body),row.uuid,row.id);
       const transport=row.request_id&&replyTransports.get(row.request_id);
-      const result=await (transport||send)(b,body,{messageId:row.message_id,uuid:row.uuid,signal:abort.signal,timeoutMs:sendMs,assertCurrent:()=>assertTask('feishu_deliveries',row,'sending')});
+      const result=await (transport||send)(b,body,{messageId:row.message_id,uuid:row.uuid,format:row.kind==='progress'?'text':'card',signal:abort.signal,timeoutMs:sendMs,assertCurrent:()=>assertTask('feishu_deliveries',row,'sending')});
       bank.atomic(()=>{
         assertTask('feishu_deliveries',row,'sending');
         bank.run("UPDATE feishu_deliveries SET status='api_accepted',api_accepted_at=?,server_message_id=? WHERE id=?",Date.now(),result?.data?.message_id||null,row.id);
@@ -195,6 +214,8 @@ export function createFeishuPipeline(services,router,send,options={}) {
     }finally{
       const status=bank.get('SELECT status FROM feishu_deliveries WHERE id=?',row.id)?.status;
       if(row.kind!=='progress'&&status!=='retry_wait')replyTransports.delete(row.request_id);
+      // The reaction stays until the reply is settled, so it disappears as the answer arrives.
+      if(row.kind==='final'&&status!=='retry_wait')stopTyping(row.request_id);
     }
   }
   function schedule() {
@@ -225,7 +246,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
     });
     for(const v of executions.values())if(v.bindingId===bindingId)v.abort.abort();
     sends.get(bindingId)?.abort.abort();
-    for(const row of bank.all('SELECT id FROM feishu_inbox WHERE binding_id=?',bindingId))replyTransports.delete(row.id);
+    for(const row of bank.all('SELECT id FROM feishu_inbox WHERE binding_id=?',bindingId)){replyTransports.delete(row.id);stopTyping(row.id);}
   }
   function requestView(user,requestId) {
     const row=bank.get('SELECT * FROM feishu_inbox WHERE id=? AND user_id=?',requestId,user.id);requireThat(row,'未找到该请求',404,'NOT_FOUND');
@@ -235,7 +256,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
   }
   async function drain(){kick();while(executions.size||sends.size)await Promise.all([...executions.values(),...sends.values()].map(v=>v.task));}
   async function flush(){kick();while(sends.size)await Promise.all([...sends.values()].map(v=>v.task));}
-  async function stop(){stopped=true;clearTimeout(timer);for(const v of [...executions.values(),...sends.values()])v.abort.abort();await Promise.all([...executions.values(),...sends.values()].map(v=>v.task));replyTransports.clear();}
+  async function stop(){stopped=true;clearTimeout(timer);for(const v of [...executions.values(),...sends.values()])v.abort.abort();await Promise.all([...executions.values(),...sends.values()].map(v=>v.task));replyTransports.clear();for(const entry of typing.values())clearTimeout(entry.timer);typing.clear();}
   function routes(route){
     route('get','/channels/feishu/requests','本人飞书请求记录',(req,res)=>res.json(bank.all('SELECT id,status,received_at FROM feishu_inbox WHERE user_id=? ORDER BY seq DESC LIMIT 30',req.user.id)));
     route('get','/channels/feishu/requests/:id','本人飞书请求结果',(req,res)=>res.json(requestView(req.user,req.params.id)));

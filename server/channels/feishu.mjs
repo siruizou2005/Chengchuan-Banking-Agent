@@ -32,12 +32,37 @@ export async function feishuRequest(call,{signal,timeoutMs=8000}={}) {
   throw failure(code!=null?`FEISHU_${String(code).replace(/[^0-9]/g,'').slice(0,12)}`:'FEISHU_NETWORK_ERROR',status===429||code===99991400?'retry_wait':status>=500?'unknown':code!=null&&code!==0?'failed':'unknown');
  }finally{clearTimeout(timer);if(abort)signal?.removeEventListener('abort',abort);}
 }
+// Replies render as a JSON 2.0 card with one markdown element so headings, bold, lists and tables display in Feishu.
+// Bare links become markdown links because the card markdown component does not autolink them.
+export function feishuCard(text) {
+ const content=String(text).replace(/(^|[^([\]<])(https?:\/\/[^\s<>()[\]（），。；、！？]+)/g,(_,lead,url)=>`${lead}[${url}](${url})`);
+ return {schema:'2.0',config:{width_mode:'fill'},body:{elements:[{tag:'markdown',content}]}};
+}
+// Card content rejections: invalid parameter, card build failure, content too long. Other errors would fail as text too.
+const CARD_REJECTED=new Set(['FEISHU_230001','FEISHU_230099','FEISHU_230025']);
 export function sendFeishuMessage(client,binding,text,options={}) {
- const data={msg_type:'text',content:JSON.stringify({text}),uuid:options.uuid||randomUUID()};
- return requestScope.run({...options,deadline:Date.now()+(options.timeoutMs||8000)},()=>feishuRequest(()=>{
-  options.assertCurrent?.();
-  return options.messageId?client.im.v1.message.reply({path:{message_id:options.messageId},data}):client.im.v1.message.create({params:{receive_id_type:'open_id'},data:{...data,receive_id:binding.external_id}});
- },options));
+ const deadline=Date.now()+(options.timeoutMs||8000),uuid=options.uuid||randomUUID();
+ const attempt=(msgType,content,id)=>{
+  const data={msg_type:msgType,content:JSON.stringify(content),uuid:id};
+  return feishuRequest(()=>{
+   options.assertCurrent?.();
+   return options.messageId?client.im.v1.message.reply({path:{message_id:options.messageId},data}):client.im.v1.message.create({params:{receive_id_type:'open_id'},data:{...data,receive_id:binding.external_id}});
+  },{...options,timeoutMs:Math.max(1,deadline-Date.now())});
+ };
+ return requestScope.run({...options,deadline},async()=>{
+  if(options.format==='text')return attempt('text',{text},uuid);
+  // Only a definite rejection falls back to text; an uncertain outcome may already have delivered the card.
+  try{return await attempt('interactive',feishuCard(text),uuid);}
+  catch(error){if(error.deliveryState!=='failed'||!CARD_REJECTED.has(error.code))throw error;return attempt('text',{text},`${uuid}-text`);}
+ });
+}
+// Feishu bots have no typing state, so a "Typing" emoji reaction on the depositor's message stands in for one.
+// Reactions only need im:message, which both bots already hold; failures are ignored.
+export function feishuTyping(client) {
+ return {
+  async add(messageId){const result=await feishuRequest(()=>client.im.v1.messageReaction.create({path:{message_id:messageId},data:{reaction_type:{emoji_type:'Typing'}}}),{timeoutMs:3000});return result.data?.reaction_id||null;},
+  async remove(messageId,reactionId){await feishuRequest(()=>client.im.v1.messageReaction.delete({path:{message_id:messageId,reaction_id:reactionId}}),{timeoutMs:3000});},
+ };
 }
 export function createFeishuHandler(router,client,onError=()=>{},owner,binding) {
  return data=>{
@@ -55,11 +80,11 @@ export function createFeishuHandler(router,client,onError=()=>{},owner,binding) 
 }
 export async function startFeishu(router,options={}) {
  const appId=options.appId||process.env.FEISHU_APP_ID,appSecret=options.appSecret||process.env.FEISHU_APP_SECRET;
- if(!appId||!appSecret)return {stop:async()=>{},send:async()=>{throw new Error('飞书未配置');}};
+ if(!appId||!appSecret)return {stop:async()=>{},send:async()=>{throw new Error('飞书未配置');},typing:null};
  const sdk=options.sdk||await import('@larksuiteoapi/node-sdk');
  const client=new sdk.Client({appId,appSecret,logger:QUIET,...boundedHttp(sdk)}),ws=new sdk.WSClient({appId,appSecret,loggerLevel:sdk.LoggerLevel.warn});
  ws.start({eventDispatcher:new sdk.EventDispatcher({}).register({'im.message.receive_v1':createFeishuHandler(router,client,()=>console.warn('Feishu message failed'))})});
-  return {stop:async()=>{ws.close({force:true});},send:(binding,text,options)=>sendFeishuMessage(client,binding,text,options)};
+  return {stop:async()=>{ws.close({force:true});},send:(binding,text,options)=>sendFeishuMessage(client,binding,text,options),typing:feishuTyping(client)};
 }
 const OPEN_API={feishu:'https://open.feishu.cn',lark:'https://open.larksuite.com'};
 const SCOPES=['im:message','im:message:send_as_bot','im:message.p2p_msg:readonly','application:application:patch'];
@@ -100,6 +125,8 @@ export function createFeishuBots(services,router,options={}) {
   try{return await sendFeishuMessage(entry.client,binding,text,options);}
   catch(error){if(error.deliveryState==='failed'&&await credentialsRejected(entry)){forget(binding.id);router.expire(binding,'飞书专属机器人已失效','请前往消息渠道绑定页面重新创建。');}throw error;}
  }
+ // Typing reactions skip the binding fence: they show progress only and carry no account data.
+ const typing={add:async(binding,messageId)=>feishuTyping((await connect(binding)).client).add(messageId),remove:async(binding,messageId,reactionId)=>feishuTyping((await connect(binding)).client).remove(messageId,reactionId)};
  async function event(req,res){
   const binding=active("id=? AND status IN ('setup','active')",req.params.id);if(!binding)return res.json({});
   try{await (await connect(binding)).handle(req,res);}catch{if(!res.headersSent)res.status(400).json({});}
@@ -170,5 +197,5 @@ export function createFeishuBots(services,router,options={}) {
   route('get','/channels/feishu/register/:id','飞书专属机器人创建状态',(req,res)=>res.json(status(req.user,req.params.id)));
   route('post','/channels/feishu/events/:id','飞书专属机器人事件回调（签名校验）',event,false);
  }
- return {register,status,event,send,forget,stop,routes,enabled,sweep,pendingCount:()=>pending.size,cachedClients:()=>clients.size};
+ return {register,status,event,send,typing,forget,stop,routes,enabled,sweep,pendingCount:()=>pending.size,cachedClients:()=>clients.size};
 }

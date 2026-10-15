@@ -8,6 +8,7 @@ import { createBank } from '../server/db.mjs';
 import { channelPreferences,maskMoney } from '../server/channels/preferences.mjs';
 import { wechatResultText } from '../server/channels/wechat-state.mjs';
 import { fixture,llm } from './helpers.mjs';
+import { feishuContentText as contentText } from './helpers.mjs';
 import { wechatFixture } from './wechat-helpers.mjs';
 
 test('渠道开关按用户和渠道隔离，校验输入，解绑/重绑与重启保留',async t=>{
@@ -57,7 +58,7 @@ test('微信待发与明确限流重试使用最新开关，业务通知同样�
 });
 
 test('飞书业务回推按实际发送时的开关处理',async t=>{
-  const sent=[];const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{create:async arg=>{sent.push(JSON.parse(arg.data.content).text);return {code:0};}}}}},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
+  const sent=[];const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{create:async arg=>{sent.push(contentText(arg.data.content));return {code:0};}}}}},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
   const f=await fixture(t,{channels:{feishu:{appId:'test',appSecret:'test',sdk}}});const b=f.channels.router.bind('feishu','fs-owner',f.channels.router.createCode(f.user,'123456').code);
   await f.channels.start();
   f.bank.run('INSERT INTO channel_outbox(id,binding_id,body,next_at) VALUES(?,?,?,?)','out1',b.id,'【操作完成】转账 ¥88.88','2000-01-01');

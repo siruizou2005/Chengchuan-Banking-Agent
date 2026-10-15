@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fixture,llm } from './helpers.mjs';
 import { createFeishuHandler,feishuRequest } from '../server/channels/feishu.mjs';
 import { createApp } from '../server/app.mjs';
+import { feishuContentText as contentText } from './helpers.mjs';
 import { executeTool } from '../server/agent/tools.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
@@ -96,7 +97,7 @@ test('飞书：已取消提议的待重试回复刷新状态，不能继续提�
  assert.equal(delivery.status,'retry_wait');assert.match(f.sent[0].data.content,/待授权确认/);
  f.channels.router.feishuCommand(f.binding,'取消 '+action.id);limited=false;
  f.bank.run('UPDATE feishu_deliveries SET next_at=0 WHERE id=?',delivery.id);await f.pipe.drain();
- const text=JSON.parse(f.sent.at(-1).data.content).text;
+ const text=contentText(f.sent.at(-1).data.content);
  assert.match(text,/cancelled/);assert.doesNotMatch(text,/待授权确认|请在App内输入支付密码确认/);
  assert.equal(f.pipe.requestView(f.user,row.id).result.events.find(e=>e.type==='action').data.status,'cancelled');
 });
@@ -141,4 +142,37 @@ test('飞书：发送超时、非法响应和HTTP限流分类明确',async()=>{
  await assert.rejects(feishuRequest(()=>new Promise(()=>{}),{timeoutMs:5}),e=>e.deliveryState==='unknown'&&e.code==='FEISHU_SEND_TIMEOUT');
  await assert.rejects(feishuRequest(async()=>({})),e=>e.deliveryState==='unknown');
  await assert.rejects(feishuRequest(async()=>{throw {response:{status:429}};}),e=>e.deliveryState==='retry_wait');
+});
+
+test('飞书：回复以卡片markdown发送，卡片内容被拒时退回纯文本，其他错误不重复发送',async t=>{
+ const f=await setup(t,{reply:arg=>arg.data.msg_type==='interactive'?{code:230099}:{code:0,data:{message_id:'m1'}}});
+ f.queue.push(llm([],'**余额** ¥123.45'));f.handler(event('card','查余额'));await f.pipe.drain();
+ assert.deepEqual(f.sent.map(s=>s.data.msg_type),['interactive','text']);
+ const card=JSON.parse(f.sent[0].data.content),content=card.body.elements[0].content;
+ assert.equal(card.schema,'2.0');assert.equal(card.body.elements[0].tag,'markdown');assert.match(content,/\*\*余额\*\*/);
+ assert.match(content,/\[https:\/\/bank\.test\/#feishu-requests\/FSREQ\w+\]\(https:\/\/bank\.test\/#feishu-requests\/FSREQ\w+\)/);
+ assert.notEqual(f.sent[1].data.uuid,f.sent[0].data.uuid);assert.match(JSON.parse(f.sent[1].data.content).text,/\*\*余额\*\* ¥123\.45/);
+ assert.equal(f.bank.get("SELECT d.status FROM feishu_deliveries d JOIN feishu_inbox i ON i.id=d.request_id WHERE i.message_id='card'").status,'api_accepted');
+});
+
+test('飞书：处理中给用户消息加Typing表情，回复送达后撤销，期间不再发文字进度',async t=>{
+ const calls=[],gate=deferred();
+ const typing={add:async(b,messageId)=>{calls.push(['add',messageId]);return 'reaction-1';},remove:async(b,messageId,reactionId)=>{calls.push(['remove',messageId,reactionId]);}};
+ const f=await setup(t,{pipeline:{typing,feedback:true,progressMs:20},chat:{fetch:async()=>{await gate.promise;return Response.json(llm([],'余额已查询'));}}});
+ f.handler(event('typing','查余额'));
+ await until(()=>calls.length===1);assert.deepEqual(calls[0],['add','typing']);
+ await new Promise(r=>setTimeout(r,60));f.pipe.kick();
+ assert.equal(f.sent.length,0);assert.equal(f.bank.get("SELECT progress_sent FROM feishu_inbox WHERE message_id='typing'").progress_sent,1);
+ gate.resolve();await f.pipe.drain();
+ await until(()=>calls.length===2);assert.deepEqual(calls[1],['remove','typing','reaction-1']);
+ assert.deepEqual(f.sent.map(s=>s.data.msg_type),['interactive']);
+ f.handler(event('help','帮助'));await f.pipe.drain();assert.equal(calls.length,2);
+});
+
+test('飞书：表情回应失败时仍按时发送文字进度',async t=>{
+ const gate=deferred();
+ const f=await setup(t,{pipeline:{typing:{add:async()=>{throw new Error('no permission');},remove:async()=>{}},feedback:true,progressMs:20},chat:{fetch:async()=>{await gate.promise;return Response.json(llm([],'余额已查询'));}}});
+ f.handler(event('no-typing','查余额'));
+ await until(()=>f.sent.length===1);assert.equal(f.sent[0].data.msg_type,'text');assert.match(JSON.parse(f.sent[0].data.content).text,/请稍等/);
+ gate.resolve();await f.pipe.drain();assert.equal(f.sent.at(-1).data.msg_type,'interactive');
 });

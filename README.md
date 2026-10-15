@@ -146,7 +146,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 4. 发布版本，把 App ID / App Secret 写入 `.env` 的 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`，并配置 `CHANNEL_SECRET` 加密消息任务，重启服务。
 5. App「我的 → 安全中心 → 消息渠道绑定」用支付密码生成 6 位绑定码（5 分钟一次性），在飞书私聊机器人发送「绑定 123456」。
 
-**飞书消息可靠性**：共享与专属机器人的已绑定请求均先持久接收，再异步执行及投递。每个用户最多同时保留 3 条普通待处理请求，与 App、微信共用执行队列；帮助、确认指引和取消走独立命令通道。默认从收到消息起 4 秒仍未完成时提示一次，快速完成则省略，使用 `FEISHU_PROGRESS_AFTER_MS` 调整或 `FEISHU_FEEDBACK_ENABLED=false` 关闭。回复在实际发送时应用金额隐藏设置。
+**飞书消息可靠性**：共享与专属机器人的已绑定请求均先持久接收，再异步执行及投递。每个用户最多同时保留 3 条普通待处理请求，与 App、微信共用执行队列；帮助、确认指引和取消走独立命令通道。回复以飞书消息卡片（JSON 2.0 的 markdown 组件）发送，标题、加粗、列表、表格和链接可正常显示；卡片内容被飞书拒绝（230001 / 230099 / 230025）时自动改发纯文本。飞书机器人没有原生输入状态接口，参照 OpenClaw 的做法，收到普通请求后给用户这条消息加上「Typing」表情回应，回复送达或任务结束后撤销；表情只需 `im:message` 权限，两种机器人现有权限已覆盖，`FEISHU_TYPING_ENABLED=false` 可关闭。表情添加成功时不再发文字进度；添加失败时，默认从收到消息起 4 秒仍未完成提示一次，快速完成则省略，使用 `FEISHU_PROGRESS_AFTER_MS` 调整或 `FEISHU_FEEDBACK_ENABLED=false` 关闭。卡片与纯文本都在实际发送时应用金额隐藏设置。
 
 飞书发送检查业务错误码；明确限流退避重试，响应丢失或发送超时记为 `unknown` 并提示到 App 查看，不重新执行模型或业务。App「消息渠道绑定」提供最近的飞书请求，完整结果入口为 `/#feishu-requests/{id}`。接口接受请求不代表手机已收到。解绑阻止旧任务提交和新发送，重绑创建新代次与新会话；已发往平台的在途请求可能无法撤回，其结果保持未知，不向新绑定重发。自动扫码创建、自动配置回调和发布应用的流程保持不变。详见 [飞书 Bot 优化实施报告](docs/飞书Bot优化实施报告.md)。
 
@@ -163,6 +163,7 @@ App 聊天按用户保存在服务端。聊天页右上角「历史」列出本�
 | `CHANNEL_SECRET` | 64 位十六进制，AES-256-GCM 加密渠道令牌 |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书共享机器人（自建应用）凭据 |
 | `FEISHU_PERSONAL_ENABLED` | `true` 时开放储户一键创建飞书专属机器人（另需 https 的 `PUBLIC_ORIGIN`） |
+| `FEISHU_TYPING_ENABLED` / `FEISHU_FEEDBACK_ENABLED` | 处理中用「Typing」表情回应代替文字进度 / 表情失败时的文字进度，默认均开启 |
 | `WECHAT_ENABLED` / `WECHAT_ACCEPT_NEW_MESSAGES` | 微信总开关 / 停止新绑定及收件但继续排空 |
 | `WECHAT_FEEDBACK_ENABLED` / `WECHAT_TYPING_ENABLED` | 受理反馈总开关 / 用「正在输入」代替文字受理，默认均开启 |
 | `WECHAT_PROGRESS_AFTER_MS` | 退回文字时的进度提示阈值，默认 8000ms |

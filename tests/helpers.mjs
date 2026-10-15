@@ -13,3 +13,6 @@ export async function fixture(t,options={}){
  async function verify(actionId,token=alice.token){const v=await req('/verify/start',{actionId},token);if(v.status!==200)throw new Error(JSON.stringify(v));const current=instance.bank.get('SELECT user_id FROM verifications WHERE id=?',v.data.id),n=instance.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1",current.user_id);await req('/verify/face',{id:v.data.id,skipped:true,reason:'unavailable'},token);return (await req('/verify/complete',{id:v.data.id,code:n.body.match(/验证码 (\d{6})/)[1]},token)).data.verificationToken;}
  return {...instance,url,requests,queue,req,call,alice,bob,user,recipient,verify,propose:(tool,args)=>call('/agent/actions',{tool,args}),chat:text=>call('/agent/chat',{messages:[{role:'user',content:text}]}),balance:()=>instance.bank.get("SELECT balance,held FROM accounts WHERE user_id=? AND type='debit'",user.id)};
 }
+
+// Feishu replies are cards; fallbacks and progress notes are plain text.
+export const feishuContentText=content=>{const value=JSON.parse(content);return value.text??value.body.elements.map(e=>e.content).join('\n');};
