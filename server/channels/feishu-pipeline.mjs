@@ -8,6 +8,7 @@ import { channelText } from './preferences.mjs';
 
 const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 const pending=['queued','running'];
+const appCards={report:'账单图表',stats:'统计图表',subscriptions:'订阅明细',products:'产品对比',anomalies:'异常支出明细'};
 export const feishuResultLink=(origin,requestId)=>`${origin||''}/#feishu-requests/${requestId}`;
 
 // Acknowledgement follows durable acceptance. Network calls never run inside a transaction.
@@ -60,8 +61,13 @@ export function createFeishuPipeline(services,router,send,options={}) {
     const actions=events.filter(e=>['action','plan'].includes(e.type));
     let text=actions.length?actions.map(e=>['proposed','awaiting_verification'].includes(e.data.status)?eventsText({text:'',events:[e]},{origin}):`操作状态已更新（${e.data.status}）。编号：${e.data.id}\n请在App查看：${origin}/#tasks?action=${e.data.id}`).join('\n\n'):eventsText({...result,events},{origin});
     // Keep a conservative local text budget; the complete result remains accessible in the App.
-    if(Buffer.byteLength(text)>12000){let shortened='',bytes=0;for(const c of text){bytes+=Buffer.byteLength(c);if(bytes>11000)break;shortened+=c;}text=shortened+'…';}
-    return text+`\n\nApp查看：${feishuResultLink(origin,requestId)}`;
+    let truncated=false;
+    if(Buffer.byteLength(text)>12000){let shortened='',bytes=0;for(const c of text){bytes+=Buffer.byteLength(c);if(bytes>11000)break;shortened+=c;}text=shortened+'…';truncated=true;}
+    // Link to the App only when it shows more than Feishu, and say why: a cut-off reply, or a result the App draws as a card.
+    // Proposals already carry their own confirmation link.
+    const cards=[...new Set(events.map(e=>appCards[e.type]).filter(Boolean))].join('、'),link=feishuResultLink(origin,requestId);
+    if(truncated)return text+`\n\n回复内容较长，以上仅为部分${cards?`；完整内容及${cards}`:'，完整内容'}请在App查看：${link}`;
+    return cards?text+`\n\n${cards}请在App查看：${link}`:text;
   }
   function ingest(input,reply) {
     requireThat(!stopped,'飞书正在停止，请稍后重试',503,'FEISHU_STOPPING');
