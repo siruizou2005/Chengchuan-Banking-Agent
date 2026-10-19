@@ -10,6 +10,7 @@ import { Credit, Loans, Risk, Wealth } from './pages/Wealth';
 import { Appointments, Life, Support } from './pages/Life';
 import { AgentCenter, Messages, Profile, Security } from './pages/Profile';
 import { Channels } from './pages/Channels';
+import { Personalization } from './pages/Personalization';
 import { ChannelRequest } from './pages/ChannelRequest';
 import { AgentTasks, PayRequest } from './pages/AgentTasks';
 import { Approval, type ApprovalProof } from './Approval';
@@ -17,7 +18,7 @@ import { FaceReturn } from './pages/FaceReturn';
 import ChatApp from './chat/ChatApp';
 import type { Snapshot, Transaction } from './types';
 
-const titles: Record<string, string> = { 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '账户', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
+const titles: Record<string, string> = { personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '账户', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
 const tabs = [{ id: 'home', title: '账户', icon: NavAccount }, { id: 'wealth', title: '理财', icon: NavWealth }, { id: 'assistant', title: '智能助手', icon: NavAssistant }, { id: 'life', title: '生活', icon: NavLife }, { id: 'profile', title: '我的', icon: NavProfile }];
 const tabPages = ['wealth', 'life', 'profile'];
 
@@ -98,7 +99,7 @@ export default function App() {
   const toastElement = toastState && <div className={`toast ${toastState.error ? 'error' : ''}`} role={toastState.error ? 'alert' : 'status'}>{toastState.error ? <CircleX size={18} /> : <Check size={18} />}<span>{toastState.message}</span></div>;
   if (loading) return <div className="app-shell loading-screen"><Brand /><LoaderCircle size={26} className="spin" /><p>正在加载…</p></div>;
   if (!data) return <><Login initialError={initialError} onLogin={async () => { await refresh(); if (!location.hash.slice(1)) navigate('home'); }} />{toastElement}</>;
-  const pages: Record<string, ReactNode> = { 'face-return': <FaceReturn />, 'feishu-requests': <ChannelRequest />, 'wechat-requests': <ChannelRequest />, channels: <Channels />, tasks: <AgentTasks />, home: <Home />, accounts: <Accounts />, transfer: <Transfer key={route} />, ledger: <LedgerPage />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> };
+  const pages: Record<string, ReactNode> = { personalization: <Personalization key={data.user.id} />, 'face-return': <FaceReturn />, 'feishu-requests': <ChannelRequest />, 'wechat-requests': <ChannelRequest />, channels: <Channels />, tasks: <AgentTasks />, home: <Home />, accounts: <Accounts />, transfer: <Transfer key={route} />, ledger: <LedgerPage />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> };
   const activeTab = ['deposit', 'risk', 'loan'].includes(page) ? 'wealth' : ['accounts', 'security', 'messages', 'agent', 'transactions', 'payees', 'credit'].includes(page) ? 'profile' : ['appointments', 'support'].includes(page) ? 'life' : page;
   const isTabPage = tabPages.includes(page);
   return <BankContext.Provider value={{ data, busy, route, hidden, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : ''}`}>

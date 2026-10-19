@@ -73,6 +73,8 @@ export function createFeishuPipeline(services,router,send,options={}) {
     requireThat(!stopped,'飞书正在停止，请稍后重试',503,'FEISHU_STOPPING');
     if(typeof input.text!=='string'||!input.text.trim()||input.text.length>6000||typeof input.messageId!=='string'||!input.messageId)return true;
     const b=bank.get("SELECT * FROM channel_bindings WHERE channel='feishu' AND external_id=? AND status='active'",input.externalId);
+    // A shared bot cannot resolve an identity from a personal bot or another App ID.
+    if(!input.binding&&b&&(b.token||(input.botAccountId&&b.external_bot_id!==input.botAccountId)))return false;
     if(input.binding&&(b?.id!==input.binding.id||b?.binding_generation!==input.binding.binding_generation))return true;
     if(!b)return false;
     // Only the shared bot accepts binding codes; it must not interpret them as an Agent request.

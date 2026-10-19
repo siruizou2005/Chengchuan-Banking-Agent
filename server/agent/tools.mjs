@@ -5,6 +5,7 @@ import { runAnalysis } from './sandbox.mjs';
 import { id, now, products } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
+import { resolvePrincipal } from './principal.mjs';
 const str=(maxLength=100)=>({type:'string',minLength:1,maxLength});
 const money={type:'string',pattern:'^(0|[1-9]\\d{0,8})(\\.\\d{1,2})?$',description:'人民币元字符串，最多2位小数'};
 const obj=(properties={},required=[])=>({type:'object',properties,required,additionalProperties:false});
@@ -24,7 +25,7 @@ const definitions={
  bill_report:['生成账单报告，不传参数为本月。日报用period=YYYY-MM-DD或preset=today/yesterday，周报this_week/last_week，月报YYYY-MM或this_month/last_month，年报YYYY，也可任意from+to。返回消费（已扣退款）、转账给他人、收入、消费分类占比、商户Top5、收入来源、不计入消费的本人互转/充值提现/理财、趋势、环比与数据覆盖范围；本工具金额单位为元',obj(range)],spending_stats:['按维度统计，默认本月消费（已扣退款）。by：category分类/merchant商户/platform支付平台/month按月/week按周/day按日/weekday按星期/hour按小时；category只看某分类（如餐饮美食），keyword按商户关键词（如美团），kind可改为income/transfer_out等。时段参数同bill_report；本工具金额单位为元',obj({...range,by:{type:'string',enum:STATS_BY},kind,category:str(20),keyword:str(40),limit:{type:'integer',minimum:1,maximum:31}},['by'])],detect_anomalies:['检测异常支出（大额、深夜、首次大额、24小时同额重复），仅为模拟规则提示；可选时段，不传为全部流水',obj(range)],list_subscriptions:['提议查询本人订阅与周期扣费明细，用户授权确认前只返回查询范围',obj()],
  compare_products:['对比产品（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含today（北京时间日期）、本人全部ledger（含kind、tag、bj_time及导入明细字段，金额整数分）和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
- remember:['用户明确要求记住的偏好或日期，不保存任何密码/验证码/密钥',obj({key:str(60),value:str(300)},['key','value'])],recall:['读取本人主动保存的记忆',obj()],
+ remember:['记录待本人确认的记忆候选；value必须原样出现在当前用户消息的evidence片段中，不得猜测日期或风险能力。优先在最终回答附memory_candidates以避免额外工具轮次',obj({key:str(60),value:str(300),evidence:str(600)},['key','value','evidence'])],recall:['读取本人已确认且有效的记忆',obj()],
  propose_transfer:['提议转账，必须使用resolve_recipient返回的recipient，确认前不会扣款',obj({recipient:str(),amount:money,note:str(100),scheduleAt:str(40)},['recipient','amount'])],
  propose_payment:['提议缴费或模拟商户消费',obj({billType:{type:'string',enum:['water','electricity','gas','mobile','broadband','property','scan','merchant']},billNumber:str(30),merchant:str(50),amount:money},['billType','amount'])],
  propose_split:['提议AA收款，people为收款请求接收者的recipient，每人均分total，生成银行内收款链接',obj({total:money,people:arr(str(),20),note:str(100)},['total','people'])],
@@ -60,8 +61,7 @@ export async function executeTool(services,user,name,raw,context={}) {
   let data,event;
   if(name==='remember'){
    requireThat(!/pin|password|token|secret|验证码|密码|密钥/i.test(args.key+' '+args.value),'不能将密码或密钥写入记忆');
-   bank.run('INSERT INTO agent_memory VALUES(?,?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',user.id,args.key,args.value,now());
-   bank.audit(user.id,'agent.memory_saved','',{key:args.key});data={saved:true,key:args.key};
+   data=services.memory.candidate(context.principal||resolvePrincipal(bank,user,context),args,{messageId:context.requestId||context.runId,input:context.input,epoch:context.memoryEpoch});
   }else if(name==='set_reminder')data=services.reminder(user,args);
   else if(name==='handover_to_human'){data=services.handover(user,args.reason,context.sessionId);event={type:'handover',data};}
   else throw new Error('Unregistered effect');
@@ -89,7 +89,7 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'get_scheduled_tasks':data={tasks:services.snapshot(user).scheduledTasks,plans:services.plans(user)};break;
  case 'get_cards':{const s=services.state(user);data={accounts:redact(s.accounts),creditCard:redact(s.creditCard),virtualCards:s.virtualCards,reservations:s.reservations};break;}
  case 'run_analysis':data=await runAnalysis(args.code,{today:businessDate(),ledger:ledgerFor(bank,user.id).map(enrich),transactions:redact(services.state(user).transactions)});assertChannelExecution(bank,context,user.id);bank.audit(user.id,'sandbox.analysis','',{purpose:args.purpose,code:args.code,durationMs:data.durationMs,size:data.size});break;
- case 'recall':data=bank.all('SELECT key,value FROM agent_memory WHERE user_id=?',user.id);break;
+ case 'recall':data=services.memory.enabled()?services.memory.list(context.principal||resolvePrincipal(bank,user,context)).filter(r=>r.status==='active').map(({key,value})=>({key,value})):[];break;
  default:throw new Error('Unhandled tool');
  }
  const decision=services.policyDecision(user,name,args);

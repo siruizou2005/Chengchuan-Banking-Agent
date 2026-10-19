@@ -1,12 +1,25 @@
 import { requireThat } from '../errors.mjs';
+import { resolvePrincipal } from './principal.mjs';
+import { id } from '../db.mjs';
 export function registerAgentRoutes(route,services,agent) {
  const {bank}=services;
  const chat=async(req,res)=>{
   requireThat(!req.body.expectedUserId||req.body.expectedUserId===req.user.id,'登录账户已变化，请重新开始对话',409,'ACCOUNT_CHANGED');
   const abort=new AbortController();res.on('close',()=>{if(!res.writableEnded)abort.abort();});
-  res.json(await agent.runTurn({user:req.user,channel:'app',messages:req.body.messages,sessionId:req.body.sessionId,signal:abort.signal}));
+  res.json(await agent.runTurn({user:req.user,channel:'app',messages:req.body.messages,sessionId:req.body.sessionId,messageId:req.body.messageId||req.get('Idempotency-Key'),signal:abort.signal}));
  };
  route('post','/agent/chat','智能体工具对话',chat);route('post','/chat','兼容智能体对话',chat);
+ const principal=req=>resolvePrincipal(bank,req.user,{channel:'app'});
+ route('get','/agent/memory','本人画像、长期记忆与待确认项',(req,res)=>{const p=principal(req);res.json({enabled:services.memory.enabled(),profile:services.memory.profile(p),memories:services.memory.list(p)});});
+ route('post','/agent/memory','保存本人明确偏好',(req,res)=>res.json(services.memory.update(principal(req),{key:req.body.key,value:req.body.value,category:req.body.category,expires_at:req.body.expires_at},{type:'explicit',messageId:id('EDIT')})));
+ route('patch','/agent/memory/:id','纠正本人记忆（版本检查）',(req,res)=>{
+  const p=principal(req),row=services.memory.owned(p,req.params.id);requireThat(Number.isInteger(req.body.version),'请提供当前记忆版本',400,'INVALID_MEMORY');
+  requireThat(row.version===req.body.version,'记忆已更新，请刷新',409,'MEMORY_CONFLICT');
+  res.json(services.memory.update(p,{key:row.key,value:req.body.value,category:row.category,expires_at:req.body.expires_at,version:row.status==='candidate'?undefined:req.body.version},{type:'explicit',messageId:id('EDIT')}));
+ });
+ route('post','/agent/memory/:id/confirm','确认本人候选记忆',(req,res)=>res.json(services.memory.confirm(principal(req),req.params.id,req.body.version)));
+ route('delete','/agent/memory/:id','删除本人记忆并阻止旧历史恢复',(req,res)=>{requireThat(Number.isInteger(req.body.version),'请提供当前记忆版本',400,'INVALID_MEMORY');res.json(services.memory.remove(principal(req),req.params.id,req.body.version));});
+ route('get','/agent/inference','本人模型调用审计（无原始对话）',(req,res)=>{const p=principal(req);res.json(bank.all('SELECT request_id,step,trigger_source,model,input_tokens,output_tokens,cost,status,error_code,created_at,finished_at FROM inference_calls WHERE tenant_id=? AND user_id=? ORDER BY created_at DESC LIMIT 100',p.tenant_id,p.user_id));});
  route('get','/agent/actions','本人待确认与已执行动作',(req,res)=>res.json(services.snapshot(req.user).agentActions));
  route('post','/agent/actions','从业务页面提议操作',(req,res)=>res.status(201).json(services.propose(req.user,req.body.tool,req.body.args,{channel:'app'})));
  route('post','/agent/actions/:id/confirm','PIN及必要加强验证后执行动作',(req,res)=>res.json(services.confirm(req.user,req.params.id,req.body,{channel:'app'})));

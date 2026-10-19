@@ -119,7 +119,36 @@
 
 模拟身份验证不能代表生产级多因子认证。摄像头跳过记录 skipped 和原因，并在授权因素中登记模拟替代路径；站内短信不接短信服务。
 
-### 对话历史
+### 个性化与模型审计
+
+身份始终来自已登录会话或经验证的渠道绑定。请求体中的 `tenant_id`、`user_id`、`profile` 不用于身份解析。当前数据库属于一个银行实例，固定租户 `bank`；多个银行使用独立数据库，不支持同库多租户账号。
+
+| 方法与路径 | 请求 / 返回 |
+| --- | --- |
+| GET /agent/memory | `{enabled, profile, memories}`；包含本人有效记忆、候选和过期记录。记录含 memory_id/key/value/category/status/confirmed/version、来源、置信度、重要度、创建/更新时间和有效期 |
+| POST /agent/memory | `{key,value,category?,expires_at?}`；本人明确保存或覆盖偏好。category 为 preference/research/temporary；已知画像字段自动归 profile。投资目标及期限不替代风险测评 |
+| PATCH /agent/memory/{id} | `{value,version,expires_at?}`；纠正本人记忆，版本过时返回409 MEMORY_CONFLICT |
+| POST /agent/memory/{id}/confirm | `{version}`；确认未过期候选，更新对应字段并替换旧值 |
+| DELETE /agent/memory/{id} | `{version}`；删除有效记忆时清空内容并撤销同字段候选；删除单个候选仅拒绝该建议并记录摘要，不删除已确认值。两者都清空本人所有渠道短期上下文，防止旧历史恢复 |
+| GET /agent/inference | 最近100次本人的模型HTTP调用元数据：request_id/step/trigger_source/model/input_tokens/output_tokens/cost/status/error_code/created_at/finished_at，无请求正文或凭据 |
+
+画像字段为 language（中文/English）、answer_length（简短/详细）、analysis_style、markets、sectors、watchlist、investment_goal、investment_horizon。每值最多300字符。密码、验证码、密钥、长账号和修改权限的注入文本拒绝保存。银行余额、持仓、风险等级仍通过原业务工具读取。
+
+`POST /agent/chat` 和 `/chat` 新增可选 `messageId`，也接受 `Idempotency-Key`。值为8至100位字母、数字、下划线或连字符。新版Web自动提供。相同用户、渠道、编号及内容重复提交返回已保存结果；内容不同409 IDEMPOTENCY_CONFLICT；处理中或已中断409 REQUEST_ALREADY_ACCEPTED，不重跑模型。旧客户端不提供编号仍可用，但不能保证其HTTP重投去重。微信/飞书继续使用平台消息编号及持久收件箱。
+
+输入仍接受原 messages 结构，模型仅使用最后一条用户消息和服务端本人会话，忽略客户端提供的旧历史。短期上下文最多12条、24000 UTF-8字节，7天不活跃后不再读取；历史回放与业务审计不删除。不同渠道会话默认独立，不自动查找其他渠道的聊天。
+
+“以后请给我简短分析”“以后请给我更完整的财务分析”“以后分析股票时先展示估值指标”“以后用英文回复”“我长期关注新能源”通过规则更新，不调用模型。“查看我的记忆”“忘记我的回答长度”“删除记忆 MEM…”走确定性逻辑。其他明确但未被规则识别的偏好可由本轮正常模型回答附候选，用户在App确认；不会另起总结模型请求。
+
+最终模型回复可使用 `{answer,memory_candidates:[{key,value,evidence}]}`，最多3条。服务器校验结构、当前原文证据、敏感内容、撤销状态和记忆版本；候选不进入Prompt。原 remember 工具改为候选写入，同样要求 evidence；recall 只返回已确认且有效的记忆。旧版本记忆无确认来源，迁移后保留为待确认。
+
+飞书共享机器人按受信App ID核对 external_bot_id。旧绑定缺少该字段或更换App ID时，不自动认领；用户需在App输入支付密码解绑后重新绑定。专属机器人由签名回调中的绑定及创建时App ID核对，微信由绑定凭据和iLink sender核对。保留旧 channel+external_id 唯一约束，跨Bot出现相同外部标识时拒绝绑定，不自动合并账户。
+
+推理并发、每日UTC配额和每步骤幂等均在SQLite事务中控制。默认每库并发4、每用户每日120次HTTP模型请求、输入64000的UTF-8字节保守token上界、输出2200 token。ASR另有限制60秒音频；文本提示受同一输入预算约束。未知费用/usage返回null，不按聊天价格估算ASR费用。多进程必须共享同一个SQLite文件；不支持多个数据库副本的全局限额。
+
+可用 `PERSONALIZATION_ENABLED=false` 关闭记忆注入和提取，保留数据及查看/删除入口。模型审计不会关闭。`scripts/audit-idle.mjs` 提供实际24小时空闲调用审计，操作步骤见 `docs/PERSONALIZATION_OPERATIONS.md`。
+
+### 对话历史接口
 
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
@@ -178,7 +207,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 
 查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`spending_stats`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
 
-已登记低风险副作用（绿）：`remember` 仅保存本人主动要求的非敏感偏好，`set_reminder` 仅创建站内提醒，`handover_to_human` 仅创建模拟工单。
+已登记低风险副作用（绿）：`remember` 仅保存有本轮原文证据的非敏感偏好候选，确认后才用于回答；`set_reminder` 仅创建站内提醒，`handover_to_human` 仅创建模拟工单。
 
 需确认查询（黄）：`list_subscriptions`。确认前只返回范围及动作卡片，不返回订阅列表；确认结果 `result={query:true, subscriptions, detected}`，没有付款回单。
 

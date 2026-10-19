@@ -10,14 +10,14 @@ import { wechatFixture,llm,until } from './wechat-helpers.mjs';
 
 test('SQLite重启恢复：已生成结果只重投、执行中断不重跑、已提交效果只复用',async t=>{
   const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();await f.channels.wechat.delivery.stop();
-  f.queue.push(llm([['remember',{key:'recovery',value:'safe'}]]),llm());await f.receive('记住偏好','done');await f.channels.wechat.drain();
+  f.queue.push(llm([['remember',{key:'recovery',value:'safe',evidence:'safe'}]]),llm());await f.receive('记住偏好 safe','done');await f.channels.wechat.drain();
   await f.receive('处理中崩溃','crash');f.bank.run("UPDATE wechat_inbox SET status='running',lease_until=0 WHERE upstream_message_id='crash'");
   const effect=f.bank.get('SELECT * FROM agent_tool_effects');
   const dir=await mkdtemp(join(tmpdir(),'wechat-recovery-'));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,'bank.sqlite');await backup(f.bank.db,path);
   let calls=0,sends=0;const restored=createApp(path,{chat:{config:()=>({apiKey:'test',baseUrl:'https://llm.test',model:'test'}),fetch:async()=>{calls++;return Response.json(llm());}},channels:{secret:'a'.repeat(64),wechat:{enabled:true,autoStart:false,fetch:async()=>{sends++;return Response.json({ret:0});}}}});
   try{
     await restored.channels.wechat.drain();assert.equal(calls,0);assert.equal(sends,2);assert.equal(restored.bank.get("SELECT status FROM wechat_inbox WHERE upstream_message_id='crash'").status,'interrupted');
-    const result=await executeTool(restored.services,f.user,'remember',{key:'recovery',value:'safe'},{channel:'app',requestId:effect.request_id,toolCallId:effect.tool_call_id});assert.equal(result.data.saved,true);
+    const result=await executeTool(restored.services,f.user,'remember',{key:'recovery',value:'safe',evidence:'safe'},{channel:'app',requestId:effect.request_id,toolCallId:effect.tool_call_id});assert.equal(result.data.candidate,true);
     assert.equal(restored.bank.get('SELECT count(*) n FROM agent_tool_effects').n,1);await restored.channels.wechat.drain();assert.equal(sends,2);
   }finally{await restored.channels.stop();restored.bank.db.close();}
 });

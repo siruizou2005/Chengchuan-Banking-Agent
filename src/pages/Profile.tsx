@@ -15,6 +15,7 @@ export function Profile() {
     <section className="card profile-card"><Avatar size={56} /><div className="profile-text"><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</small></div><em className="tag gray">Ⅰ类账户</em></section>
     <section className="card stats"><button onClick={() => navigate('accounts')}><strong>{data.accounts.length}</strong><span>银行卡</span></button><button onClick={() => navigate('wealth')}><strong>{data.holdings.length}</strong><span>持有产品</span></button><button onClick={() => navigate('messages')}><strong>{unread}</strong><span>未读消息</span></button></section>
     <Card>
+      <Row icon={IcoSliders} tone="blue" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
       <Row icon={IcoWallet} tone="blue" title="银行卡" onClick={() => navigate('accounts')} />
       <Row icon={IcoRecord} tone="coral" title="交易进度" subtitle="待确认、已完成与失败的交易" onClick={() => navigate('transactions')} />
       <Row icon={IcoPerson} tone="orange" title="收款人管理" onClick={() => navigate('payees')} />

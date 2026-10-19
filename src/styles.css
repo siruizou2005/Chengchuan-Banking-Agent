@@ -445,3 +445,10 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .channel-amount-switch:disabled { opacity: .5; cursor: wait; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print { .bottom-nav, .page-header, .hero, .toast { display: none; } .app-shell { max-width: none; box-shadow: none; background: #fff; } .modal { position: static; max-height: none; width: 100%; } .modal-body { max-height: none; overflow: visible; } }
+/* Personalization uses the existing profile cards and form controls. */
+.memory-item { padding: 16px 0; border-bottom: 1px solid #eceef2; overflow-wrap: anywhere; }
+.memory-item:last-child { border-bottom: 0; }
+.memory-heading, .memory-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.memory-heading { justify-content: space-between; }
+.memory-actions { margin-top: 12px; }
+.memory-actions button { min-height: 40px; }

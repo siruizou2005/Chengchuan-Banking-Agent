@@ -32,7 +32,7 @@ export const liveAdapter: ChatAdapter = {
     while (history[0]?.role === 'assistant') history.shift();
     const response = await fetch('/api/agent/chat', {
       method: 'POST', credentials: 'same-origin', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, expectedUserId: userId, sessionId: [...messages].reverse().find(m => m.sessionId)?.sessionId }),
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, messageId: messages.filter(m => m.role === 'user').at(-1)?.id, expectedUserId: userId, sessionId: [...messages].reverse().find(m => m.sessionId)?.sessionId }),
     });
     const data = await response.json();
     if (!response.ok) throw new ChatError(data.error?.message || '回复暂时未能送达，请重试。', response.status);

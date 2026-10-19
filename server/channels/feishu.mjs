@@ -72,12 +72,12 @@ export function feishuTyping(client) {
   async remove(messageId,reactionId){await feishuRequest(()=>client.im.v1.messageReaction.delete({path:{message_id:messageId,reaction_id:reactionId}}),{timeoutMs:3000});},
  };
 }
-export function createFeishuHandler(router,client,onError=()=>{},owner,binding) {
+export function createFeishuHandler(router,client,onError=()=>{},owner,binding,botAccountId) {
  return data=>{
   const message=data.message,sender=data.sender?.sender_id?.open_id;
   if(!message||message.chat_type!=='p2p'||message.message_type!=='text'||data.sender?.sender_type==='app'||!sender||(owner&&sender!==owner))return {};
   let text;try{text=JSON.parse(message.content).text;}catch{return {};}
-  const input={channel:'feishu',externalId:sender,messageId:message.message_id,text,binding};
+  const input={channel:'feishu',externalId:sender,messageId:message.message_id,text,binding,botAccountId};
   // Persist before acknowledging; the model and delivery run independently of the dispatcher.
   if(router.acceptFeishu?.(input,binding?undefined:(b,body,options)=>sendFeishuMessage(client,b,body,options)))return {};
   void router.receive(input).then(async reply=>{
@@ -91,7 +91,7 @@ export async function startFeishu(router,options={}) {
  if(!appId||!appSecret)return {stop:async()=>{},send:async()=>{throw new Error('飞书未配置');},typing:null};
  const sdk=options.sdk||await import('@larksuiteoapi/node-sdk');
  const client=new sdk.Client({appId,appSecret,logger:QUIET,...boundedHttp(sdk)}),ws=new sdk.WSClient({appId,appSecret,loggerLevel:sdk.LoggerLevel.warn});
- ws.start({eventDispatcher:new sdk.EventDispatcher({}).register({'im.message.receive_v1':createFeishuHandler(router,client,()=>console.warn('Feishu message failed'))})});
+ ws.start({eventDispatcher:new sdk.EventDispatcher({}).register({'im.message.receive_v1':createFeishuHandler(router,client,()=>console.warn('Feishu message failed'),undefined,undefined,appId)})});
   return {stop:async()=>{ws.close({force:true});},send:(binding,text,options)=>sendFeishuMessage(client,binding,text,options),typing:feishuTyping(client)};
 }
 const OPEN_API={feishu:'https://open.feishu.cn',lark:'https://open.larksuite.com'};
@@ -158,6 +158,7 @@ export function createFeishuBots(services,router,options={}) {
    const previous=bank.get("SELECT * FROM channel_bindings WHERE channel='feishu' AND external_id=?",openId);requireThat(!previous||previous.user_id===entry.userId||previous.status!=='active','此飞书机器人已绑定其他银行用户',409);
    bindingId=previous?.id||id('BIND');created=!previous;forget(bindingId);
    bank.run("INSERT INTO channel_bindings(id,user_id,channel,external_id,token,base_url,status,created_at,binding_session_id) VALUES(?,?,'feishu',?,?,?,'setup',?,?) ON CONFLICT(channel,external_id) DO UPDATE SET user_id=excluded.user_id,token=excluded.token,base_url=excluded.base_url,status='setup',auth_state='valid',binding_generation=channel_bindings.binding_generation+1,binding_session_id=excluded.binding_session_id,transport='pending',last_inbound_at=NULL,last_api_accepted_at=NULL,last_error_code=NULL,connection_state='awaiting_first_message',cursor='',context_token=NULL,created_at=excluded.created_at",bindingId,entry.userId,openId,crypto.encrypt(JSON.stringify(secret)),result.user_info.tenant_brand==='lark'?OPEN_API.lark:OPEN_API.feishu,now(),randomUUID());
+   bank.run('UPDATE channel_bindings SET external_bot_id=? WHERE id=?',secret.appId,bindingId);
    // Feishu verifies the request URL during this call, so the setup row must already answer the challenge.
    const {client}=await connect(bank.get('SELECT * FROM channel_bindings WHERE id=?',bindingId));
    await setupStep('配置','FEISHU_CONFIG_FAILED',()=>client.application.v7.applicationConfig.patch({path:{app_id:secret.appId},data:{event:{subscription_type:'webhook',request_url:`${origin()}/api/channels/feishu/events/${bindingId}`,add_events:['im.message.receive_v1']},event_and_callback_encrypt_strategy:{encryption_key:secret.encryptKey,verification_token:secret.verificationToken}}}));

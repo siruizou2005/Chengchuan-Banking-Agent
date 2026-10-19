@@ -11,7 +11,7 @@ test('工具效果同事务幂等：重复调用复用、参数冲突拒绝、�
   const second=await executeTool(f.services,f.user,'propose_transfer',{recipient:f.recipient,amount:'20'},context);assert.equal(first.actionId,second.actionId);
   assert.equal(f.bank.get('SELECT count(*) n FROM agent_actions').n,1);
   await assert.rejects(executeTool(f.services,f.user,'propose_transfer',{recipient:f.recipient,amount:'21'},context),e=>e.code==='TOOL_EFFECT_MISMATCH');
-  assert.throws(()=>commitToolEffect(f.bank,f.user.id,'test',{},{...context,toolCallId:'rollback'},()=>{f.bank.run('INSERT INTO agent_memory VALUES(?,?,?,?)',f.user.id,'rollback','bad',new Date().toISOString());throw Error('crash');}));
+  assert.throws(()=>commitToolEffect(f.bank,f.user.id,'test',{},{...context,toolCallId:'rollback'},()=>{f.bank.run('INSERT INTO agent_memory(user_id,key,value,updated_at) VALUES(?,?,?,?)',f.user.id,'rollback','bad',new Date().toISOString());throw Error('crash');}));
   assert.equal(f.bank.get("SELECT * FROM agent_memory WHERE key='rollback'"),undefined);
   assert.equal(f.bank.get("SELECT status FROM agent_tool_effects WHERE tool_call_id='rollback'").status,'failed');
   f.bank.run("UPDATE agent_tool_effects SET status='prepared' WHERE tool_call_id='effect-tool'");await assert.rejects(executeTool(f.services,f.user,'propose_transfer',{recipient:f.recipient,amount:'20'},context),e=>e.code==='TOOL_EFFECT_UNRESOLVED');

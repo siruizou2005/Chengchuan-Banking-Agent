@@ -125,7 +125,7 @@ test('飞书：重启恢复未开始请求；已提交工具而未完成的请�
  app.channels.feishuPipeline.ingest({externalId:'owner',messageId:'interrupted',text:'记住偏好'});
  const row=app.bank.get("SELECT * FROM feishu_inbox WHERE message_id='interrupted'");
  await app.channels.feishuPipeline.stop();
- await executeTool(app.services,user,'remember',{key:'recovery',value:'once'},{channel:'feishu',sessionId:b.binding_session_id,bindingId:b.id,requestId:row.id,runId:row.run_id,toolCallId:'stable-tool'});
+ await executeTool(app.services,user,'remember',{key:'recovery',value:'once',evidence:'once'},{channel:'feishu',sessionId:b.binding_session_id,bindingId:b.id,requestId:row.id,runId:row.run_id,toolCallId:'stable-tool',input:'once'});
  app.bank.run("UPDATE feishu_inbox SET status='running',lease_until=0 WHERE id=?",row.id);
  app.bank.db.close();app=null;
  app=createApp(path,options);
@@ -135,7 +135,7 @@ test('飞书：重启恢复未开始请求；已提交工具而未完成的请�
  assert.equal(app.bank.get("SELECT status FROM feishu_inbox WHERE message_id='interrupted'").status,'interrupted');
  assert.equal(app.bank.get("SELECT status FROM feishu_inbox WHERE message_id='queued'").status,'completed');
  assert.equal(app.bank.get('SELECT count(*) n FROM agent_tool_effects WHERE request_id=?',row.id).n,1);
- assert.equal(app.bank.get("SELECT value FROM agent_memory WHERE key='recovery'").value,'once');
+ assert.equal(app.bank.get("SELECT value FROM memory_candidates WHERE key='recovery'").value,'once');
 });
 
 test('飞书：发送超时、非法响应和HTTP限流分类明确',async()=>{

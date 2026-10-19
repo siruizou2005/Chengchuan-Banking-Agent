@@ -12,6 +12,8 @@ import { registerAgentRoutes } from './agent/routes.mjs';
 import { createScheduler } from './agent/scheduler.mjs';
 import { createVerification, registerVerification } from './verify.mjs';
 import { redactIdentity } from './privacy.mjs';
+import { createMemoryManager } from './agent/memory.mjs';
+import { createInferenceManager } from './agent/inference.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
@@ -257,6 +259,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
     };
   }
   services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt }, guard);
+  services.memory = createMemoryManager(bank, options.personalization);
+  services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
   const agent = createAgent(services, options.chat);
   const scheduler = createScheduler(services);
@@ -429,5 +433,5 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
     res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
   });
-  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); } };
+  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); } };
 }
