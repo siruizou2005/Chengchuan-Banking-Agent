@@ -24,6 +24,7 @@ export function createInferenceManager(bank, options={}) {
       requireThat(bank.get("SELECT COUNT(*) n FROM inference_calls WHERE tenant_id=? AND user_id=? AND created_at>=?",principal.tenant_id,principal.user_id,now().slice(0,10)+'T00:00:00.000Z').n<quota,'今日模型请求额度已用完',429,'INFERENCE_QUOTA');
       requireThat(bank.get("SELECT COUNT(*) n FROM inference_calls WHERE status='running'").n<concurrency,'模型服务繁忙，请稍后重试',429,'INFERENCE_BUSY');
       bank.run("INSERT INTO inference_calls(id,tenant_id,user_id,request_id,step,trigger_source,model,status,created_at,lease_until) VALUES(?,?,?,?,?,?,?,'running',?,?)",callId,principal.tenant_id,principal.user_id,requestId,step,trigger,config.model,now(),time+timeoutMs+5000);
+      bank.run('UPDATE inference_calls SET input_bytes=? WHERE id=?',Buffer.byteLength(inputText),callId);
     });
     const controller=new AbortController();let timer,abortListener;
     try {

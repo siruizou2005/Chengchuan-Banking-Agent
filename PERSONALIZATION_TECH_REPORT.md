@@ -1,5 +1,7 @@
 # Banking Agent 个性化升级技术报告
 
+本文记录第一阶段个性化升级。后续的模块化检索、金融 Skill、行为假设和成本基准已实现，最新架构与验收见 [MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md) 和 [MEMORY_VALIDATION.md](docs/MEMORY_VALIDATION.md)。下面的 155 项测试数属于第一阶段记录。
+
 ## 1. 项目现状与改动范围
 
 保留现有金融工具、资金授权、业务调度、iLink微信接入和飞书接入。扩展原 agent_memory、Agent 与个人中心。新增模块均在原Node.js服务中运行，复用SQLite，无新增外部服务。

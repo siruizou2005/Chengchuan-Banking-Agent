@@ -14,6 +14,8 @@ import { createVerification, registerVerification } from './verify.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { createMemoryManager } from './agent/memory.mjs';
 import { createInferenceManager } from './agent/inference.mjs';
+import { createMemoryEvolution } from './agent/memory-evolution.mjs';
+import { createContextAssembler } from './agent/context-assembler.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
@@ -260,6 +262,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }
   services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt }, guard);
   services.memory = createMemoryManager(bank, options.personalization);
+  services.memoryEvolution = createMemoryEvolution(bank, services.memory, options.memoryEvolution);
+  services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
   services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
   const agent = createAgent(services, options.chat);

@@ -126,11 +126,19 @@
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
 | GET /agent/memory | `{enabled, profile, memories}`；包含本人有效记忆、候选和过期记录。记录含 memory_id/key/value/category/status/confirmed/version、来源、置信度、重要度、创建/更新时间和有效期 |
-| POST /agent/memory | `{key,value,category?,expires_at?}`；本人明确保存或覆盖偏好。category 为 preference/research/temporary；已知画像字段自动归 profile。投资目标及期限不替代风险测评 |
-| PATCH /agent/memory/{id} | `{value,version,expires_at?}`；纠正本人记忆，版本过时返回409 MEMORY_CONFLICT |
+| POST /agent/memory | `{key,value,category?,expires_at?,module?,intent?,memory_type?}`；本人明确保存或覆盖偏好。category 为 preference/research/temporary；已知画像字段自动归 profile。memory_type 不接受 behavioral，投资目标及期限不替代风险测评 |
+| PATCH /agent/memory/{id} | `{value,version,expires_at?,module?,intent?,memory_type?}`；纠正本人记忆，版本过时返回409 MEMORY_CONFLICT |
 | POST /agent/memory/{id}/confirm | `{version}`；确认未过期候选，更新对应字段并替换旧值 |
 | DELETE /agent/memory/{id} | `{version}`；删除有效记忆时清空内容并撤销同字段候选；删除单个候选仅拒绝该建议并记录摘要，不删除已确认值。两者都清空本人所有渠道短期上下文，防止旧历史恢复 |
-| GET /agent/inference | 最近100次本人的模型HTTP调用元数据：request_id/step/trigger_source/model/input_tokens/output_tokens/cost/status/error_code/created_at/finished_at，无请求正文或凭据 |
+| GET /agent/inference | 最近100次本人的模型HTTP调用元数据：request_id/step/trigger_source/model/input_bytes/input_tokens/output_tokens/cost/status/error_code/created_at/finished_at，无请求正文或凭据 |
+| GET /agent/memory/behavior | 本人行为假设、状态、启发式评分（不是概率）、证据编号及version |
+| GET /agent/memory/behavior/{id}/evidence | 有效证据的来源渠道、会话、请求及run_id，不包含原文或指纹 |
+| POST /agent/memory/behavior/{id}/feedback | `{action:"confirm"或"reject",version}`；确认或撤销本人行为假设 |
+| POST /agent/memory/consolidate | `{epoch?}`；确定性整合，旧epoch返回409，无模型调用 |
+| GET /agent/memory/modules | 模块注册表、本人已激活模块、epoch与只供审查的结构建议 |
+| GET /agent/memory/context | 本人最近100次路由、Skill版本、记忆/Skill/总输入字节与耗时，无原文 |
+
+模块和记忆类型、生命周期、预算及新增表见 [MEMORY_ARCHITECTURE.md](MEMORY_ARCHITECTURE.md)。删除会话也会撤销对应行为证据；纠正、删除偏好和拒绝推断会清除旧摘要及短期副本。推断仅可建议展示方式，不能未经本人确认成为正式偏好，也不能改变风险测评、持仓或资金约束。
 
 画像字段为 language（中文/English）、answer_length（简短/详细）、analysis_style、markets、sectors、watchlist、investment_goal、investment_horizon。每值最多300字符。密码、验证码、密钥、长账号和修改权限的注入文本拒绝保存。银行余额、持仓、风险等级仍通过原业务工具读取。
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { migrateModularMemory } from './modular-schema.mjs';
 
 export function migratePersonalization(db) {
   db.exec('BEGIN IMMEDIATE');
@@ -56,6 +57,7 @@ export function migratePersonalization(db) {
         created_at TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id,channel,message_id)
       );
     `);
+    migrateModularMemory(db);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }

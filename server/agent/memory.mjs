@@ -3,6 +3,9 @@ import { requireThat } from '../errors.mjs';
 import { injectionFlags } from './guard.mjs';
 import { assertPrincipal } from './principal.mjs';
 import { createHash } from 'node:crypto';
+import { classifyMemory, MODULES, INTENTS } from './modules.mjs';
+import { routeBehavior } from './behavior-router.mjs';
+import { createModularRetriever } from './memory-retrieval.mjs';
 
 export const PROFILE_KEYS = ['language','answer_length','analysis_style','markets','sectors','watchlist','investment_goal','investment_horizon'];
 const sensitive = /password|\bpin\b|token|secret|密码|验证码|密钥|身份证|银行卡号|\d{11,19}|sk-[\w-]+/i;
@@ -22,6 +25,7 @@ export function boundedHistory(history, maxBytes = 24000) {
 }
 
 export function createMemoryManager(bank, options={}) {
+  let onChange=()=>{};
   const enabled = () => options.enabled ?? process.env.PERSONALIZATION_ENABLED !== 'false';
   const scope = p => { assertPrincipal(bank,p); return [p.tenant_id,p.user_id]; };
   const live = "status='active' AND confirmed=1 AND (expires_at IS NULL OR expires_at>?)";
@@ -34,10 +38,19 @@ export function createMemoryManager(bank, options={}) {
     return {key,value};
   }
   function epoch(p) { return bank.get('SELECT epoch FROM memory_epochs WHERE tenant_id=? AND user_id=?',...scope(p))?.epoch||0; }
-  function invalidate(p) {
+  function invalidate(p,change={}) {
     bank.run('INSERT INTO memory_epochs(tenant_id,user_id,epoch) VALUES(?,?,1) ON CONFLICT(tenant_id,user_id) DO UPDATE SET epoch=epoch+1',...scope(p));
     // A correction/revocation also invalidates old conversational copies, including other channels.
     bank.run("UPDATE agent_sessions SET history='[]' WHERE user_id=?",p.user_id);
+    bank.run("UPDATE agent_sessions SET task_context='{}' WHERE user_id=?",p.user_id);
+    bank.run('DELETE FROM memory_module_summaries WHERE tenant_id=? AND user_id=?',...scope(p));
+    onChange(p,change);
+  }
+  function activate(p,module){bank.run('INSERT INTO user_memory_modules VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,user_id,module) DO UPDATE SET updated_at=excluded.updated_at',...scope(p),module,now(),now());}
+  function metadata(key,category,change={},route){
+    const base=classifyMemory(key,category),module=change.module||(base.module==='general'&&!['language','answer_length','analysis_style'].includes(key)?route?.primary_module:null)||base.module;
+    const memory_type=change.memory_type||base.memory_type,intent=change.intent||'any';
+    requireThat(Object.hasOwn(MODULES,module)&&['explicit','semantic','episodic','interaction'].includes(memory_type)&&(intent==='any'||INTENTS.includes(intent)),'记忆分类无效',400,'INVALID_MEMORY');return {module,memory_type,intent};
   }
   function log(p,row,action,source) {
     bank.run('INSERT INTO memory_changes(tenant_id,user_id,memory_id,action,version,source_message_id,created_at) VALUES(?,?,?,?,?,?,?)',...scope(p),row.memory_id,action,row.version,source||null,now());
@@ -61,14 +74,16 @@ export function createMemoryManager(bank, options={}) {
     return bank.atomic(()=>{
       const old=bank.get('SELECT * FROM agent_memory WHERE tenant_id=? AND user_id=? AND key=?',...scope(p),key);
       if(change.version!==undefined)requireThat(old?.version===change.version,'记忆已更新，请刷新后重试',409,'MEMORY_CONFLICT');
+      const meta=metadata(key,category,{module:change.module??old?.module,memory_type:change.memory_type??old?.memory_type,intent:change.intent??old?.intent},source.route);
       if(source.messageId&&!bank.run('INSERT OR IGNORE INTO memory_events VALUES(?,?,?,?)',...scope(p),source.messageId,key).changes)return old;
-      if(old?.status==='active'&&old.value===value&&old.expires_at===expires)return old;
+      if(old?.status==='active'&&old.value===value&&old.expires_at===expires&&old.module===meta.module&&old.memory_type===meta.memory_type&&old.intent===meta.intent)return old;
       const time=now(),memoryId=old?.memory_id||id('MEM');
       bank.run(`INSERT INTO agent_memory(user_id,key,value,updated_at,tenant_id,memory_id,category,status,confirmed,source_message_id,source_channel,source_type,confidence,importance,created_at,expires_at,version)
         VALUES(?,?,?,?,?,?,?,'active',1,?,?,?,1,0.8,?,?,1) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,category=excluded.category,status='active',confirmed=1,source_message_id=excluded.source_message_id,source_channel=excluded.source_channel,source_type=excluded.source_type,confidence=1,expires_at=excluded.expires_at,version=agent_memory.version+1`,
         p.user_id,key,value,time,p.tenant_id,memoryId,category,source.messageId||id('EDIT'),p.channel,source.type,time,expires);
+      bank.run('UPDATE agent_memory SET module=?,memory_type=?,intent=? WHERE tenant_id=? AND user_id=? AND key=?',meta.module,meta.memory_type,meta.intent,...scope(p),key);activate(p,meta.module);
       bank.run("UPDATE memory_candidates SET status='superseded' WHERE tenant_id=? AND user_id=? AND key=? AND status='candidate'",...scope(p),key);
-      invalidate(p);
+      invalidate(p,{key,reason:'explicit_update'});
       const row=bank.get('SELECT * FROM agent_memory WHERE tenant_id=? AND user_id=? AND key=?',...scope(p),key);log(p,row,old?'updated':'created',source.messageId);return row;
     });
   }
@@ -82,9 +97,10 @@ export function createMemoryManager(bank, options={}) {
       if(bank.get('SELECT 1 FROM memory_rejections WHERE tenant_id=? AND user_id=? AND key=? AND value_digest=?',...scope(p),key,digest(value)))return {saved:false};
       if(source.epoch!==undefined&&source.epoch!==epoch(p))return {saved:false};
       const row={memory_id:id('MEM'),version:1},time=now();
+      const meta=metadata(key,'preference',{},source.route);
       const inserted=bank.run(`INSERT OR IGNORE INTO memory_candidates(memory_id,tenant_id,user_id,key,value,category,source_message_id,source_channel,created_at,updated_at,expires_at)
         VALUES(?,?,?,?,?,'preference',?,?,?,?,?)`,row.memory_id,...scope(p),key,value,source.messageId,p.channel,time,time,new Date(Date.now()+30*86400000).toISOString());
-      if(inserted.changes)log(p,row,'candidate',source.messageId);
+      if(inserted.changes){bank.run('UPDATE memory_candidates SET module=?,memory_type=?,intent=? WHERE tenant_id=? AND user_id=? AND memory_id=?',meta.module,meta.memory_type,meta.intent,...scope(p),row.memory_id);activate(p,meta.module);log(p,row,'candidate',source.messageId);}
       return {saved:false,candidate:true,key};
     });
   }
@@ -95,7 +111,7 @@ export function createMemoryManager(bank, options={}) {
   }
   function confirm(p,memoryId,version) {
     return bank.atomic(()=>{const row=owned(p,memoryId);requireThat(row.status==='candidate'&&row.version===version&&(!row.expires_at||row.expires_at>now()),'候选已变化或过期，请刷新',409,'MEMORY_CONFLICT');
-      return update(p,{key:row.key,value:row.value,category:row.category},{type:'confirmed',messageId:id('CONFIRM')});});
+      return update(p,{key:row.key,value:row.value,category:row.category,module:row.module,memory_type:row.memory_type,intent:row.intent},{type:'confirmed',messageId:id('CONFIRM')});});
   }
   function remove(p,memoryId,version) {
     return bank.atomic(()=>{
@@ -105,21 +121,17 @@ export function createMemoryManager(bank, options={}) {
         // Rejecting a suggestion must not delete a different, already confirmed preference.
         bank.run('INSERT OR IGNORE INTO memory_rejections VALUES(?,?,?,?)',...scope(p),row.key,digest(row.value));
         bank.run("UPDATE memory_candidates SET value=memory_id,status='deleted',version=version+1 WHERE tenant_id=? AND user_id=? AND memory_id=?",...scope(p),memoryId);
-        invalidate(p);log(p,{...row,version:row.version+1},'deleted');return {ok:true};
+        invalidate(p,{key:row.key,reason:'rejected'});log(p,{...row,version:row.version+1},'deleted');return {ok:true};
       }
       // Deleting an active/legacy memory revokes its field and every pending replacement.
       bank.run(`INSERT INTO agent_memory(user_id,key,value,updated_at,tenant_id,memory_id,status,created_at,version) VALUES(?,?,'',?,?,?,'deleted',?,1)
         ON CONFLICT(user_id,key) DO UPDATE SET value='',status='deleted',confirmed=0,version=agent_memory.version+1,updated_at=excluded.updated_at`,p.user_id,row.key,now(),p.tenant_id,current?.memory_id||row.memory_id,now());
       bank.run("UPDATE memory_candidates SET value=memory_id,status='deleted',version=version+1 WHERE tenant_id=? AND user_id=? AND key=?",...scope(p),row.key);
-      invalidate(p);log(p,{...row,version:(current?.version||0)+1},'deleted');return {ok:true};
+      invalidate(p,{key:row.key,reason:'deleted'});log(p,{...row,version:(current?.version||0)+1},'deleted');return {ok:true};
     });
   }
   function relevant(p,query) {
-    if(!enabled())return [];
-    const terms=[...new Set((query.toLowerCase().match(/[a-z0-9.]{2,}|[\p{Script=Han}]{2,}/gu)||[]).flatMap(t=>/\p{Script=Han}/u.test(t)?[...t].slice(1).map((_,i)=>t.slice(i,i+2)):[t]))].slice(0,80);
-    const rows=bank.all(`SELECT * FROM agent_memory WHERE tenant_id=? AND user_id=? AND ${live} ORDER BY updated_at DESC LIMIT 200`,...scope(p),now());
-    const selected=rows.map(r=>({r,score:terms.filter(t=>(r.key+' '+r.value).toLowerCase().includes(t)).length+(PROFILE_KEYS.includes(r.key)?2:0)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||b.r.confidence-a.r.confidence||b.r.updated_at.localeCompare(a.r.updated_at));
-    const result=[];for(const {r} of selected.slice(0,8)){const next={key:r.key,value:r.value};if(Buffer.byteLength(JSON.stringify([...result,next]))>2400)break;result.push(next);}return result;
+    return retrieval.retrieve(p,query,routeBehavior({text:query})).items;
   }
   function recent(p,sessionId) {
     const row=bank.get('SELECT history,updated_at FROM agent_sessions WHERE user_id=? AND id=? AND channel=? AND archived=0',scope(p)[1],sessionId,p.channel);
@@ -142,6 +154,8 @@ export function createMemoryManager(bank, options={}) {
     const length=text.match(/^(?:以后|今后)(?:请)?(?:给我|回答|回复|分析|财务分析)*(?:更)?(简短|详细|完整)(?:的)?(?:回答|回复|分析|财务分析)?$/);
     let change=preference?{key:'language',value:preference[1]==='中文'?'中文':'English'}:length?{key:'answer_length',value:length[1]==='简短'?'简短':'详细'}:null;
     if(text==='以后分析股票时先展示估值指标')change={key:'analysis_style',value:'先展示估值指标'};
+    if(text==='以后比较投资方案时先讲风险')change={key:'analysis_style',value:'先说明下行风险'};
+    if(text==='以后不要优先讲风险')change={key:'analysis_style',value:'按问题自然顺序说明'};
     const interest=text.match(/^(?:我长期关注|记住我关注的(?:行业|主题)是)([^。！？!?]{1,100})$/);
     if(interest)change={key:'watchlist',value:interest[1]};
     if(change){update(p,change,{type:'explicit',messageId});return '已更新你的回答偏好，可在「个性化与记忆」查看或修改。';}
@@ -151,6 +165,9 @@ export function createMemoryManager(bank, options={}) {
     bank.run("UPDATE agent_memory SET status='expired' WHERE status IN ('active','candidate') AND expires_at<=?",at);
     bank.run("UPDATE memory_candidates SET status='expired' WHERE status='candidate' AND expires_at<=?",at);
     bank.run("UPDATE agent_sessions SET history='[]' WHERE updated_at<? AND history<>'[]'",new Date(Date.parse(at)-7*86400000).toISOString());
+    bank.run('UPDATE behavior_events SET revoked=1 WHERE revoked=0 AND session_id IN (SELECT id FROM agent_sessions WHERE archived=1 OR updated_at<?)',new Date(Date.parse(at)-7*86400000).toISOString());
+    bank.run('DELETE FROM memory_module_summaries WHERE expires_at<=?',at);
   }
-  return {enabled,list,profile,update,candidate,owned,confirm,remove,relevant,recent,command,cleanup,epoch};
+  const retrieval=createModularRetriever(bank,{scope,epoch,enabled,options:options.budgets});
+  return {enabled,list,profile,update,candidate,owned,confirm,remove,relevant,recent,command,cleanup,epoch,invalidate,activate,retrieve:retrieval.retrieve,setChangeListener:listener=>{onChange=listener;}};
 }

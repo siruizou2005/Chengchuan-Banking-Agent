@@ -1,0 +1,1 @@
+{"inputs":["本人授权流水","北京时间时段"],"sources":["bill_report","spending_stats","get_ledger"],"workflow":["确认时段与统计口径","核对覆盖范围","选一个统计工具","解释主要变化"],"limits":["不得把本人互转算消费","缺失商户不得猜测"],"output":"金额、期间、覆盖范围及结论依据","instructions":"消费分析使用bill_report或spending_stats，一轮仅一个统计卡片。确认北京时间时段、退款与转账口径，核对coverage；金额以工具为准，缺失商户不猜测。说明主要变化及数据覆盖。"}

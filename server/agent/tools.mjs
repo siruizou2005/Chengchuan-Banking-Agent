@@ -61,7 +61,7 @@ export async function executeTool(services,user,name,raw,context={}) {
   let data,event;
   if(name==='remember'){
    requireThat(!/pin|password|token|secret|验证码|密码|密钥/i.test(args.key+' '+args.value),'不能将密码或密钥写入记忆');
-   data=services.memory.candidate(context.principal||resolvePrincipal(bank,user,context),args,{messageId:context.requestId||context.runId,input:context.input,epoch:context.memoryEpoch});
+   data=services.memory.candidate(context.principal||resolvePrincipal(bank,user,context),args,{messageId:context.requestId||context.runId,input:context.input,epoch:context.memoryEpoch,route:context.route});
   }else if(name==='set_reminder')data=services.reminder(user,args);
   else if(name==='handover_to_human'){data=services.handover(user,args.reason,context.sessionId);event={type:'handover',data};}
   else throw new Error('Unregistered effect');
@@ -89,7 +89,7 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'get_scheduled_tasks':data={tasks:services.snapshot(user).scheduledTasks,plans:services.plans(user)};break;
  case 'get_cards':{const s=services.state(user);data={accounts:redact(s.accounts),creditCard:redact(s.creditCard),virtualCards:s.virtualCards,reservations:s.reservations};break;}
  case 'run_analysis':data=await runAnalysis(args.code,{today:businessDate(),ledger:ledgerFor(bank,user.id).map(enrich),transactions:redact(services.state(user).transactions)});assertChannelExecution(bank,context,user.id);bank.audit(user.id,'sandbox.analysis','',{purpose:args.purpose,code:args.code,durationMs:data.durationMs,size:data.size});break;
- case 'recall':data=services.memory.enabled()?services.memory.list(context.principal||resolvePrincipal(bank,user,context)).filter(r=>r.status==='active').map(({key,value})=>({key,value})):[];break;
+ case 'recall':data=services.memory.relevant(context.principal||resolvePrincipal(bank,user,context),context.input||'查看我的记忆');break;
  default:throw new Error('Unhandled tool');
  }
  const decision=services.policyDecision(user,name,args);
