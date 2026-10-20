@@ -22,14 +22,15 @@ test('无适配器仍发模拟验证码，返回渠道并记录回退原因', as
   assert.equal(r.data.simulated, true);
   assert.equal(r.data.channel, 'simulated_sms');
   assert.equal(r.data.expiresIn, 300);
-  const body = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码'", f.user.id).body;
+  const body = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).body;
   const code = body.match(/验证码 (\d{6})/)[1];
   const v = f.bank.get('SELECT * FROM verifications WHERE id=?', r.data.id);
   assert.equal(v.code_hash, hash(code));
   assert.equal(Date.parse(v.expires_at) - Date.parse(v.created_at), 300000);
   const audit = JSON.parse(f.bank.get("SELECT detail FROM audit WHERE action='verification.started' AND user_id=?", f.user.id).detail);
-  assert.deepEqual(audit, { id: r.data.id, channel: 'simulated_sms', reason: 'provider_not_configured' });
-  assert.ok(!JSON.stringify(r.data).includes(code));
+  assert.deepEqual(audit, { id: r.data.id, channel: 'simulated_sms', reason: 'no_email' });
+  // No real inbox exists, so the simulated code is shown on the page.
+  assert.equal(r.data.demoCode, code);
 });
 
 test('注入外部适配器后所有内置演示账户仍强制模拟', async t => {
@@ -38,13 +39,14 @@ test('注入外部适配器后所有内置演示账户仍强制模拟', async t 
   const delivery = createSmsDelivery(f.bank, { provider: { channel: 'tencent_sms', async sendVerificationCode() { calls++; } } });
   for (const user of f.bank.all('SELECT * FROM users')) {
     assert.equal(delivery.forUser(user).channel, 'simulated_sms');
-    assert.equal(delivery.forUser(user).reason, 'demo_account');
+    // example.com addresses are reserved demo mail; 邹瑞's real address needs an email adapter, and SMS stays simulated for demo phones.
+    assert.equal(delivery.forUser(user).reason, user.phone === '19900000000' ? 'demo_account' : 'demo_email');
   }
   const action = (await f.propose('propose_virtual_card', { limit: '100' })).data;
   const r = await f.call('/verify/start', { actionId: action.id });
   assert.equal(r.data.simulated, true);
   assert.equal(calls, 0);
-  assert.equal(JSON.parse(f.bank.get("SELECT detail FROM audit WHERE action='verification.started'").detail).reason, 'demo_account');
+  assert.equal(JSON.parse(f.bank.get("SELECT detail FROM audit WHERE action='verification.started'").detail).reason, 'demo_email');
 });
 
 test('异步外部适配器接收注册手机号，真实渠道贯通验证码及红色操作授权', async t => {
@@ -61,7 +63,7 @@ test('异步外部适配器接收注册手机号，真实渠道贯通验证码�
   assert.match(message.code, /^\d{6}$/);
   assert.equal(message.expiresIn, 300);
   assert.equal(message.verificationId, r.data.id);
-  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟短信验证码'", f.user.id).n, 0);
+  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).n, 0);
   assert.equal(f.bank.get('SELECT code_hash FROM verifications WHERE id=?', r.data.id).code_hash, hash(message.code));
   assert.equal((await f.call('/verify/face', { id: r.data.id, skipped: true, reason: 'unavailable' })).status, 200);
   const proof = await f.call('/verify/complete', { id: r.data.id, code: message.code });
@@ -83,6 +85,7 @@ test('发送失败不降级、不泄漏异常内容，新挑战不可用且旧�
   } });
   const first = await f.call('/verify/start', { actionId: f.action.id });
   f.bank.run("UPDATE verifications SET created_at='2000-01-01' WHERE id=?", first.data.id);
+  f.bank.run('UPDATE otp_sends SET created_at=0'); // step past the 60-second resend limit
   shouldFail = true;
   const r = await f.call('/verify/start', { actionId: f.action.id });
   assert.equal(r.status, 503);
@@ -92,7 +95,7 @@ test('发送失败不降级、不泄漏异常内容，新挑战不可用且旧�
   assert.equal(failed.used, 1);
   assert.equal((await f.call('/verify/face', { id: failed.id, skipped: true, reason: 'unavailable' })).status, 403);
   assert.equal((await f.call('/verify/face', { id: first.data.id, skipped: true, reason: 'unavailable' })).status, 200);
-  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟短信验证码'", f.user.id).n, 0);
+  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).n, 0);
   const audits = JSON.stringify(f.bank.all('SELECT * FROM audit WHERE user_id=?', f.user.id));
   assert.ok(audits.includes('verification.send_failed'));
   assert.ok(!audits.includes('private-key'));

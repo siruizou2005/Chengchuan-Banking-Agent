@@ -1,8 +1,9 @@
 import express from 'express';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
 import { createProductCatalog, holdingSnapshot } from './products.mjs';
 import { wealthAdvice } from './wealth.mjs';
+import { normalizeEmail, validEmail, maskEmail } from './email.mjs';
 import { registerChat } from './chat.mjs';
 import { registerVoice } from './voice.mjs';
 import { createChannels } from './channels/index.mjs';
@@ -25,7 +26,7 @@ import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL } from './age
 import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
-const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
+const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, email: u.email ? maskEmail(u.email) : null, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
 const transactionView = t => ({ ...t, payload: JSON.parse(t.payload), fingerprint: undefined, idempotency_key: undefined });
 const money = n => (n / 100).toFixed(2);
 // Five questions scored 1-4 (total 5-20): 5-7 R1, 8-10 R2, 11-13 R3, 14-16 R4, 17-20 R5.
@@ -293,7 +294,20 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (!u || !verifyPassword(req.body.password, u.password_hash)) { badAttempt(key); fail('手机号或登录密码不正确', 401, 'INVALID_CREDENTIALS'); }
     attempts.delete(key); audit(u.id, 'session.login'); res.json(startSession(u.id, res));
   }, false, { required: ['phone', 'password'], properties: { phone: { type: 'string' }, password: { type: 'string' } } });
-  route('post', '/auth/register', '注册模拟用户并创建虚拟账户', (req, res) => {
+  // Registration proves the email first: codes then only ever go to an address its owner confirmed.
+  route('post', '/auth/email-code', '注册前向邮箱发送6位验证码；example.com 等保留域名为演示，验证码直接返回', async (req, res) => {
+    const key = `email-code:${req.ip}`; checkRate(key); badAttempt(key);
+    const email = normalizeEmail(req.body.email);
+    requireThat(validEmail(email), '请输入有效的邮箱地址');
+    requireThat(!get('SELECT id FROM users WHERE email=?', email), '该邮箱已注册', 409, 'EMAIL_EXISTS');
+    const delivery = services.verification.delivery.forEmail(email);
+    const code = String(randomInt(100000, 1000000)), codeId = id('EC'), created = now();
+    atomic(() => { delivery.reserve(); run('INSERT INTO email_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)', codeId, email, hash(code), new Date(Date.parse(created) + 600000).toISOString(), created); });
+    try { await delivery.send({ code, expiresIn: 600, verificationId: codeId, actionTitle: '注册澄川银行账户' }); }
+    catch { run('UPDATE email_codes SET used=1 WHERE id=?', codeId); fail('验证码发送失败，请稍后重试', 503, 'SMS_SEND_FAILED'); }
+    res.json({ id: codeId, expiresIn: 600, simulated: delivery.simulated, channel: delivery.channel, target: maskEmail(email), ...(delivery.showCode ? { demoCode: code, reason: delivery.reason } : {}) });
+  }, false, { required: ['email'], properties: { email: { type: 'string' } } });
+  route('post', '/auth/register', '注册模拟用户并创建虚拟账户；需先用 /auth/email-code 验证邮箱', (req, res) => {
     const key = `register:${req.ip}`; checkRate(key); badAttempt(key);
     const phone = textField(req.body.phone, '手机号');
     requireThat(/^1\d{10}$/.test(phone), '请输入11位手机号');
@@ -302,7 +316,19 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const password = textField(req.body.password, '登录密码', 8, 72);
     requireThat(/[A-Za-z]/.test(password) && /\d/.test(password), '登录密码须包含字母和数字');
     requireThat(/^\d{6}$/.test(req.body.pin || ''), '支付密码须为6位数字');
-    const u = atomic(() => bank.newUser(phone, name, password, req.body.pin));
+    const email = normalizeEmail(req.body.email);
+    requireThat(validEmail(email), '请输入有效的邮箱地址');
+    const codeId = String(req.body.emailCodeId || ''), valid = () => get('SELECT * FROM email_codes WHERE id=? AND email=? AND used=0 AND attempts<5 AND expires_at>?', codeId, email, now());
+    const c = valid();
+    requireThat(c, '邮箱验证码已失效，请重新获取', 403, 'VERIFICATION_EXPIRED');
+    // A wrong code is counted outside the transaction so the failure cannot roll the count back.
+    if (hash(String(req.body.emailCode || '')) !== c.code_hash) { run('UPDATE email_codes SET attempts=attempts+1 WHERE id=?', c.id); fail('邮箱验证码不正确', 403, 'INVALID_CODE'); }
+    const u = atomic(() => {
+      requireThat(valid(), '邮箱验证码已失效，请重新获取', 403, 'VERIFICATION_EXPIRED');
+      requireThat(!get('SELECT id FROM users WHERE email=?', email), '该邮箱已注册', 409, 'EMAIL_EXISTS');
+      run('UPDATE email_codes SET used=1 WHERE id=?', c.id);
+      return bank.newUser(phone, name, password, req.body.pin, undefined, undefined, email);
+    });
     res.status(201).json(startSession(u, res));
   }, false);
   route('post', '/auth/logout', '退出当前会话', (req, res) => { run('DELETE FROM sessions WHERE token=?', req.tokenHash); res.clearCookie('bank_session', { path: '/' }); res.json({ ok: true }); });

@@ -48,7 +48,8 @@
 
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
-| POST /auth/register | phone、name、password（8 至 72 位字母+数字）、pin（6 位数字） |
+| POST /auth/email-code | `{email}` → `{id, expiresIn:600, simulated, channel, target}`；注册前验证邮箱。example.com 等保留域名或未配置 Resend 时为演示，响应附 `demoCode` 供页面显示；真实发送受 60 秒一次、每邮箱每天 10 次及每日总量限制。已注册邮箱返回 409 `EMAIL_EXISTS` |
+| POST /auth/register | phone、name、password（8 至 72 位字母+数字）、pin（6 位数字）、email、emailCodeId、emailCode（错 5 次或 10 分钟后失效） |
 | POST /auth/logout | {} |
 | GET /me | 当前用户 |
 | GET /dashboard | 账户、持仓、贷款、信用卡、最近 500 条流水/100 条交易、消息，以及 agentActions、agentPlans、subscriptions、virtualCards、reservations、scheduledTasks、bindings、agentLockedUntil |
@@ -173,7 +174,7 @@
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
 | POST /verify/intent | `{path, body}` 业务页面直接操作前询问是否需要强验证，如 `{"path":"/settings","body":{"dailyLimit":"60000"}}` → `{required, actionId?, decision}`；token 与具体参数及服务端保存的交易参数绑定 |
-| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated, channel, faceChannel}`；默认 `simulated:true, channel:"simulated_sms", faceChannel:"simulated_face"`，6 位验证码哈希存库并投递到消息中心（标题「模拟短信验证码」）。真实人脸模式须先录入实名资料。可注入异步短信适配器，外部发送失败返回 503 `SMS_SEND_FAILED`；不向模型或审计记录明文验证码。接入约定见 [SMS.md](SMS.md) |
+| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated, channel, faceChannel, target?, demoCode?, reason?}`。登记真实邮箱且配置 Resend 时 `channel:"resend_email"`、`target` 为脱敏邮箱；example.com 演示邮箱或未配置发送服务时 `simulated:true, channel:"simulated_sms"`，响应附 `demoCode` 由验证页直接显示，并抄送消息中心（标题「模拟验证码」）。6 位验证码只存哈希。真实人脸模式须先录入实名资料。可注入异步短信适配器，外部发送失败返回 503 `SMS_SEND_FAILED`；不向模型或审计记录明文验证码。接入约定见 [SMS.md](SMS.md) |
 | POST /verify/face | 仅限模拟模式：`{id, frameHash}`（64 位十六进制 SHA-256，前端摄像头画面摘要）或 `{id, skipped:true, reason:"unavailable"|"denied"|"unsupported"}` 降级，降级写审计 `verification.face_skipped`；真实人脸模式拒绝调用 |
 | GET /verify/identity | 本人实名资料状态 `{enrolled, required, channel, maskedName?, maskedIdNumber?}`；默认模拟，无需提交真实信息 |
 | POST /verify/identity | 真实模式首次提交 `{realName, idNumber}`，姓名及身份证号加密保存，响应仅脱敏；不支持自行覆盖 |

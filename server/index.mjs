@@ -2,6 +2,7 @@ import { createApp } from './app.mjs';
 import { resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { redactIdentity } from './privacy.mjs';
+import { createResendProvider } from './email.mjs';
 
 const production = process.argv.includes('--production');
 const { app, bank, maintenance, channels } = createApp(process.env.BANK_DB || resolve('data/bank.sqlite'), {
@@ -9,6 +10,8 @@ const { app, bank, maintenance, channels } = createApp(process.env.BANK_DB || re
   secureCookies: process.env.SESSION_SECURE === 'true',
   publicOrigin: process.env.PUBLIC_ORIGIN || '',
   // Fund data is fetched on demand when a page or the assistant needs it; there is no polling timer.
+  // Email codes go out through Resend only when a key is configured; otherwise they stay simulated.
+  sms: { email: process.env.RESEND_API_KEY ? createResendProvider({ apiKey: process.env.RESEND_API_KEY, from: process.env.OTP_EMAIL_FROM || undefined }) : undefined },
   products: { remote: process.env.PRODUCT_DATA_REMOTE !== 'false', ttlMs: Number(process.env.PRODUCT_CACHE_MINUTES || 360) * 60000 },
 });
 const server = createServer(app);

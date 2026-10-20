@@ -1,4 +1,4 @@
-export type User = { id: string; name: string; phone: string; dailyLimit: number; riskLevel: number; createdAt: string };
+export type User = { id: string; name: string; phone: string; email: string | null; dailyLimit: number; riskLevel: number; createdAt: string };
 export type Account = { id: string; number: string; name: string; balance: number; held: number; available: number; status: string };
 export type Product = {
   id: string; type: string; name: string; subtitle: string; rate: number | null; rateLabel?: string; days: number; minimum: number; risk: string; riskLevel?: number; tags: string[]; description: string;

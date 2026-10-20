@@ -7,6 +7,7 @@ import { migrateFeishu } from './channels/feishu-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
+import { DEMO_EMAILS, OWNER_PHONE, OWNER_PASSWORD_HASH } from './demo-users.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -163,6 +164,10 @@ export function createBank(path) {
   migrateFeishu(db);
   migratePersonalization(db);
   migrateProducts(db);
+  if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS email_codes (id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);`);
+  for (const [phone, email] of Object.entries(DEMO_EMAILS)) run('UPDATE users SET email=? WHERE phone=? AND email IS NULL', email, phone);
   let depth = 0;
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;
@@ -181,9 +186,9 @@ export function createBank(path) {
       run(`INSERT INTO ledger(transaction_id,account_id,amount,balance_after,title,category,created_at,${LEDGER_DETAIL}) VALUES(?,?,?,?,?,?,?${',?'.repeat(LEDGER_DETAIL.length)})`, tx, account, delta, row.balance, title, category, date, ...LEDGER_DETAIL.map(c => extra[c] ?? null));
     }
   }
-  function newUser(phone, name, password, pin, number, opening = 12865080) {
+  function newUser(phone, name, password, pin, number, opening = 12865080, email = DEMO_EMAILS[phone] ?? null) {
     const userId = id('U'), accountId = id('A');
-    run('INSERT INTO users(id,phone,name,password_hash,pin_hash,created_at) VALUES(?,?,?,?,?,?)', userId, phone, name, hashPassword(password), hashPassword(pin), now());
+    run('INSERT INTO users(id,phone,name,password_hash,pin_hash,created_at,email) VALUES(?,?,?,?,?,?,?)', userId, phone, name, hashPassword(password), hashPassword(pin), now(), email);
     const cardNumber = number || `621880${String(BigInt('0x' + randomBytes(6).toString('hex'))).padStart(13, '0').slice(-13)}`;
     run('INSERT INTO accounts(id,user_id,number,name) VALUES(?,?,?,?)', accountId, userId, cardNumber, '澄川银行 · 借记卡');
     run('INSERT INTO credit_cards(id,user_id,number) VALUES(?,?,?)', id('C'), userId, '622880' + cardNumber.slice(6));
@@ -247,6 +252,13 @@ export function createBank(path) {
       audit(userId, 'statement.imported', account, { sourceBank: s.source_bank, period: s.period, rows: s.rows.length });
     });
   }
+  // Move the owner's account off the shared demo password once; a password changed later is left alone.
+  const owner = get('SELECT id,password_hash FROM users WHERE phone=?', OWNER_PHONE);
+  if (owner && verifyPassword('Bank123456', owner.password_hash)) atomic(() => {
+    run('UPDATE users SET password_hash=? WHERE id=?', OWNER_PASSWORD_HASH, owner.id);
+    run('DELETE FROM sessions WHERE user_id=?', owner.id);
+    audit(owner.id, 'password.changed', owner.id, { reason: 'owner_account' });
+  });
   if (!get("SELECT version FROM schema_migrations WHERE version='permissions-v2'")) atomic(()=>{
     for(const a of all("SELECT * FROM agent_actions WHERE status IN ('confirmed','executing')")) {
       const until=get("SELECT MAX(until_at) AS until_at FROM reservations WHERE action_id=? AND status='active'",a.id).until_at || new Date(Date.now()+900000).toISOString();

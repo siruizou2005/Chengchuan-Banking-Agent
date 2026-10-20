@@ -249,7 +249,7 @@ test('旧库非破坏迁移重复运行：历史保留，未证明授权任务�
 async function strong(instance,user,actionId) {
  const v=await instance.services.verification.start(user,actionId);
  instance.services.verification.face(user,{id:v.id,skipped:true,reason:'unavailable'});
- const body=instance.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1",user.id).body;
+ const body=instance.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码' ORDER BY rowid DESC LIMIT 1",user.id).body;
  return instance.services.verification.complete(user,{id:v.id,code:body.match(/验证码 (\d{6})/)[1]}).verificationToken;
 }
 

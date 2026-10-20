@@ -4,6 +4,7 @@ import { NavAccount, NavWealth, NavAssistant, NavLife, NavProfile } from './icon
 import { api, ApiError, formValues, yuan, date, statusLabel, tail } from './api';
 import { BankContext } from './bank';
 import { Brand, Field, InlineError, Modal, Notice, PinField } from './ui';
+import { DemoCode, type Delivery } from './Verify';
 import { Home, ServiceDirectory } from './pages/Home';
 import { Accounts, LedgerPage, Payees, Receive, Scan, Transactions, Transfer } from './pages/Accounts';
 import { Credit, Funds, Loans, Risk, Wealth } from './pages/Wealth';
@@ -119,9 +120,19 @@ export default function App() {
 
 function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initialError: string }) {
   const [register, setRegister] = useState(false), [phone, setPhone] = useState('13800138000'), [password, setPassword] = useState('Bank123456'), [error, setError] = useState(initialError), [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(''), [emailCode, setEmailCode] = useState<(Delivery & { id: string }) | null>(null), [cooldown, setCooldown] = useState(0);
+  useEffect(() => { if (!cooldown) return; const timer = setTimeout(() => setCooldown(cooldown - 1), 1000); return () => clearTimeout(timer); }, [cooldown]);
+  async function sendCode() {
+    setError(''); setBusy(true);
+    try { setEmailCode(await api('/auth/email-code', 'POST', { email })); setCooldown(60); }
+    catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
   async function login(e: React.FormEvent<HTMLFormElement>) {
-    const body = formValues(e); setError(''); setBusy(true);
-    try { await api(register ? '/auth/register' : '/auth/login', 'POST', body); await onLogin(); }
+    const body = formValues(e); setError('');
+    if (register && !emailCode) { setError('请先获取邮箱验证码'); return; }
+    setBusy(true);
+    try { await api(register ? '/auth/register' : '/auth/login', 'POST', register ? { ...body, emailCodeId: emailCode!.id } : body); await onLogin(); }
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   }
@@ -135,12 +146,14 @@ function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initia
           {register && <Field label="姓名"><input name="name" placeholder="请输入姓名" required minLength={2} maxLength={20} autoComplete="name" /></Field>}
           <Field label="手机号"><input name="phone" type="tel" autoComplete="username" placeholder="请输入11位手机号" value={phone} onChange={e => setPhone(e.target.value)} required pattern="1[0-9]{10}" /></Field>
           <Field label="登录密码"><input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} placeholder="8位以上，包含字母和数字" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined} onInvalid={e => { e.preventDefault(); setError('请输入8至72位登录密码'); }} required minLength={8} maxLength={72} /></Field>
+          {register && <Field label="邮箱" hint="用于接收加强验证的验证码"><div className="code-row"><input name="email" type="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={e => { setEmail(e.target.value); setEmailCode(null); }} required maxLength={254} /><button type="button" className="pill small" disabled={busy || cooldown > 0 || !email} onClick={sendCode} data-testid="email-code">{cooldown ? `${cooldown}秒后重发` : emailCode ? '重新获取' : '获取验证码'}</button></div></Field>}
+          {register && emailCode && <>{emailCode.demoCode ? <DemoCode delivery={emailCode} /> : <Notice>验证码已发送至 {emailCode.target}，10分钟内有效，请查收（可能在垃圾邮件中）。</Notice>}<Field label="邮箱验证码"><input name="emailCode" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="one-time-code" placeholder="6位数字" /></Field></>}
           {register && <PinField label="设置支付密码" />}
           <InlineError message={error} id="login-error" testId="login-error" />
           <button className="btn-primary" disabled={busy} data-testid="login-submit">{busy ? <LoaderCircle size={19} className="spin" /> : null}{register ? '注册并登录' : '登录'}</button>
         </form>
         {!register && <div className="demo-access"><span>演示账户</span><div>{demos.map(d => <button key={d.phone} className={`pill small${phone === d.phone ? ' primary' : ''}`} onClick={() => { setPhone(d.phone); setPassword('Bank123456'); }}>{d.name} {d.phone.slice(0, 3)}****{d.phone.slice(-4)}</button>)}</div><p>登录密码 Bank123456，支付密码 123456</p></div>}
-        {register && <p className="footnote">注册无需短信验证，新用户自动获得开户体验金。</p>}
+        {register && <p className="footnote">注册需验证邮箱。example.com 等演示邮箱的验证码直接显示在页面，真实邮箱会收到邮件。新用户自动获得开户体验金。</p>}
       </section>
       <section className="card login-promo"><header className="card-head"><h2 className="card-title">基金理财</h2><span className="card-action"><Flame size={14} />每日更新</span></header><div className="promo-center"><strong>近百只公募基金</strong><span className="promo-perks"><i><Coins size={13} />0.01元起购</i><i><Zap size={13} />净值每日更新</i><i><ShieldCheck size={13} />R1–R5全覆盖</i></span><span className="login-promo-note">货币、债券、混合、指数与QDII基金，业绩数据来自东方财富</span><button className="pill primary" onClick={() => document.querySelector<HTMLInputElement>('input[name=phone]')?.focus()}>登录后查看</button></div></section>
       <p className="footnote login-note"><ShieldCheck size={14} />演示环境，所有资金与业务均为虚拟数据</p>

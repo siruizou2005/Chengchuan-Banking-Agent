@@ -6,12 +6,20 @@ import { useBank } from './bank';
 
 type IdentityProfile = { enrolled: boolean; required: boolean; channel: string; maskedName?: string; maskedIdNumber?: string };
 
+export type Delivery = { simulated: boolean; channel: string; target?: string; demoCode?: string; reason?: string };
+export const deliveryText = (d: Delivery | null) => !d ? '开始验证后将提示验证码接收方式。' : d.demoCode ? '演示账户的验证码直接显示在下一步。' : d.channel === 'resend_email' ? `验证码已发送至邮箱 ${d.target}，请查收（可能在垃圾邮件中）。` : d.simulated ? '验证码已投递至本站消息中心。' : '验证码已发送至您的注册手机号。';
+// Demo accounts have reserved example.com addresses, so the code is shown here instead of being mailed.
+export function DemoCode({ delivery }: { delivery: Delivery | null }) {
+  if (!delivery?.demoCode) return null;
+  return <div className="demo-code"><small>演示验证码</small><b>{delivery.demoCode}</b><p>{delivery.reason === 'demo_email' ? '这只是演示：example.com 等演示邮箱收不到邮件，验证码直接显示在这里。登记真实邮箱的账户会收到真实的邮件验证码。' : '当前未接入邮件发送服务，验证码直接显示在这里，仅供演示。'}</p></div>;
+}
+
 export function Verify({ actionId, onVerified, onCancel }: { actionId: string; onVerified: (token: string) => void; onCancel: () => void }) {
   const { refresh } = useBank();
   const [id, setId] = useState(''), [step, setStep] = useState<'start' | 'face' | 'sms'>('start');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0);
-  const [fallback, setFallback] = useState(''), [inbox, setInbox] = useState<{ id: string; body: string }[]>([]);
-  const [simulated, setSimulated] = useState<boolean | null>(null);
+  const [fallback, setFallback] = useState('');
+  const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [identity, setIdentity] = useState<IdentityProfile | null>(null);
   const [faceChannel, setFaceChannel] = useState('simulated_face');
   const [faceLink, setFaceLink] = useState<{ sessionId: string; url: string } | null>(null);
@@ -25,7 +33,7 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
   }, []);
   async function start() {
     setBusy(true); setError('');
-    try { const result = await api<{ id: string; simulated: boolean; faceChannel: string }>('/verify/start', 'POST', { actionId }); if (!alive.current) return; setId(result.id); setSimulated(result.simulated); setFaceChannel(result.faceChannel); setStep('face'); await refresh(); }
+    try { const result = await api<Delivery & { id: string; faceChannel: string }>('/verify/start', 'POST', { actionId }); if (!alive.current) return; setId(result.id); setDelivery(result); setFaceChannel(result.faceChannel); setStep('face'); await refresh(); }
     catch (e) { setError((e as Error).message); } finally { if (alive.current) setBusy(false); }
   }
   async function camera() {
@@ -64,8 +72,8 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
     finally { if (alive.current) setBusy(false); }
   }
   return <Modal title="App 加强验证" onClose={onCancel}><div className="stack-form verify-flow">
-    <div className="verify-steps"><span className={step !== 'sms' ? 'active' : ''}>1 {faceChannel === 'tencent_face' ? '人脸核身' : '人脸演示'}</span><span className={step === 'sms' ? 'active' : ''}>2 短信验证码</span><span>3 支付密码</span></div>
-    <Notice>{faceChannel === 'tencent_face' ? '人脸核身将通过专用页面完成，本站不保存人脸照片。' : '摄像头仅采集本地画面摘要，不进行真实生物识别。'}{simulated === null ? '开始验证后将提示验证码接收方式。' : simulated ? '模拟短信验证码已投递至本站消息中心。' : '短信验证码已发送至您的注册手机号。'}</Notice>
+    <div className="verify-steps"><span className={step !== 'sms' ? 'active' : ''}>1 {faceChannel === 'tencent_face' ? '人脸核身' : '人脸演示'}</span><span className={step === 'sms' ? 'active' : ''}>2 {delivery?.channel === 'resend_email' ? '邮箱验证码' : '验证码'}</span><span>3 支付密码</span></div>
+    <Notice>{faceChannel === 'tencent_face' ? '人脸核身将通过专用页面完成，本站不保存人脸照片。' : '摄像头仅采集本地画面摘要，不进行真实生物识别。'}{deliveryText(delivery)}</Notice>
     {step === 'start' && identity?.required && <form className="stack-form" autoComplete="off" onSubmit={async e => {
       const form = e.currentTarget, fields = formValues(e); setBusy(true); setError('');
       try { const value = await api<IdentityProfile>('/verify/identity', 'POST', { realName: fields.realName, idNumber: fields.idNumber }); form.reset(); if (alive.current) setIdentity(value); }
@@ -80,7 +88,7 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
     {step === 'start' && identity && !identity.required && <>{faceChannel === 'tencent_face' && identity.enrolled && <Notice>{identity.maskedName} · {identity.maskedIdNumber}</Notice>}<button className="btn-primary" disabled={busy} onClick={start}><ShieldCheck size={18} />开始验证并发送验证码</button></>}
     {step === 'face' && faceChannel === 'tencent_face' && <><Notice>请在新打开的核身页面完成刷脸。返回后由服务器核对结果，再回到此页继续。验证码仍为5分钟有效。</Notice>{faceLink ? <><a className="btn-primary" href={faceLink.url} target="_blank" rel="noopener noreferrer">前往人脸核身</a><button className="btn-primary" disabled={busy} onClick={checkFace}>已返回，继续验证</button></> : <button className="btn-primary" disabled={busy} onClick={startFace}>准备人脸核身</button>}</>}
     {step === 'face' && faceChannel === 'simulated_face' && <><div className="face-preview" style={{ '--progress': `${progress * 360}deg` } as React.CSSProperties}><video ref={video} muted playsInline aria-label="摄像头预览" /><span>{progress ? `${Math.round(progress * 100)}%` : '人脸模拟 · 2秒'}</span></div><p className="footnote">请面向摄像头，缓慢眨眼。此步骤仅演示验证流程。</p>{fallback ? <><Notice>摄像头不可用或未获授权，可以降级为短信验证；系统将记录此情况。</Notice><button className="btn-primary" disabled={busy} onClick={skip}>记录降级并继续短信验证</button></> : <button className="btn-primary" disabled={busy} onClick={camera}><Camera size={18} />{busy ? '正在采集…' : '开启摄像头并采集'}</button>}</>}
-    {step === 'sms' && <form className="stack-form" onSubmit={async e => { const { code } = formValues(e); setBusy(true); setError(''); try { const result = await api<{ verificationToken: string }>('/verify/complete', 'POST', { id, code }); onVerified(result.verificationToken); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } }}><Field label="短信验证码" hint="6位数字，5分钟有效"><input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="one-time-code" /></Field>{simulated && <button type="button" className="btn-text" onClick={async () => { try { setInbox((await api<{ id: string; title: string; body: string }[]>('/notifications')).filter(n => n.title === '模拟短信验证码').slice(0, 3)); } catch (e) { setError((e as Error).message); } }}>打开模拟短信收件箱</button>}{inbox.map(n => <Notice key={n.id}>{n.body}</Notice>)}<button className="btn-primary" disabled={busy}>验证短信，继续支付密码</button></form>}
+    {step === 'sms' && <form className="stack-form" onSubmit={async e => { const { code } = formValues(e); setBusy(true); setError(''); try { const result = await api<{ verificationToken: string }>('/verify/complete', 'POST', { id, code }); onVerified(result.verificationToken); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } }}><DemoCode delivery={delivery} /><Field label={delivery?.channel === 'resend_email' ? '邮箱验证码' : '验证码'} hint="6位数字，5分钟有效"><input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="one-time-code" /></Field><button className="btn-primary" disabled={busy}>验证并继续输入支付密码</button></form>}
     <InlineError message={error} />
   </div></Modal>;
 }

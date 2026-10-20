@@ -26,6 +26,7 @@ export function createVerification(bank, services, options, faceOptions) {
       const recent=get('SELECT created_at FROM verifications WHERE user_id=? AND action_id=? ORDER BY created_at DESC LIMIT 1',user.id,actionId);
       requireThat(!recent || Date.now()-Date.parse(recent.created_at)>1000,'验证码发送过于频繁',429,'RATE_LIMITED');
       requireThat(!get("SELECT id FROM verifications WHERE user_id=? AND action_id=? AND delivery_status='pending' AND expires_at>?",user.id,actionId,now()),'验证码正在发送，请稍后再试',429,'RATE_LIMITED');
+      delivery.reserve();
       run('INSERT INTO verifications(id,user_id,action_id,code_hash,expires_at,created_at) VALUES(?,?,?,?,?,?)', verificationId,user.id,actionId,hash(code),new Date(Date.parse(createdAt)+300000).toISOString(),createdAt);
       run("UPDATE verifications SET params_digest=?,revision=?,sms_channel=?,delivery_status='pending' WHERE id=?",paramsDigest(actionParams(action)),action.revision,delivery.channel,verificationId);
       run('UPDATE verifications SET face_channel=? WHERE id=?',faceVerification.mode(user),verificationId);
@@ -56,7 +57,8 @@ export function createVerification(bank, services, options, faceOptions) {
       });
       throw error;
     }
-    return { id:verificationId, expiresIn:300, simulated:delivery.simulated, channel:delivery.channel, faceChannel:faceVerification.mode(user) };
+    // A simulated code is no secret: there is no real inbox, so the page shows it with a demo notice.
+    return { id:verificationId, expiresIn:300, simulated:delivery.simulated, channel:delivery.channel, faceChannel:faceVerification.mode(user), ...(delivery.target?{target:delivery.target}:{}), ...(delivery.showCode?{demoCode:code,reason:delivery.reason}:{}) };
   }
   function challenge(user, verificationId) {
     const v=get('SELECT * FROM verifications WHERE id=? AND user_id=?',verificationId,user.id);
@@ -98,7 +100,7 @@ export function createVerification(bank, services, options, faceOptions) {
     run('UPDATE verifications SET used=1 WHERE id=?',v.id); audit(user.id,'verification.consumed',actionId,{channel:v.sms_channel,faceChannel:v.face_channel,faceSessionId:v.face_session_id});
     return [v.sms_channel,v.face_channel==='tencent_face'?'tencent_face':v.face_status==='skipped'?'simulated_camera_fallback:'+v.face_reason:'simulated_face'];
   }
-  return { start, face, complete, consume, faceVerification };
+  return { start, face, complete, consume, faceVerification, delivery: sms };
 }
 export function registerVerification(route,verification) {
   route('get','/verify/identity','本人实名资料脱敏状态',(req,res)=>res.json(verification.faceVerification.profile(req.user)));

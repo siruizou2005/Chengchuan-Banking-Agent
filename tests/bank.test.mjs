@@ -28,7 +28,7 @@ async function fixture(t) {
     const intent = (await req('/verify/intent', { path, body })).data;
     if (!intent.required) return body;
     const v = (await req('/verify/start', { actionId: intent.actionId })).data;
-    const code = bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1", alice.user.id).body.match(/验证码 (\d{6})/)[1];
+    const code = bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码' ORDER BY rowid DESC LIMIT 1", alice.user.id).body.match(/验证码 (\d{6})/)[1];
     await req('/verify/face', { id: v.id, skipped: true, reason: 'unavailable' });
     const result = (await req('/verify/complete', { id: v.id, code })).data;
     return { ...body, verificationActionId: intent.actionId, verificationToken: result.verificationToken };
@@ -216,7 +216,8 @@ test('流水按北京时间时段、分类筛选，导出遵守同一筛选', as
 
 test('注册新用户、收款人、客服和预约可保存且隔离', async t => {
   const f = await fixture(t);
-  const user = await f.request('/auth/register', { phone: '13700137000', name: '模拟测试', password: 'Test123456', pin: '654321' }); assert.equal(user.status, 201);
+  const emailCode = (await f.request('/auth/email-code', { email: 'mock.test@example.com' })).data;
+  const user = await f.request('/auth/register', { phone: '13700137000', name: '模拟测试', password: 'Test123456', pin: '654321', email: 'mock.test@example.com', emailCodeId: emailCode.id, emailCode: emailCode.demoCode }); assert.equal(user.status, 201);
   const snapshot = (await f.request('/dashboard', undefined, user.data.token)).data; assert.equal(snapshot.user.name, '模拟测试'); assert.equal(snapshot.accounts.length, 1); assert.equal(snapshot.holdings.length, 0);
   const payee = await f.req('/payees', { name: '测试收款人', number: '6222000000000033333', bank: '其他银行' }); assert.equal(payee.status, 201);
   assert.equal((await f.req(`/payees/${payee.data.id}`, {}, 'DELETE')).status, 200);
