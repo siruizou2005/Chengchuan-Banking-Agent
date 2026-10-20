@@ -1,0 +1,15 @@
+{
+  "format": "structured-v1",
+  "instructions": "同口径比较产品；推荐只解释wealth_advice的结果。",
+  "inputs": ["产品标识、当前条款、本人风险测评"],
+  "sources": ["compare_products", "get_products_and_holdings", "get_risk_profile", "wealth_advice"],
+  "workflow": [
+    "核对来源、日期及stale；同类同期间比较收益。",
+    "区分存款利率、历史收益和业绩基准；比较费用、期限、赎回与风险。"
+  ],
+  "limits": [
+    "缺失写未知，不填零；不用企业估值倍数评价基金或存款。",
+    "不承诺收益，不由聊天推断风险能力；不绕过交易确认。"
+  ],
+  "output": "比较依据、差异与不可比项；已有建议卡片时简述结论。"
+}

@@ -1,21 +1,21 @@
 # 模块化记忆验证记录
 
-日期：2026-10-19；本机 Windows，Node.js v24.21.0。架构和边界见 [MEMORY_ARCHITECTURE.md](MEMORY_ARCHITECTURE.md)。测试使用独立内存或临时 SQLite，不操作真实银行数据库。
+测试记录日期：2026-10-19；最终结果核对：2026-10-20。本机 Windows，Node.js v24.21.0。架构和边界见 [MEMORY_ARCHITECTURE.md](MEMORY_ARCHITECTURE.md)。测试使用独立内存或临时 SQLite，不操作真实银行数据库。
 
 ## 自动化与浏览器
 
 | 验证 | 结果 | 本机日志/产物 |
 | --- | --- | --- |
 | 原个性化回归 | 12/12 通过 | personalization.test.mjs |
-| 新模块化测试 | 8/8 通过 | modular-memory.test.mjs |
-| 全量复验 `node --test --test-concurrency=2 tests/*.test.mjs` | **163/163 通过，0 失败** | test-results/modular-memory-final-tests.log |
+| 新模块化测试 | 9/9 通过，含跨渠道证据解绑及凭据失效撤销 | modular-memory.test.mjs |
+| 最终全量复验 `node --test --test-concurrency=2 tests/*.test.mjs` | **164/164 通过，0 失败** | test-results/modular-memory-final-tests.log |
 | 最后补充 SQLite 耗时与证据来源后的定向回归 | **20/20 通过** | test-results/modular-memory-targeted-final.log |
 | 撤销假设同时清除 user_confirmed 标记 | 单项通过 | modular-memory.test.mjs 的确认/纠正/删除测试 |
 | `npm run build` | TypeScript/Vite 通过 | 主包大于 500 kB 的既有提醒仍存在 |
 | Edge + Playwright | 候选确认、行为确认/拒绝、编辑、删除、刷新、账户隔离、移动与桌面布局通过；模型调用 0 次 | test-results/personalization-mobile.png、personalization-desktop.png |
 | `git diff --check` | 通过 | 无空白错误 |
 
-首轮全量测试曾出现一项飞书 SDK 签名回调测试的 `fetch failed / ECONNRESET`。未修改该业务测试或放宽断言；单独运行 channels.test.mjs 为 7/7 通过，随后降低测试文件并发进行全量复验，163 项全部通过。此次没有证据确认连接重置的根因，不将首轮失败隐去。
+首轮全量测试曾出现一项飞书 SDK 签名回调测试的 `fetch failed / ECONNRESET`。未修改该业务测试或放宽断言；单独运行 channels.test.mjs 为 7/7 通过，随后降低测试文件并发进行全量复验，163 项全部通过。最后增加渠道撤销测试及 SQLite 原子撤销保护后，再次完整运行，164 项全部通过。此次没有证据确认首轮连接重置的根因，不将该失败隐去。
 
 ## A/B/C 可执行基准
 

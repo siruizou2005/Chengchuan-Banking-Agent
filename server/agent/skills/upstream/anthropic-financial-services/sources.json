@@ -1,0 +1,35 @@
+{
+    "license":  "Apache-2.0",
+    "reviewed_on":  "2026-10-20",
+    "files":  [
+                  {
+                      "url":  "https://github.com/anthropics/financial-services/blob/574ed3624aebd0418c7e96cd101262f30210ab26/LICENSE",
+                      "path":  "LICENSE",
+                      "sha256":  "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                      "file":  "LICENSE"
+                  },
+                  {
+                      "url":  "https://github.com/anthropics/financial-services/blob/574ed3624aebd0418c7e96cd101262f30210ab26/plugins/vertical-plugins/fund-admin/skills/gl-recon/SKILL.md",
+                      "path":  "plugins/vertical-plugins/fund-admin/skills/gl-recon/SKILL.md",
+                      "sha256":  "81029137f227ed9119107a659f58ad499cf375f67de834b9f553eddbba9f79e0",
+                      "file":  "gl-recon.md",
+                      "skill":  "cashflow_reconciliation"
+                  },
+                  {
+                      "url":  "https://github.com/anthropics/financial-services/blob/574ed3624aebd0418c7e96cd101262f30210ab26/plugins/vertical-plugins/fund-admin/skills/variance-commentary/SKILL.md",
+                      "path":  "plugins/vertical-plugins/fund-admin/skills/variance-commentary/SKILL.md",
+                      "sha256":  "11624574b72c05756f62cb4a2d4888a2511d661ce58b1bf980577e03d9d36ea8",
+                      "file":  "variance-commentary.md",
+                      "skill":  "budget_variance"
+                  },
+                  {
+                      "url":  "https://github.com/anthropics/financial-services/blob/574ed3624aebd0418c7e96cd101262f30210ab26/plugins/vertical-plugins/financial-analysis/skills/comps-analysis/SKILL.md",
+                      "path":  "plugins/vertical-plugins/financial-analysis/skills/comps-analysis/SKILL.md",
+                      "sha256":  "2d49d9d694297da6ca3b084564ce10ed496f4ff21f275dae6b6c50d7b4dd889a",
+                      "file":  "comps-analysis.md",
+                      "skill":  "product_comparison"
+                  }
+              ],
+    "commit":  "574ed3624aebd0418c7e96cd101262f30210ab26",
+    "repository":  "https://github.com/anthropics/financial-services"
+}
