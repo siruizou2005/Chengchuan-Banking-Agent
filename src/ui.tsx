@@ -59,12 +59,13 @@ export function Pill({ children, primary = false, small = false, onClick, type =
 }
 
 /* 红色大号利率。 */
-export function Rate({ value, caption, size = 'lg' }: { value: number | string; caption: string; size?: 'lg' | 'md' | 'xl' }) {
-  return <span className={`rate ${size}`}><strong>{typeof value === 'number' ? value.toFixed(2) : value}<small>%</small></strong><span>{caption}</span></span>;
+export function Rate({ value, caption, size = 'lg' }: { value: number | string | null; caption: string; size?: 'lg' | 'md' | 'xl' }) {
+  if (value === null) return <span className={`rate ${size} muted`}><strong>--</strong><span>{caption}</span></span>;
+  return <span className={`rate ${size}${typeof value === 'number' && value < 0 ? ' down' : ''}`}><strong>{typeof value === 'number' ? value.toFixed(2) : value}<small>%</small></strong><span>{caption}</span></span>;
 }
 
 /* 推广卡：浅蓝渐变，标题 + 利率 + 胶囊按钮。 */
-export function Promo({ title, subtitle, rate, caption, action, onClick, note }: { title: string; subtitle?: string; rate: number; caption: string; action: string; onClick: () => void; note?: string }) {
+export function Promo({ title, subtitle, rate, caption, action, onClick, note }: { title: string; subtitle?: string; rate: number | null; caption: string; action: string; onClick: () => void; note?: string }) {
   return <button className="promo" onClick={onClick}><span className="promo-title">{title}</span>{subtitle && <span className="promo-sub">{subtitle}</span>}<span className="promo-foot"><Rate value={rate} caption={caption} /><span className="pill primary small">{action}</span></span>{note && <span className="promo-note">{note}</span>}</button>;
 }
 

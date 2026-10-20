@@ -1,6 +1,7 @@
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
-import { createBank, id, now, products, verifyPassword, hashPassword } from './db.mjs';
+import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
+import { createProductCatalog, holdingSnapshot } from './products.mjs';
 import { registerChat } from './chat.mjs';
 import { registerVoice } from './voice.mjs';
 import { createChannels } from './channels/index.mjs';
@@ -26,10 +27,13 @@ export { cents } from './errors.mjs';
 const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
 const transactionView = t => ({ ...t, payload: JSON.parse(t.payload), fingerprint: undefined, idempotency_key: undefined });
 const money = n => (n / 100).toFixed(2);
+// Five questions scored 1-4 (total 5-20): 5-7 R1, 8-10 R2, 11-13 R3, 14-16 R4, 17-20 R5.
+export const riskLevelFor = answers => [7, 10, 13, 16].filter(cut => answers.reduce((a, b) => a + b, 0) > cut).length + 1;
 
 export function createApp(dbPath = ':memory:', options = {}) {
   const bank = createBank(dbPath);
   const { get, all, run, atomic, audit, notify, post } = bank;
+  const catalog = createProductCatalog(bank, options.products);
   const app = express();
   const guard = createGuard(bank, options.agent);
   let services;
@@ -139,16 +143,21 @@ export function createApp(dbPath = ':memory:', options = {}) {
         title = `转账 · ${p.recipientName}`; break;
       }
       case 'deposit': case 'investment': {
-        const product = products.find(x => x.id === b.productId);
+        const product = catalog.get(b.productId);
         requireThat(product && product.type === (b.type === 'deposit' ? 'deposit' : 'wealth'), '产品不存在');
+        requireThat(product.purchasable, `该产品当前${product.purchaseStatus || '不可申购'}`, 409, 'PRODUCT_UNAVAILABLE');
         requireThat(amount >= product.minimum, `起购金额为${money(product.minimum)}元`);
-        if (product.type === 'wealth') requireThat(user.risk_level >= (product.risk.startsWith('R2') ? 2 : 1), '请先完成匹配的风险测评', 409, 'RISK_ASSESSMENT_REQUIRED');
+        if (product.purchaseLimit) requireThat(amount <= product.purchaseLimit, `该产品单日申购上限为${money(product.purchaseLimit)}元`, 409, 'PURCHASE_LIMIT');
+        if (product.riskLevel) {
+          requireThat(user.risk_level > 0, '请先完成风险测评', 409, 'RISK_ASSESSMENT_REQUIRED');
+          requireThat(user.risk_level >= product.riskLevel, `该产品为${product.risk}，高于您的风险承受等级R${user.risk_level}`, 409, 'RISK_MISMATCH');
+        }
         p.productId = product.id; title = product.name; break;
       }
       case 'redeem': {
         const h = get('SELECT * FROM holdings WHERE id=? AND user_id=?', b.holdingId, user.id);
         requireThat(h && h.principal >= amount, '可赎回本金不足', 409, 'HOLDING_UNAVAILABLE');
-        const product = products.find(x => x.id === h.product_id);
+        const product = catalog.forHolding(h);
         requireThat(product.type === 'deposit' || h.unlock_at <= now(), '产品尚未到期，暂不可赎回', 409, 'HOLDING_LOCKED');
         p.holdingId = h.id; debit = false; title = `赎回 · ${product.name}`; break;
       }
@@ -222,8 +231,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
           }
         } else if (['deposit', 'investment'].includes(t.type)) {
           post(t.id, account.id, 'system', t.amount, t.title, t.type);
-          const product = products.find(x => x.id === p.productId);
-          run('INSERT INTO holdings VALUES(?,?,?,?,?,?)', id('H'), user.id, p.productId, t.amount, now(), new Date(Date.now() + product.days * 86400000).toISOString());
+          const product = catalog.get(p.productId);
+          run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at,product_snapshot) VALUES(?,?,?,?,?,?,?)', id('H'), user.id, p.productId, t.amount, now(), new Date(Date.now() + product.days * 86400000).toISOString(), JSON.stringify(holdingSnapshot(product)));
         } else if (t.type === 'redeem') {
           run('UPDATE holdings SET principal=principal-? WHERE id=?', t.amount, p.holdingId);
           post(t.id, 'system', account.id, t.amount, t.title, t.type);
@@ -246,11 +255,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }
   function state(user) {
     const accounts = all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', user.id);
-    const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal>0 ORDER BY created_at DESC', user.id).map(h => ({ ...h, product: products.find(p => p.id === h.product_id) }));
+    const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal>0 ORDER BY created_at DESC', user.id).map(({ product_snapshot, ...h }) => ({ ...h, product: catalog.forHolding({ ...h, product_snapshot }) }));
     const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id).map(enrich);
     return {
       ...(services ? services.snapshot(user) : {}),
-      user: publicUser(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, ledger, products,
+      user: publicUser(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, ledger,
+      products: catalog.list(), productMeta: catalog.meta(), market: catalog.market(),
       loans: all('SELECT * FROM loans WHERE user_id=? ORDER BY created_at DESC', user.id),
       creditCard: get('SELECT * FROM credit_cards WHERE user_id=?', user.id),
       transactions: all('SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 100', user.id).map(transactionView),
@@ -260,7 +270,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       appointments: all('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC', user.id),
     };
   }
-  services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt }, guard);
+  services = createServices(bank, { state, prepare, createTransaction, settle, finishFailed, accountFor, pin, checkRate, badAttempt, catalog }, guard);
   services.memory = createMemoryManager(bank, options.personalization);
   services.memoryEvolution = createMemoryEvolution(bank, services.memory, options.memoryEvolution);
   services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
@@ -296,7 +306,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }, false);
   route('post', '/auth/logout', '退出当前会话', (req, res) => { run('DELETE FROM sessions WHERE token=?', req.tokenHash); res.clearCookie('bank_session', { path: '/' }); res.json({ ok: true }); });
   route('get', '/me', '当前用户信息', (req, res) => res.json(publicUser(req.user)));
-  route('get', '/dashboard', '完整账户视图与业务数据', (req, res) => res.json(state(req.user)));
+  route('get', '/dashboard', '完整账户视图与业务数据', async (req, res) => { await catalog.ready(); res.json(state(req.user)); });
   route('get', '/accounts', '账户与可用余额（单位：分）', (req, res) => res.json(all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', req.user.id)));
   route('patch', '/accounts/:id', '冻结或解冻借记卡', (req, res) => {
     pin(req.user, req.body.pin); const a = accountFor(req.user, req.params.id);
@@ -353,7 +363,26 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const csv = [['交易编号', '北京时间', '摘要', '金额（元）', '余额（元）', '分类', '类型', '交易类型', '对方户名', '商户', '支付平台', '附言', '来源银行'], ...rows.map(r => [r.transaction_id, r.bj_time, r.title, money(r.amount), money(r.balance_after), r.tag, KIND_LABEL[r.kind], r.txn_type, r.counterparty, r.merchant, r.platform, r.memo, r.source_bank])].map(r => r.map(escape).join(',')).join('\r\n');
     res.type('text/csv; charset=utf-8').attachment('chengchuan-statement.csv').send('\uFEFF' + csv);
   });
-  route('get', '/products', '模拟存款与理财产品', (_req, res) => res.json(products));
+  route('get', '/products', '存款与基金产品（基金数据来自东方财富，响应头 X-Data-Updated-At / X-Data-Stale 标注数据时效）', async (_req, res) => {
+    await catalog.ready();
+    const meta = catalog.meta();
+    res.set('X-Data-Updated-At', meta.updatedAt).set('X-Data-Stale', String(meta.stale)).json(catalog.list());
+  });
+  route('get', '/products/:id/history', '基金走势：range=1m/3m/6m/1y；货币基金为7日年化，其余为区间累计收益率（%），按需拉取并缓存', async (req, res) => {
+    const range = String(req.query.range || '3m');
+    requireThat(['1m', '3m', '6m', '1y'].includes(range), '走势区间须为1m、3m、6m或1y');
+    const result = await catalog.history(req.params.id, range);
+    requireThat(result, '该产品没有走势数据', 404, 'NOT_FOUND');
+    res.json(result);
+  });
+  route('get', '/market/:code/history', '指数日线收盘点位：code 为 000001/399001/000300/399006，range=1m/3m/6m/1y，按需拉取并缓存', async (req, res) => {
+    const range = String(req.query.range || '3m');
+    requireThat(['1m', '3m', '6m', '1y'].includes(range), '走势区间须为1m、3m、6m或1y');
+    const result = await catalog.indexHistory(req.params.code, range);
+    requireThat(result, '没有该指数的走势数据', 404, 'NOT_FOUND');
+    res.json(result);
+  });
+  route('get', '/market', '市场指数与产品数据时效', async (_req, res) => { await catalog.ready(); res.json({ indices: catalog.market(), meta: catalog.meta() }); });
   route('get', '/holdings', '当前持仓', (req, res) => res.json(state(req.user).holdings));
   route('get', '/loans', '贷款与剩余本金', (req, res) => res.json(all('SELECT * FROM loans WHERE user_id=?', req.user.id)));
   route('get', '/credit-card', '信用卡额度与账单', (req, res) => res.json(get('SELECT * FROM credit_cards WHERE user_id=?', req.user.id)));
@@ -370,10 +399,10 @@ export function createApp(dbPath = ':memory:', options = {}) {
     res.status(201).json(get('SELECT * FROM payees WHERE user_id=? AND number=?', req.user.id, number));
   });
   route('delete', '/payees/:id', '移除常用收款人', (req, res) => { requireThat(run('DELETE FROM payees WHERE id=? AND user_id=?', req.params.id, req.user.id).changes, '收款人不存在', 404); res.json({ ok: true }); });
-  route('post', '/risk-assessment', '根据三项问卷答案记录模拟风险等级', (req, res) => {
+  route('post', '/risk-assessment', '根据五项问卷答案（每题1-4分）记录R1-R5风险承受等级', (req, res) => {
     const answers = req.body.answers;
-    requireThat(Array.isArray(answers) && answers.length === 3 && answers.every(x => [1, 2, 3].includes(x)), '请完成全部风险测评问题');
-    const level = answers.reduce((a, b) => a + b, 0) >= 7 ? 2 : 1;
+    requireThat(Array.isArray(answers) && answers.length === 5 && answers.every(x => [1, 2, 3, 4].includes(x)), '请完成全部风险测评问题');
+    const level = riskLevelFor(answers);
     atomic(() => { run('UPDATE users SET risk_level=? WHERE id=?', level, req.user.id); audit(req.user.id, 'risk.assessed', '', { level, answers }); }); res.json({ level });
   });
   route('patch', '/settings', '修改每日限额、登录密码或支付密码', (req, res) => {

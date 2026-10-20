@@ -6,6 +6,7 @@ import { migrateWeChat } from './channels/wechat-schema.mjs';
 import { migrateFeishu } from './channels/feishu-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
+import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -21,13 +22,6 @@ export function verifyPassword(value, stored) {
 
 // Optional, source-neutral ledger details; native rows leave them NULL.
 export const LEDGER_DETAIL = ['txn_type','bank_summary','counterparty','counterparty_account','merchant','platform','channel','memo','time_precision','source_bank','source_detail'];
-
-export const products = [
-  { id: 'deposit-90', type: 'deposit', name: '安心存三个月', subtitle: '90天整存整取，支持提前支取', rate: 1.35, days: 90, minimum: 5000, risk: '存款', tags: ['50元起存', '到期可取'], description: '人民币整存整取定期存款，存期90天，支持提前支取。演示环境按本金结算，不计付利息。' },
-  { id: 'deposit-365', type: 'deposit', name: '安心存一年期', subtitle: '365天整存整取，支持提前支取', rate: 1.65, days: 365, minimum: 5000, risk: '存款', tags: ['50元起存', '整存整取'], description: '人民币整存整取定期存款，存期一年，支持提前支取。演示环境按本金结算，不计付利息。' },
-  { id: 'wealth-flex', type: 'wealth', name: '澄享日日盈', subtitle: '现金管理类，每日可申赎', rate: 2.18, days: 0, minimum: 10000, risk: 'R1 低风险', tags: ['100元起购', '灵活申赎'], description: '现金管理类理财，主投高流动性固收资产，每个交易日可申赎。展示收益率为演示数据，不构成收益承诺；演示环境按本金结算，不计算净值变动。' },
-  { id: 'wealth-180', type: 'wealth', name: '澄享稳进180天', subtitle: '固定持有期，到期后可赎回', rate: 3.20, days: 180, minimum: 100000, risk: 'R2 中低风险', tags: ['1,000元起购', '180天持有期'], description: '固定持有期理财，持有180天后方可赎回。展示收益率为演示用业绩比较基准，不构成收益承诺；到期按本金结算。' },
-];
 
 export function createBank(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -168,6 +162,7 @@ export function createBank(path) {
   migrateWeChat(db);
   migrateFeishu(db);
   migratePersonalization(db);
+  migrateProducts(db);
   let depth = 0;
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;
@@ -209,7 +204,7 @@ export function createBank(path) {
       post(id('SEED'), 'system', acct, 1860000, '工资收入 · 九月', 'income', past);
       post(id('SEED'), acct, 'system', 8600, '生活缴费 · 电费', 'payment', past);
       post(id('SEED'), acct, 'system', 2000000, '安心存 · 一年期', 'deposit', past);
-      run('INSERT INTO holdings VALUES(?,?,?,?,?,?)', id('H'), first, 'deposit-365', 2000000, past, new Date(Date.now()+363*86400000).toISOString());
+      run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at,product_snapshot) VALUES(?,?,?,?,?,?,?)', id('H'), first, 'deposit-365', 2000000, past, new Date(Date.now()+363*86400000).toISOString(), JSON.stringify(holdingSnapshot(DEPOSITS[1])));
       post(id('SEED'), acct, 'system', 320000, '转账 · 房租', 'transfer', new Date(Date.now()-86400000).toISOString());
     });
   }

@@ -15,8 +15,10 @@ export function accountContext(snapshot) {
     asOf: new Date().toISOString(), source: '当前服务器的模拟银行数据库', currency: 'CNY', moneyUnit: '整数分',
     user: { ...pick(snapshot.user, ['name', 'dailyLimit', 'riskLevel', 'createdAt']), phone: mask(snapshot.user.phone) },
     accounts: snapshot.accounts.map(a => ({ ...pick(a, ['name', 'balance', 'held', 'available', 'status']), number: mask(a.number) })),
-    products: snapshot.products,
-    holdings: snapshot.holdings.map(h => pick(h, ['principal', 'created_at', 'unlock_at', 'product'])),
+    // The fund catalog is ~100 rows; only deposits go into every prompt, funds are queried via tools.
+    products: snapshot.products.filter(p => p.type === 'deposit').map(p => pick(p, ['id', 'name', 'rate', 'rateLabel', 'days', 'minimum'])),
+    productCatalog: { funds: snapshot.products.filter(p => p.type !== 'deposit').length, ...pick(snapshot.productMeta || {}, ['source', 'updatedAt', 'stale', 'notice']), usage: '基金产品与业绩请调用get_products_and_holdings筛选，或compare_products对比' },
+    holdings: snapshot.holdings.map(h => ({ ...pick(h, ['principal', 'created_at', 'unlock_at']), product: pick(h.product, ['id', 'name', 'type', 'risk', 'days']) })),
     loans: snapshot.loans.map(l => pick(l, ['principal', 'outstanding', 'months', 'status', 'created_at'])),
     creditCard: { ...pick(snapshot.creditCard, ['credit_limit', 'used', 'status']), number: mask(snapshot.creditCard?.number) },
     recentLedger: snapshot.ledger.slice(0, 30).map(l => pick(l, ['amount', 'balance_after', 'title', 'bj_time', 'kind', 'tag', 'merchant', 'platform'])),

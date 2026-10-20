@@ -3,6 +3,8 @@ import { ScanLine, ChevronRight, Eye, EyeOff, ShieldCheck, Bell, Search, Menu } 
 import { useBank } from '../bank';
 import { yuan, date, tail } from '../api';
 import { Card, Tile, Row, Brand, Empty, Avatar, Tabs, Pill, Promo, type Icon, type Tone } from '../ui';
+import { featuredFund, riskTag } from '../products';
+import type { Product } from '../types';
 import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, IcoGrid, IcoIn, IcoOut, Logo } from '../icons';
 
 /* 功能宫格以蓝色为主，少量橙 / 红 / 金点缀。 */
@@ -31,13 +33,13 @@ export function Home() {
   const [cardId, setCardId] = useState(data.accounts[0]?.id ?? '');
   const account = data.accounts.find(a => a.id === cardId) ?? data.accounts[0];
   const [assetTab, setAssetTab] = useState('wealth');
-  const bestRate = (type: string) => Math.max(0, ...data.products.filter(p => p.type === type).map(p => p.rate));
-  const featured = [...data.products.filter(p => p.type === 'wealth')].sort((a, b) => b.rate - a.rate)[0];
+  const bestRate = (test: (p: Product) => boolean) => Math.max(0, ...data.products.filter(test).map(p => p.rate ?? 0));
+  const funds = data.products.filter(p => p.type === 'wealth'), featured = featuredFund(funds);
   const mask = (v: string) => hidden ? '****' : v;
   return <>
     <header className="hero">
       <div className="hero-bar"><button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button><Brand light mark={false} /><div className="hero-actions"><button className="icon-button" aria-label="消息中心" onClick={() => navigate('messages')}><Bell size={23} strokeWidth={1.8} />{unread > 0 && <i className="dot" />}</button><button className="icon-button" aria-label="扫一扫" onClick={() => navigate('scan')}><ScanLine size={23} strokeWidth={1.8} /></button></div></div>
-      <button className="hero-user" onClick={() => navigate('profile')}><Avatar size={48} /><span className="hero-user-text"><span className="hero-name">{data.user.name}<em className="user-tag"><ShieldCheck size={11} />{data.user.riskLevel ? `R${data.user.riskLevel} 稳健型` : 'Ⅰ类账户'}</em></span><small>{greeting()}，欢迎回来</small></span></button>
+      <button className="hero-user" onClick={() => navigate('profile')}><Avatar size={48} /><span className="hero-user-text"><span className="hero-name">{data.user.name}<em className="user-tag"><ShieldCheck size={11} />{data.user.riskLevel ? riskTag(data.user.riskLevel) : 'Ⅰ类账户'}</em></span><small>{greeting()}，欢迎回来</small></span></button>
       <div className="hero-quick">
         <Tile variant="header" icon={IcoRecord} label="交易记录" onClick={() => navigate('ledger')} />
         <Tile variant="header" icon={IcoCard} label="银行卡" onClick={() => navigate('accounts')} />
@@ -62,13 +64,13 @@ export function Home() {
       </Card>
       <Card head={<Tabs items={[{ id: 'wealth', label: '财富' }, { id: 'loan', label: '贷款' }, { id: 'credit', label: '信用卡' }]} value={assetTab} onChange={setAssetTab} />}>
         {assetTab === 'wealth' && <>
-          <Row glyph="存" tone="orange" title="定期存款" subtitle={`整存整取，最高年利率 ${bestRate('deposit').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(depositTotal))}</b>} trailingSub={`${deposits.length} 笔持有`} action={<Pill small primary onClick={() => navigate('deposit')}>转入</Pill>} />
-          <Row glyph="理" tone="coral" title="稳健理财" subtitle={`每日可申赎，最高年化 ${bestRate('wealth').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(wealthTotal))}</b>} trailingSub={`${wealth.length} 笔持有`} action={<Pill small primary onClick={() => navigate('wealth')}>转入</Pill>} />
+          <Row glyph="存" tone="orange" title="定期存款" subtitle={`整存整取，最高年利率 ${bestRate(p => p.type === 'deposit').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(depositTotal))}</b>} trailingSub={`${deposits.length} 笔持有`} action={<Pill small primary onClick={() => navigate('deposit')}>转入</Pill>} />
+          <Row glyph="基" tone="coral" title="基金理财" subtitle={`${funds.length}只基金，货币基金7日年化最高 ${bestRate(p => p.category === 'money').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(wealthTotal))}</b>} trailingSub={`${wealth.length} 笔持有`} action={<Pill small primary onClick={() => navigate('wealth')}>转入</Pill>} />
         </>}
         {assetTab === 'loan' && <Row glyph="贷" tone="blue" title="澄心贷" subtitle={`可借额度 ¥${yuan(20000000 - outstanding)}`} trailing={<b className="amount">{mask(yuan(outstanding))}</b>} trailingSub="待还本金" action={<Pill small primary onClick={() => navigate('loan')}>借款</Pill>} />}
         {assetTab === 'credit' && <Row glyph="卡" tone="red" title="澄光白金卡" subtitle={`可用额度 ¥${yuan(credit.credit_limit - credit.used)}`} trailing={<b className="amount">{mask(yuan(credit.used))}</b>} trailingSub="当前待还" action={<Pill small primary onClick={() => navigate('credit')}>还款</Pill>} />}
       </Card>
-      {featured && <Promo title={featured.name} subtitle={[featured.risk, ...featured.tags.slice(0, 2)].join(' | ')} rate={featured.rate} caption="成立以来年化" action="去看看" onClick={() => navigate('wealth')} />}
+      {featured && <Promo title={featured.name} subtitle={[featured.risk, ...featured.tags.slice(0, 2)].join(' | ')} rate={featured.rate} caption={featured.rateLabel || '年化'} action="去看看" onClick={() => navigate('wealth')} note={data.productMeta?.stale ? '数据可能不是最新' : undefined} />}
       <Card title="最近交易" action="全部" onAction={() => navigate('ledger')}>
         {data.ledger.length ? data.ledger.slice(0, 4).map(l => <Row key={l.id} icon={l.amount > 0 ? IcoIn : IcoOut} tone={l.amount > 0 ? 'red' : 'blue'} title={l.title} subtitle={date(l.created_at)} trailing={<b className={`amount${l.amount > 0 ? ' income' : ''}`}>{hidden ? '****' : `${l.amount > 0 ? '+' : '-'}${yuan(Math.abs(l.amount))}`}</b>} onClick={() => navigate('ledger')} chevron={false} />) : <Empty />}
       </Card>

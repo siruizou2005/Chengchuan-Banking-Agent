@@ -3,7 +3,7 @@ import { ChevronLeft, Menu, Headphones, Check, CircleX, Clock3, LoaderCircle, Fl
 import { NavAccount, NavWealth, NavAssistant, NavLife, NavProfile } from './icons';
 import { api, ApiError, formValues, yuan, date, statusLabel, tail } from './api';
 import { BankContext } from './bank';
-import { Brand, Field, InlineError, Modal, Notice, PinField, Rate } from './ui';
+import { Brand, Field, InlineError, Modal, Notice, PinField } from './ui';
 import { Home, ServiceDirectory } from './pages/Home';
 import { Accounts, LedgerPage, Payees, Receive, Scan, Transactions, Transfer } from './pages/Accounts';
 import { Credit, Loans, Risk, Wealth } from './pages/Wealth';
@@ -140,7 +140,7 @@ function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initia
         {!register && <div className="demo-access"><span>演示账户</span><div>{demos.map(d => <button key={d.phone} className={`pill small${phone === d.phone ? ' primary' : ''}`} onClick={() => { setPhone(d.phone); setPassword('Bank123456'); }}>{d.name} {d.phone.slice(0, 3)}****{d.phone.slice(-4)}</button>)}</div><p>登录密码 Bank123456，支付密码 123456</p></div>}
         {register && <p className="footnote">注册无需短信验证，新用户自动获得开户体验金。</p>}
       </section>
-      <section className="card login-promo"><header className="card-head"><h2 className="card-title">热销产品</h2><span className="card-action"><Flame size={14} />近7天热销</span></header><div className="promo-center"><strong>澄享日日盈</strong><span className="promo-perks"><i><Coins size={13} />1元起购</i><i><Zap size={13} />快速到账</i><i><ShieldCheck size={13} />低风险</i></span><Rate value={2.18} caption="成立以来年化" size="xl" /><button className="pill primary" onClick={() => document.querySelector<HTMLInputElement>('input[name=phone]')?.focus()}>登录后查看</button></div></section>
+      <section className="card login-promo"><header className="card-head"><h2 className="card-title">基金理财</h2><span className="card-action"><Flame size={14} />每日更新</span></header><div className="promo-center"><strong>近百只公募基金</strong><span className="promo-perks"><i><Coins size={13} />0.01元起购</i><i><Zap size={13} />净值每日更新</i><i><ShieldCheck size={13} />R1–R5全覆盖</i></span><span className="login-promo-note">货币、债券、混合、指数与QDII基金，业绩数据来自东方财富</span><button className="pill primary" onClick={() => document.querySelector<HTMLInputElement>('input[name=phone]')?.focus()}>登录后查看</button></div></section>
       <p className="footnote login-note"><ShieldCheck size={14} />演示环境，所有资金与业务均为虚拟数据</p>
     </main>
   </div>;

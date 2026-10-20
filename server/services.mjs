@@ -1,4 +1,4 @@
-import { id, now, products } from './db.mjs';
+import { id, now } from './db.mjs';
 import { cents, requireThat, BusinessError } from './errors.mjs';
 import { decide, expectedAt, actionAmount, rank, businessDate, dailyTotal } from './agent/policy.mjs';
 import { validateArgs } from './agent/tools.mjs';
@@ -41,7 +41,7 @@ export function createServices(bank,core,guard) {
   let body;
   if(tool==='propose_transfer'){const r=recipient(user,args.recipient);body={type:'transfer',amount:args.amount,recipientName:r.name,recipientAccount:r.number,bank:r.bank,note:args.note||''};args.recipientLabel=`${r.name}（尾号${r.number.slice(-4)}）`;if(args.scheduleAt)args.scheduleAt=future(args.scheduleAt);}
   if(tool==='propose_payment')body={type:'payment',...args};
-  if(tool==='propose_subscribe_product'){const p=products.find(p=>p.id===args.productId);requireThat(p,'产品不存在');body={type:p.type==='deposit'?'deposit':'investment',...args};args.productName=p.name;}
+  if(tool==='propose_subscribe_product'){const p=services.catalog.get(args.productId);requireThat(p,'产品不存在');body={type:p.type==='deposit'?'deposit':'investment',...args};args.productName=p.name;}
   for(const [t,type] of Object.entries({propose_redeem:'redeem',propose_loan_draw:'loan_draw',propose_loan_repay:'loan_repay',propose_credit_repay:'credit_repay'}))if(tool===t)body={type,...args};
   if(body){core.prepare(fresh(user),{...body,_businessAt:businessAt||args.scheduleAt});args._transaction=body;}
   if(tool==='propose_split'){requireThat(new Set(args.people).size===args.people.length,'AA成员不能重复');requireThat(cents(args.total)>=args.people.length,'AA金额不足');args.recipients=args.people.map(p=>{const r=recipient(user,p);const a=get('SELECT user_id FROM accounts WHERE number=?',r.number);requireThat(a?.user_id&&a.user_id!==user.id,'AA仅支持其他行内用户');return {...r,userId:a.user_id};});}

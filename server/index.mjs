@@ -8,6 +8,8 @@ const { app, bank, maintenance, channels } = createApp(process.env.BANK_DB || re
   trustProxy: process.env.TRUST_PROXY === 'true',
   secureCookies: process.env.SESSION_SECURE === 'true',
   publicOrigin: process.env.PUBLIC_ORIGIN || '',
+  // Fund data is fetched on demand when a page or the assistant needs it; there is no polling timer.
+  products: { remote: process.env.PRODUCT_DATA_REMOTE !== 'false', ttlMs: Number(process.env.PRODUCT_CACHE_MINUTES || 360) * 60000 },
 });
 const server = createServer(app);
 if(process.env.NODE_ENV !== 'test') await channels.start();

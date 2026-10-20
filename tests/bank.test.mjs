@@ -134,17 +134,40 @@ test('定期存款购买与部分支取保持本金及余额一致', async t => 
   assert.equal((await f.state()).accounts[0].balance, before - 75000); f.balanced();
 });
 
-test('理财执行风险等级、起购额与到期限制', async t => {
+test('风险测评按五题总分给出R1至R5', async t => {
   const f = await fixture(t);
-  assert.equal((await f.create({ type: 'investment', productId: 'wealth-flex', amount: '100' })).data.error.code, 'RISK_ASSESSMENT_REQUIRED');
-  assert.equal((await f.req('/risk-assessment', { answers: [3, 3, 3] })).data.level, 2);
-  assert.equal((await f.create({ type: 'investment', productId: 'wealth-flex', amount: '99.99' })).status, 400);
-  const tx = (await f.create({ type: 'investment', productId: 'wealth-180', amount: '1000' })).data;
+  for (const [answers, level] of [[[1, 1, 1, 1, 1], 1], [[2, 2, 2, 1, 1], 2], [[3, 3, 3, 2, 2], 3], [[4, 3, 3, 3, 3], 4], [[4, 4, 4, 4, 4], 5]]) assert.equal((await f.req('/risk-assessment', { answers })).data.level, level);
+  assert.equal((await f.req('/risk-assessment', { answers: [3, 3, 3] })).status, 400);
+  assert.equal((await f.req('/risk-assessment', { answers: [5, 1, 1, 1, 1] })).status, 400);
+});
+
+test('基金申购执行风险匹配、起购额、申购状态与单日上限，旧持有期产品仍受到期限制', async t => {
+  const f = await fixture(t);
+  const products = (await f.req('/products')).data;
+  const fund = test => products.find(p => p.type === 'wealth' && test(p));
+  const low = fund(p => p.riskLevel === 1 && p.purchasable && !p.purchaseLimit && p.minimum >= 100);
+  const high = fund(p => p.riskLevel === 4 && p.purchasable && !p.purchaseLimit);
+  const suspended = fund(p => !p.purchasable), limited = fund(p => p.purchasable && p.purchaseLimit && p.purchaseLimit <= 2000000);
+  assert.ok(low && high && suspended && limited);
+  assert.equal(products.find(p => p.id === 'wealth-flex'), undefined);
+  const buy = (p, amount) => f.create({ type: 'investment', productId: p.id, amount });
+  assert.equal((await buy(low, '100')).data.error.code, 'RISK_ASSESSMENT_REQUIRED');
+  assert.equal((await f.req('/risk-assessment', { answers: [1, 1, 1, 1, 1] })).data.level, 1);
+  assert.equal((await buy(high, '100')).data.error.code, 'RISK_MISMATCH');
+  assert.equal((await buy(low, ((low.minimum - 1) / 100).toFixed(2))).status, 400);
+  await f.req('/risk-assessment', { answers: [4, 4, 4, 4, 4] });
+  assert.equal((await buy(suspended, '1000')).data.error.code, 'PRODUCT_UNAVAILABLE');
+  assert.equal((await buy(limited, ((limited.purchaseLimit + 100) / 100).toFixed(2))).data.error.code, 'PURCHASE_LIMIT');
+  const tx = (await buy(high, '1000')).data;
   assert.equal((await f.confirm(tx)).data.status, 'completed');
-  const h = (await f.state()).holdings.find(x => x.product_id === 'wealth-180');
-  assert.equal((await f.create({ type: 'redeem', holdingId: h.id, amount: '1000' })).data.error.code, 'HOLDING_LOCKED');
-  f.bank.run('UPDATE holdings SET unlock_at=? WHERE id=?', '2000-01-01T00:00:00.000Z', h.id);
-  assert.equal((await f.confirm((await f.create({ type: 'redeem', holdingId: h.id, amount: '1000' })).data)).data.status, 'completed'); f.balanced();
+  const h = (await f.state()).holdings.find(x => x.product_id === high.id);
+  assert.equal(h.product.name, high.name);
+  assert.equal((await f.confirm((await f.create({ type: 'redeem', holdingId: h.id, amount: '400' })).data)).data.status, 'completed');
+  f.bank.run("INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at) VALUES('HLEGACY',?,'wealth-180',100000,?,?)", f.alice.user.id, new Date().toISOString(), new Date(Date.now() + 86400000).toISOString());
+  assert.equal((await f.state()).holdings.find(x => x.id === 'HLEGACY').product.name, '澄享稳进180天');
+  assert.equal((await f.create({ type: 'redeem', holdingId: 'HLEGACY', amount: '1000' })).data.error.code, 'HOLDING_LOCKED');
+  f.bank.run("UPDATE holdings SET unlock_at='2000-01-01T00:00:00.000Z' WHERE id='HLEGACY'");
+  assert.equal((await f.confirm((await f.create({ type: 'redeem', holdingId: 'HLEGACY', amount: '1000' })).data)).data.status, 'completed'); f.balanced();
 });
 
 test('贷款确认时复验额度，支持部分还款与结清', async t => {

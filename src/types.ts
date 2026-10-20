@@ -1,6 +1,13 @@
 export type User = { id: string; name: string; phone: string; dailyLimit: number; riskLevel: number; createdAt: string };
 export type Account = { id: string; number: string; name: string; balance: number; held: number; available: number; status: string };
-export type Product = { id: string; type: string; name: string; subtitle: string; rate: number; days: number; minimum: number; risk: string; tags: string[]; description: string };
+export type Product = {
+  id: string; type: string; name: string; subtitle: string; rate: number | null; rateLabel?: string; days: number; minimum: number; risk: string; riskLevel?: number; tags: string[]; description: string;
+  category?: string; fundType?: string; code?: string; issuer?: string; returns?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null };
+  nav?: number | null; accNav?: number | null; perTenThousand?: number | null; navDate?: string | null; fee?: string; purchaseStatus?: string; redeemStatus?: string;
+  purchaseLimit?: number | null; purchasable?: boolean; source?: string; sourceUrl?: string; updatedAt?: string;
+};
+export type ProductMeta = { source: string; updatedAt: string; stale: boolean; fallback: string | null; notice: string | null };
+export type MarketIndex = { code: string; name: string; price: number | null; change: number | null; changePct: number | null; open?: number | null; high?: number | null; low?: number | null; prevClose?: number | null; amount?: number | null; updatedAt: string };
 export type Holding = { id: string; product_id: string; principal: number; created_at: string; unlock_at: string; product: Product };
 export type Loan = { id: string; principal: number; outstanding: number; months: number; status: string; created_at: string };
 export type Transaction = { id: string; type: string; amount: number; title: string; status: string; payload: Record<string, any>; account_id: string; created_at: string; updated_at: string; expires_at: string; error?: string };
@@ -14,7 +21,7 @@ export type Snapshot = {
   scheduledTasks: { id: string; kind: string; run_at: string; status: string; error?: string }[];
   bindings: { id: string; channel: string; status: string; created_at: string; personal?: boolean; live?: boolean; auth_state?: string; connection_state?: string; last_inbound_at?: number; last_api_accepted_at?: number; last_error_code?: string }[];
   agentLockedUntil: string | null;
-  user: User; accounts: Account[]; holdings: Holding[]; loans: Loan[]; products: Product[];
+  user: User; accounts: Account[]; holdings: Holding[]; loans: Loan[]; products: Product[]; productMeta: ProductMeta; market: MarketIndex[];
   ledger: Ledger[]; transactions: Transaction[];
   creditCard: { id: string; number: string; credit_limit: number; used: number; status: string };
   payees: { id: string; name: string; number: string; bank: string }[];

@@ -223,6 +223,8 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .rate.md strong { font-size: 22px; }
 .rate.xl strong { font-size: 36px; }
 .rate.xl strong small { font-size: 20px; }
+.rate.down strong { color: var(--green); }
+.rate.muted strong { color: var(--text-3); }
 
 /* 两栏摘要卡 */
 .split { display: flex; padding: 14px 8px; }
@@ -234,6 +236,56 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .split.inline span { font-size: 16px; color: var(--text); font-weight: 500; }
 
 /* ---------- 理财产品 ---------- */
+/* 行情条：红涨绿跌 */
+.market-strip { display: grid; grid-template-columns: repeat(4, 1fr); padding: 12px 4px; }
+.market-strip > button { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 2px 0; color: inherit; border-radius: 8px; }
+.market-strip > button:active { background: var(--pill); }
+.market-strip span { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.market-strip b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.market-strip small { font-size: 12px; font-variant-numeric: tabular-nums; }
+.market-strip .up b, .market-strip .up small, .return-grid .up dd { color: var(--red); }
+.market-strip .down b, .market-strip .down small, .return-grid .down dd { color: var(--green); }
+.product-filter { margin: 4px 0 2px; }
+.card > .data-note { font-size: 12px; color: var(--text-3); margin: 12px 0 0; line-height: 1.6; }
+.product-filter .chip { background: var(--pill); }
+.product-filter .chip.active { background: var(--brand); }
+.return-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin: 4px 0 0; padding: 12px 0; border-radius: 8px; background: var(--pill); text-align: center; }
+.return-grid dt { font-size: 12px; color: var(--text-3); }
+.return-grid dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 基金走势：单序列折线，2px 线 + 10% 面积，十字线读数 */
+.nav-chart { margin: 4px 0 0; }
+.nav-chart-head { display: flex; flex-direction: column; gap: 8px; }
+.nav-chart-head > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.nav-chart-head strong { font-size: 15px; font-weight: 600; }
+.nav-chart-headline { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.nav-chart .chip.small { height: 28px; padding: 0 12px; font-size: 13px; background: var(--pill); }
+.nav-chart .chip.small.active { background: var(--brand); color: #fff; }
+.nav-chart-plot { position: relative; min-height: 168px; margin-top: 6px; touch-action: pan-y; }
+.nav-chart-plot svg { display: block; overflow: visible; }
+.nav-chart-plot .grid { stroke: var(--line); stroke-width: 1; }
+.nav-chart-plot .zero { stroke: #c9ccd6; stroke-width: 1; }
+.nav-chart-plot .axis { font-size: 11px; fill: var(--text-3); font-variant-numeric: tabular-nums; }
+.nav-chart-plot .series { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.nav-chart-plot .wash { fill: var(--brand); opacity: .1; }
+.nav-chart-plot .crosshair { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.nav-chart-plot .dot { fill: var(--brand); stroke: #fff; stroke-width: 2; }
+.nav-chart-plot .hit { fill: transparent; cursor: crosshair; }
+.nav-chart-empty { display: flex; align-items: center; justify-content: center; height: 168px; margin: 0; font-size: 13px; color: var(--text-3); }
+.nav-chart-tip { position: absolute; top: 2px; transform: translateX(-50%); opacity: .96; display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px #1a1a1a1f; font-size: 12px; color: var(--text-2); white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; z-index: 2; }
+.nav-chart-tip b { font-size: 14px; color: var(--text); }
+.nav-chart-tip b.up { color: var(--red); } .nav-chart-tip b.down { color: var(--green); }
+.nav-chart-headline.up, .nav-chart-tip .tip-change.up { color: var(--red); }
+.nav-chart-headline.down, .nav-chart-tip .tip-change.down { color: var(--green); }
+.index-quote { display: flex; align-items: baseline; gap: 12px; padding: 6px 0 2px; color: var(--text); }
+.index-quote strong { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.index-quote span { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.index-quote.up strong, .index-quote.up span { color: var(--red); }
+.index-quote.down strong, .index-quote.down span { color: var(--green); }
+.index-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; margin: 0; padding: 12px; border-radius: 8px; background: var(--pill); }
+.index-stats dt { font-size: 12px; color: var(--text-3); }
+.index-stats dd { margin: 3px 0 0; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.nav-chart-note { margin: 6px 0 0; font-size: 11px; color: var(--text-3); line-height: 1.6; }
+
 .product { display: block; width: 100%; text-align: left; padding: 16px 0; border-bottom: 1px solid var(--line); color: var(--text); }
 .card-head + .product, .card > div:empty + .product { padding-top: 4px; }
 .card > .product:last-child { border-bottom: 0; padding-bottom: 2px; }
@@ -412,6 +464,7 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .promo-perks { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
 .promo-perks i { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); font-style: normal; }
 .promo-perks svg { color: var(--orange); }
+.login-promo-note { font-size: 13px; color: var(--text-3); line-height: 1.6; margin-bottom: 4px; }
 .promo-center .pill { margin-top: 4px; min-width: 160px; }
 .login-note { display: flex; align-items: center; justify-content: center; gap: 4px; }
 

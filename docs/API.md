@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | transfer | recipientName、recipientAccount、bank | 附言 note 可选；scenario=`bank_rejected` 模拟失败 |
 | deposit | productId | deposit-90 / deposit-365，最低 50 元 |
-| investment | productId | wealth-flex 最低 100 元；wealth-180 最低 1000 元；先风险测评 |
+| investment | productId | 基金 `fund-<代码>`（见 GET /products）；先风险测评，产品风险等级不得高于测评等级（`RISK_MISMATCH`）；校验起购金额、暂停申购（`PRODUCT_UNAVAILABLE`）与单日上限（`PURCHASE_LIMIT`）；模拟申购，按本金结算 |
 | redeem | holdingId | 部分或全部本金；固定持有期理财须到期 |
 | loan_draw | months | 3/6/12/24 个月，最低 1000 元，总待还不超过 20 万元 |
 | loan_repay | loanId | 不超过待还本金 |
@@ -56,12 +56,15 @@
 | GET /ledger?preset=last_30_days&direction=expense&category=餐饮美食&q=美团 | 最多 2000 条匹配流水。时段（北京时间）用 `preset`（同智能体工具取值）、`period`（YYYY / YYYY-MM / YYYY-MM-DD）或 `from`+`to`，不传为全部；`direction` 为 income/expense；`kind`（`spend` 表示消费加退款）、`category`、`platform`（如 支付宝、银行卡快捷支付、澄川银行）按统一口径筛选；`q` 匹配摘要、对方、商户、附言、交易编号。每行附带 `kind`、`tag`、`bj_time`，导入流水另含 `txn_type`、`counterparty`、`merchant`、`platform` 等统一字段，见 README |
 | GET /ledger/export | 按与 `/ledger` 相同的筛选导出 CSV：交易编号、北京时间、摘要、金额、余额、分类、类型、交易类型、对方户名、商户、支付平台、附言、来源银行 |
 | PATCH /accounts/{id} | status=active/frozen/lost、pin；解冻（lost/frozen→active）与挂失为红色，需附 verificationActionId + verificationToken |
-| GET /products /holdings /loans /credit-card | 分别获取业务资源 |
+| GET /products /holdings /loans /credit-card | 分别获取业务资源。/products 返回 2 款定期与约 100 只公募基金，基金净值、近1/3/6/12月收益、风险等级、起购额、费率与申购状态来自东方财富公开接口；响应头 `X-Data-Updated-At`、`X-Data-Stale` 标注时效 |
+| GET /products/:id/history?range=1m\|3m\|6m\|1y | 基金走势 `{metric, unit, points[{date,value,nav\|perTenThousand}], source, updatedAt, stale, notice}`：货币基金为7日年化，其余为以区间首日为基准的累计收益率（按累计净值，含分红）；打开详情时按需拉取，按基金和区间缓存，失败时返回上次缓存并标注 |
+| GET /market/:code/history?range=1m\|3m\|6m\|1y | 指数日线 `{metric:'收盘点位', points[{date,value,open,high,low}], source:'腾讯财经', ...}`；code 为 000001/399001/000300/399006；按需拉取，缓存 30 分钟 |
+| GET /market | `{indices, meta}`：上证、深证、沪深300、创业板指数与产品数据时效；`meta.stale` 为 true 时 `meta.notice` 给出“可能不是最新”提示 |
 | PATCH /credit-card | status=active/frozen/lost、pin；解冻与挂失同上 |
 | GET /payees | 收款人列表 |
 | POST /payees | name、number、bank；同卡号更新姓名及银行 |
 | DELETE /payees/{id} | {} |
-| POST /risk-assessment | answers：3 个 1/2/3 整数，如 [3,3,3]；返回 level |
+| POST /risk-assessment | answers：5 个 1–4 整数，如 [3,3,3,2,2]；总分 5–7 为 R1，8–10 R2，11–13 R3，14–16 R4，17–20 R5；返回 level |
 | PATCH /settings | pin 以及 dailyLimit（元）、newPin，或 oldPassword+newPassword；调高限额、改密码为红色，需附 verificationActionId + verificationToken |
 | GET /notifications | 本人站内通知（含模拟短信验证码、待验证提醒） |
 | POST /notifications/read | {}，全部标为已读 |
@@ -227,7 +230,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 
 400 参数错误，401 认证失效，403 支付密码/验证/来源错误，404 资源不存在或无权访问，409 业务状态冲突，415 非 JSON 或非 WAV 请求，423 智能体锁定，429 限频，502 上游模型或语音服务错误，503 未配置，504 对话超时。
 
-常见代码：`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
+常见代码：`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`RISK_MISMATCH`、`PRODUCT_UNAVAILABLE`、`PURCHASE_LIMIT`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
 
 `GET /ledger` 与 `GET /transactions` 均只返回自己的资源。行内转账收款人可在自己的流水中看到入账，但不能查询发款人的交易资源或支付信息。智能体的所有查询与动作同样按会话或渠道绑定的用户隔离。
 
@@ -236,3 +239,12 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 主要 hash 路由：IM 确认直达 `/#tasks?action=ACT…`（未登录时登录后仍停留在该页）、首页 `/#home`、转账 `/#transfer`、收支 `/#ledger`、交易 `/#transactions`、账户 `/#accounts`、财富 `/#wealth`、定期 `/#deposit`、贷款 `/#loan`、信用卡 `/#credit`、生活 `/#life`、智能助手 `/#assistant`、智能助手操作与计划 `/#tasks`、消息渠道绑定 `/#channels`、安全中心 `/#security`、开发者中心 `/#agent`、AA 收款 `/#pay-request/{id}/{index}`。
 
 核心定位符：`login-submit`、`quick-transfer`、`transfer-form`、`create-transfer`、`confirm-transaction`、`cancel-transaction`、`transaction-status`、`transaction-id`、`agent-action`、`nav-home`、`nav-assistant` 等。字段优先使用中文标签或 name：`recipientName`、`recipientAccount`、`bank`、`amount`、`pin`、`code`。交易结果必须通过页面状态或 API 查询核对，不能仅凭点击完成判断成功。
+
+## 产品数据来源
+
+- 指数实时行情来自东方财富（有人查看时刷新，至少间隔 5 分钟）；指数日线来自腾讯财经公开接口（东方财富日线接口约半数连接被重置）。外部请求每次新建连接，网络断开时重试一次。
+- 基金数据来自东方财富天天基金的公开移动端接口（无需密钥、非官方、无 SLA）。服务端在页面或智能助手需要产品数据时按需拉取，6 小时内复用 SQLite 缓存（`PRODUCT_CACHE_MINUTES`），不设后台轮询；单次刷新约 100 个请求，并发 6、单请求超时 4 秒，请求最多等待 1.5 秒，超出部分在后台写入缓存。
+- 接口失败时依次使用上次成功的缓存、内置快照 `server/fund-snapshot.json`，并在页面、`/market` 与智能助手结果中标注“可能不是最新”；失败后 10 分钟再重试。`PRODUCT_DATA_REMOTE=false` 只用内置快照。基金代码清单在 `server/products.mjs` 的 `FUND_CODES`，修改后运行 `npm run snapshot:products` 更新快照。
+- 持仓保存申购时的产品快照，基金被移出清单后持仓仍可展示与赎回。原演示产品 `wealth-flex`、`wealth-180` 已停售，仅保留存量持仓。
+- 中国理财网只提供登记信息（无业绩基准、起购金额与净值），且查询接口为加密请求并有验证码，未接入。
+

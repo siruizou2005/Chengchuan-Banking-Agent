@@ -2,7 +2,8 @@ import { validate, redact } from './guard.mjs';
 import { READ_TOOLS, LOW_RISK_EFFECTS, businessDate } from './policy.mjs';
 import { ledgerFor, enrich, selectLedger, resolveRange, billReport, compactReport, spendingStats, compactStats, detectAnomalies, PRESETS, KIND_LABEL } from './analytics.mjs';
 import { runAnalysis } from './sandbox.mjs';
-import { id, now, products } from '../db.mjs';
+import { id, now } from '../db.mjs';
+import { CATEGORY_LABEL } from '../products.mjs';
 import { requireThat } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 import { resolvePrincipal } from './principal.mjs';
@@ -14,16 +15,20 @@ const day={type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2}$',description:'北京时
 const range={preset:{type:'string',enum:Object.keys(PRESETS),description:'相对时段，按北京时间'},period:{type:'string',pattern:'^\\d{4}(-\\d{2}(-\\d{2})?)?$',description:'YYYY年、YYYY-MM月或YYYY-MM-DD日'},from:day,to:day};
 const kind={type:'string',enum:Object.keys(KIND_LABEL).filter(k=>k!=='opening')};
 const hasRange=a=>Boolean(a.preset||a.period||a.from||a.to);
+const fits=(rows,max=3300)=>{while(rows.length&&Buffer.byteLength(JSON.stringify(rows))>max)rows.pop();return rows;}; // tool messages over 4096 bytes are truncated
+const productBrief=p=>({id:p.id,name:p.name,category:CATEGORY_LABEL[p.category],risk:p.risk,[p.rateLabel||'收益']:p.rate,minimum:p.minimum,...(p.purchasable?{}:{status:p.purchaseStatus})});
+const productDetail=p=>Object.fromEntries(Object.entries({id:p.id,name:p.name,category:CATEGORY_LABEL[p.category],fundType:p.fundType,issuer:p.issuer,risk:p.risk,rate:p.rate,rateLabel:p.rateLabel,returns:p.returns,nav:p.nav,perTenThousand:p.perTenThousand,navDate:p.navDate,minimum:p.minimum,fee:p.fee,purchaseStatus:p.purchaseStatus,purchaseLimit:p.purchaseLimit,redeemStatus:p.redeemStatus,days:p.days}).filter(([,v])=>v!==undefined&&v!==null));
+const catalogNote=meta=>({source:meta.source,updatedAt:meta.updatedAt,stale:meta.stale,...(meta.notice?{notice:meta.notice}:{}),units:'收益率为百分比；minimum、purchaseLimit、principal为整数分；过往业绩不代表未来'});
 const STATS_BY=['category','merchant','platform','month','week','day','weekday','hour'];
 const definitions={
  get_overview:['查询本人账户余额与可用资金',obj()],
  get_ledger:['查询本人流水明细，返回{total,shown,rows}；行含bj_time北京时间（只有日期表示原对账单无时间）、amount整数分、title、tag分类、kind类型（consumption消费/refund退款/income收入/transfer_out转账给他人/self本人账户互转/wallet充值提现/investment理财存款/debt信用卡贷款/opening期初余额）、merchant商户、platform支付平台。时段用preset/period/from+to，不传为全部；keyword匹配摘要、对方、商户与附言。只需汇总时用bill_report或spending_stats',obj({...range,direction:{enum:['income','expense'],type:'string'},kind,category:str(20),keyword:str(),limit:{type:'integer',minimum:1,maximum:50}})],
  get_transactions:['查询本人交易状态',obj()],
- get_products_and_holdings:['查询产品目录、风险说明与本人持仓',obj()],
+ get_products_and_holdings:['查询定期存款与基金产品目录（基金净值和业绩来自东方财富公开数据）及本人持仓。产品较多，按category类型、maxRisk最高风险等级、keyword名称或管理人关键词筛选；sort=return按收益率从高到低。返回counts为各类数量，shown为本次列出条数',obj({category:{type:'string',enum:Object.keys(CATEGORY_LABEL)},maxRisk:{type:'integer',minimum:1,maximum:5},keyword:str(40),sort:{type:'string',enum:['return','risk']},limit:{type:'integer',minimum:1,maximum:20}})],
  get_credit_card:['查询本人信用卡',obj()],get_loans:['查询本人贷款',obj()],get_payees:['查询本人收款人簿（脱敏）',obj()],
  resolve_recipient:['按姓名、手机号、账号查找收款人；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
  bill_report:['生成账单报告，不传参数为本月。日报用period=YYYY-MM-DD或preset=today/yesterday，周报this_week/last_week，月报YYYY-MM或this_month/last_month，年报YYYY，也可任意from+to。返回消费（已扣退款）、转账给他人、收入、消费分类占比、商户Top5、收入来源、不计入消费的本人互转/充值提现/理财、趋势、环比与数据覆盖范围；本工具金额单位为元',obj(range)],spending_stats:['按维度统计，默认本月消费（已扣退款）。by：category分类/merchant商户/platform支付平台/month按月/week按周/day按日/weekday按星期/hour按小时；category只看某分类（如餐饮美食），keyword按商户关键词（如美团），kind可改为income/transfer_out等。时段参数同bill_report；本工具金额单位为元',obj({...range,by:{type:'string',enum:STATS_BY},kind,category:str(20),keyword:str(40),limit:{type:'integer',minimum:1,maximum:31}},['by'])],detect_anomalies:['检测异常支出（大额、深夜、首次大额、24小时同额重复），仅为模拟规则提示；可选时段，不传为全部流水',obj(range)],list_subscriptions:['提议查询本人订阅与周期扣费明细，用户授权确认前只返回查询范围',obj()],
- compare_products:['对比产品（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
+ compare_products:['按产品id对比近1/3/6/12个月收益、净值日期、费率、起购额、申购状态与风险等级（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含today（北京时间日期）、本人全部ledger（含kind、tag、bj_time及导入明细字段，金额整数分）和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
  remember:['记录待本人确认的记忆候选；value必须原样出现在当前用户消息的evidence片段中，不得猜测日期或风险能力。优先在最终回答附memory_candidates以避免额外工具轮次',obj({key:str(60),value:str(300),evidence:str(600)},['key','value','evidence'])],recall:['读取本人已确认且有效的记忆',obj()],
  propose_transfer:['提议转账，必须使用resolve_recipient返回的recipient，确认前不会扣款',obj({recipient:str(),amount:money,note:str(100),scheduleAt:str(40)},['recipient','amount'])],
@@ -73,10 +78,17 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'get_overview': data=redact(services.state(user).accounts); break;
  case 'get_ledger':{const rows=selectLedger(ledgerFor(bank,user.id).map(enrich),{...(hasRange(args)?resolveRange(args,businessDate()):{}),direction:args.direction,kind:args.kind,category:args.category,keyword:args.keyword});
   const shown=rows.slice(0,args.limit||20).map(r=>({bj_time:r.bj_time,amount:r.amount,title:r.title,tag:r.tag,kind:r.kind,...(r.merchant?{merchant:r.merchant}:{}),...(r.platform?{platform:r.platform}:{})}));
-  while(shown.length&&Buffer.byteLength(JSON.stringify(shown))>3300)shown.pop(); // tool messages over 4096 bytes are truncated
+  fits(shown);
   data={total:rows.length,shown:shown.length,rows:shown};break;}
  case 'get_transactions':data=redact(services.state(user).transactions);break;
- case 'get_products_and_holdings':data={products,holdings:services.state(user).holdings};event={type:'products',data};break;
+ case 'get_products_and_holdings':{await services.catalog.ready();const all=services.catalog.list(),meta=services.catalog.meta(),kw=args.keyword?.toLowerCase();
+  let rows=all.filter(p=>(!args.category||p.category===args.category)&&(!args.maxRisk||p.riskLevel<=args.maxRisk)&&(!kw||`${p.name}${p.issuer}${p.code||''}`.toLowerCase().includes(kw)));
+  if(args.sort==='return')rows=[...rows].sort((a,b)=>(b.rate??-Infinity)-(a.rate??-Infinity));else if(args.sort==='risk')rows=[...rows].sort((a,b)=>a.riskLevel-b.riskLevel);
+  const holdings=services.state(user).holdings.map(h=>({id:h.id,productId:h.product_id,name:h.product.name,risk:h.product.risk,principal:h.principal,unlock_at:h.unlock_at}));
+  const shown=fits(rows.slice(0,args.limit||10).map(productBrief),3300-Buffer.byteLength(JSON.stringify(holdings)));
+  const counts=Object.fromEntries(Object.entries(Object.groupBy(all,p=>CATEGORY_LABEL[p.category])).map(([k,v])=>[k,v.length]));
+  data={catalog:catalogNote(meta),counts,total:rows.length,shown:shown.length,products:shown,holdings};
+  event={type:'products',data:{products:rows.slice(0,shown.length),meta,title:'产品列表'}};break;}
  case 'get_credit_card':data=redact(services.state(user).creditCard);break;
  case 'get_loans':data=services.state(user).loans;break;
  case 'get_payees':data=bank.all('SELECT * FROM payees WHERE user_id=?',user.id).map(p=>({recipient:p.id,name:p.name,account:'****'+p.number.slice(-4),bank:p.bank}));break;
@@ -84,7 +96,10 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'bill_report':{const report=billReport(ledgerFor(bank,user.id),resolveRange(args,businessDate()));data=compactReport(report);event={type:'report',data:report};break;}
  case 'spending_stats':{const stats=spendingStats(ledgerFor(bank,user.id),resolveRange(args,businessDate()),{by:args.by,kind:args.kind,category:args.category,keyword:args.keyword,limit:args.limit||10});data=compactStats(stats);event={type:'stats',data:{...stats,buckets:['month','week','day','weekday','hour'].includes(stats.by)?stats.buckets:stats.buckets.slice(0,40)}};break;}
  case 'detect_anomalies':data=detectAnomalies(ledgerFor(bank,user.id),hasRange(args)?resolveRange(args,businessDate()):undefined);event={type:'anomalies',data};break;
- case 'compare_products':data={products:products.filter(p=>args.ids.includes(p.id)),holdings:[]};event={type:'products',data};break;
+ case 'compare_products':{await services.catalog.ready();const found=args.ids.map(i=>services.catalog.get(i)).filter(Boolean),meta=services.catalog.meta();
+  const detail=fits(found.map(productDetail),3000);
+  data={catalog:catalogNote(meta),products:detail,...(detail.length<found.length?{omitted:found.slice(detail.length).map(p=>p.id)}:{}),missing:args.ids.filter(i=>!services.catalog.get(i))};
+  event={type:'products',data:{products:found,meta,title:'产品对比'}};break;}
  case 'get_risk_profile':data={level:bank.get('SELECT risk_level FROM users WHERE id=?',user.id).risk_level};break;
  case 'get_scheduled_tasks':data={tasks:services.snapshot(user).scheduledTasks,plans:services.plans(user)};break;
  case 'get_cards':{const s=services.state(user);data={accounts:redact(s.accounts),creditCard:redact(s.creditCard),virtualCards:s.virtualCards,reservations:s.reservations};break;}
