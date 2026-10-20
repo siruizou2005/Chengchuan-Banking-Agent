@@ -9,13 +9,15 @@ const CODES = ['000198', '110020', '501018'];
 const raw = (code, extra = {}) => ({ FCODE: code, SHORTNAME: `基金${code}`, FTYPE: code === '000198' ? '货币型-普通货币' : '指数型-股票', DWJZ: '1.2345', LJJZ: '2.1', SYI: '1.5', FSRQ: '2026-10-19', SYL_Y: '1', SYL_3Y: '2', SYL_6Y: '3', SYL_1N: '4.5', SGZT: '开放申购', SHZT: '开放赎回', RATE: '0.12%', MINSG: '10', RISKLEVEL: '4', JJGS: '测试基金', ...extra });
 const snapshot = { capturedAt: '2026-10-01T00:00:00.000Z', funds: CODES.map(c => normalizeFund(raw(c, { SHORTNAME: `快照${c}` }), '2026-10-01T00:00:00.000Z')), market: [] };
 const json = body => ({ ok: true, json: async () => body });
+// Tencent quote line: field 1 name, 3 price, 4 prev close, 5 open, 31 change, 32 change %, 33 high, 34 low, 35 price/volume/amount.
+const quote = () => { const f = Array(40).fill('0'); Object.assign(f, { 1: '沪深300', 2: '000300', 3: '4000', 4: '3980', 5: '3990', 31: '20', 32: '0.50', 33: '4010', 34: '3975', 35: '4000/1/150000000000' }); return { ok: true, text: async () => `v_sh000300="${f.join('~')}";\n` }; };
 function fakeFetch(handler) {
   const calls = [];
   const fn = async (url, init) => { calls.push(url); return handler(url, init); };
   fn.calls = calls; return fn;
 }
 const fundOk = (overrides = {}) => fakeFetch(async url => {
-  if (url.includes('ulist')) return json({ data: { diff: [{ f12: '000300', f14: '沪深300', f2: 4000, f3: 0.5, f4: 20 }] } });
+  if (url.includes('qt.gtimg')) return quote();
   const code = new URL(url).searchParams.get('FCODE');
   if (overrides[code] === 'fail') throw new Error('boom');
   return json({ Datas: raw(code, overrides[code]) });
@@ -157,14 +159,15 @@ test('走势按需拉取并缓存：非货币基金按累计净值算区间收�
 test('指数走势取腾讯日线并缓存，行情断连时重试一次', async t => {
   let resets = 1;
   const fetch = fakeFetch(async url => {
-    if (url.includes('gtimg')) return json({ data: { sh000300: { day: [['2026-10-17', '4100', '4120.5', '4130', '4090', '1'], ['2026-10-18', '4120', '4150.25', '4160', '4110', '2']] } } });
-    if (url.includes('ulist') && resets-- > 0) throw Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' });
+    if (url.includes('fqkline')) return json({ data: { sh000300: { day: [['2026-10-17', '4100', '4120.5', '4130', '4090', '1'], ['2026-10-18', '4120', '4150.25', '4160', '4110', '2']] } } });
+    if (url.includes('qt.gtimg') && resets-- > 0) throw Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' });
     return fundOk()(url);
   });
   const { bank, catalog } = catalogWith({ remote: true, fetch });
   t.after(() => bank.db.close());
   await catalog.refresh();
-  assert.equal(catalog.market()[0].name, '沪深300');
+  const [index] = catalog.market();
+  assert.equal(index.name, '沪深300'); assert.equal(index.price, 4000); assert.equal(index.high, 4010); assert.equal(index.amount, 150000000000);
   const series = await catalog.indexHistory('000300', '1m');
   assert.deepEqual(series.points.map(p => p.value), [4120.5, 4150.25]);
   assert.equal(series.source, '腾讯财经'); assert.equal(series.metric, '收盘点位'); assert.equal(series.points[1].high, 4160);

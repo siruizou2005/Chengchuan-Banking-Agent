@@ -15,7 +15,10 @@ export const FUND_CODES = Object.freeze([
   '050025', '270042', '000369', '162411', '096001', '160213', '000071', '110011', '164906', '000614', '012348',
   '501018', '160216', '160723', '161129',
 ]);
-export const INDEX_IDS = Object.freeze(['1.000001', '0.399001', '1.000300', '0.399006']);
+// Tencent symbols for 上证指数, 深证成指, 沪深300, 创业板指.
+export const INDEX_SYMBOLS = Object.freeze(['sh000001', 'sz399001', 'sh000300', 'sz399006']);
+export const INDEX_SOURCE = '腾讯财经';
+const indexSymbol = code => INDEX_SYMBOLS.find(s => s.slice(2) === code);
 export const RISK_LABEL = Object.freeze({ 1: 'R1 低风险', 2: 'R2 中低风险', 3: 'R3 中风险', 4: 'R4 中高风险', 5: 'R5 高风险' });
 export const CATEGORY_LABEL = Object.freeze({ deposit: '定期存款', money: '货币基金', bond: '债券基金', mixed: '混合基金', equity: '股票基金', index: '指数基金', qdii: 'QDII/海外' });
 
@@ -85,36 +88,40 @@ export function freshFetch(url, { signal, headers } = {}) {
     const req = request(url, { agent: false, headers, signal }, res => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => { const text = Buffer.concat(chunks).toString('utf8'); resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(text) }); });
+      res.on('end', () => { const body = Buffer.concat(chunks); resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(body.toString('utf8')), text: async (encoding = 'utf-8') => new TextDecoder(encoding).decode(body) }); });
       res.on('error', reject);
     });
     req.on('error', reject);
     req.end();
   });
 }
-// Eastmoney's quote hosts sometimes drop the connection without a response; one quick retry
-// covers that. HTTP errors and timeouts are not retried.
-async function getJson(fetchImpl, url, timeoutMs, retries = 1) {
+// Quote hosts sometimes drop the connection or answer 5xx; one quick retry covers that.
+// 4xx and timeouts are not retried.
+async function fetchBody(fetchImpl, url, timeoutMs, read, retries = 1) {
   try {
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { final: true });
-    return await response.json();
+    if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { final: response.status < 500 });
+    return await read(response);
   } catch (error) {
     if (retries <= 0 || error.final || error.name === 'TimeoutError' || error.name === 'AbortError') throw error;
     await new Promise(resolve => setTimeout(resolve, 300));
-    return getJson(fetchImpl, url, timeoutMs, retries - 1);
+    return fetchBody(fetchImpl, url, timeoutMs, read, retries - 1);
   }
 }
+const getJson = (fetchImpl, url, timeoutMs) => fetchBody(fetchImpl, url, timeoutMs, r => r.json());
 export async function fetchFund(fetchImpl, code, timeoutMs, fetchedAt = new Date().toISOString()) {
   const body = await getJson(fetchImpl, `https://fundmobapi.eastmoney.com/FundMApi/FundBaseTypeInformation.ashx?FCODE=${code}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0`, timeoutMs);
   if (!body?.Datas?.FCODE) throw new Error(`no data for ${code}`);
   return normalizeFund(body.Datas, fetchedAt);
 }
+// Index quotes come from Tencent: Eastmoney's quote host answers 302/502 intermittently from the
+// Hong Kong server. The reply is GBK text, one line per symbol:
+// v_sh000300="1~沪深300~000300~price~prevClose~open~...~30:time~31:change~32:changePct~33:high~34:low~35:price/volume/amount~...";
 export async function fetchIndices(fetchImpl, timeoutMs, fetchedAt = new Date().toISOString()) {
-  const body = await getJson(fetchImpl, `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=${INDEX_IDS.join(',')}&fields=f2,f3,f4,f6,f12,f14,f15,f16,f17,f18`, timeoutMs);
-  const rows = body?.data?.diff;
-  if (!Array.isArray(rows) || !rows.length) throw new Error('no index data');
-  return rows.map(r => ({ code: r.f12, name: r.f14, price: num(r.f2), change: num(r.f4), changePct: num(r.f3), open: num(r.f17), high: num(r.f15), low: num(r.f16), prevClose: num(r.f18), amount: num(r.f6), updatedAt: fetchedAt }));
+  const text = await fetchBody(fetchImpl, `https://qt.gtimg.cn/q=${INDEX_SYMBOLS.join(',')}`, timeoutMs, r => r.text('gbk'));
+  const rows = [...text.matchAll(/v_(\w+)="([^"]*)"/g)].map(([, symbol, body]) => [symbol, body.split('~')]).filter(([symbol, f]) => INDEX_SYMBOLS.includes(symbol) && f.length > 35);
+  if (!rows.length) throw new Error('no index data');
+  return rows.map(([symbol, f]) => ({ code: symbol.slice(2), name: f[1], price: num(f[3]), change: num(f[31]), changePct: num(f[32]), open: num(f[5]), high: num(f[33]), low: num(f[34]), prevClose: num(f[4]), amount: num(f[35].split('/')[2]), source: INDEX_SOURCE, updatedAt: fetchedAt }));
 }
 // Eastmoney RANGE codes: y = one month, 3y/6y = three/six months, n = one year.
 export const HISTORY_RANGES = Object.freeze({ '1m': 'y', '3m': '3y', '6m': '6y', '1y': 'n' });
@@ -127,12 +134,11 @@ export async function fetchHistory(fetchImpl, product, range, timeoutMs) {
   const money = product.category === 'money', base = rows[0].acc;
   return rows.map(r => ({ date: r.date, value: money ? r.acc : Math.round((r.acc / base - 1) * 10000) / 100, ...(money ? { perTenThousand: r.nav } : { nav: r.nav }) }));
 }
-// Index daily closes come from Tencent: Eastmoney's kline host (push2his) resets about half of
-// all connections, while Tencent's endpoint answered every probe. Trading days per range:
+// Index daily closes also come from Tencent: Eastmoney's kline host (push2his) resets about half
+// of all connections. Trading days per range:
 const KLINE_DAYS = Object.freeze({ '1m': 22, '3m': 66, '6m': 130, '1y': 250 });
-export const INDEX_HISTORY_SOURCE = '腾讯财经';
 export async function fetchIndexHistory(fetchImpl, code, range, timeoutMs) {
-  const secid = INDEX_IDS.find(s => s.endsWith(`.${code}`)), symbol = `${secid.startsWith('1.') ? 'sh' : 'sz'}${code}`;
+  const symbol = indexSymbol(code);
   const body = await getJson(fetchImpl, `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,${KLINE_DAYS[range]},qfq`, timeoutMs);
   // Each row is [date, open, close, high, low, volume].
   const rows = (body?.data?.[symbol]?.day || []).map(([date, open, close, high, low]) => ({ date, value: num(close), open: num(open), high: num(high), low: num(low) })).filter(r => r.date && r.value !== null);
@@ -261,8 +267,8 @@ export function createProductCatalog(bank, options = {}) {
     return cachedSeries(productId, range, { metric: product.category === 'money' ? '7日年化' : '累计收益率', unit: '%' }, () => fetchHistory(fetchImpl, product, range, timeoutMs));
   }
   function indexHistory(code, range) {
-    if (!INDEX_IDS.some(s => s.endsWith(`.${code}`)) || !KLINE_DAYS[range]) return null;
-    return cachedSeries(`index-${code}`, range, { metric: '收盘点位', unit: '点', source: INDEX_HISTORY_SOURCE }, () => fetchIndexHistory(fetchImpl, code, range, timeoutMs), Math.min(ttlMs, 1800000));
+    if (!indexSymbol(code) || !KLINE_DAYS[range]) return null;
+    return cachedSeries(`index-${code}`, range, { metric: '收盘点位', unit: '点', source: INDEX_SOURCE }, () => fetchIndexHistory(fetchImpl, code, range, timeoutMs), Math.min(ttlMs, 1800000));
   }
   const list = () => [...DEPOSITS, ...funds];
   const get = productId => list().find(p => p.id === productId);
