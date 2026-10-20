@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import { ScanLine, ChevronRight, Eye, EyeOff, ShieldCheck, Bell, Search, Menu } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Bell, ChartNoAxesColumnIncreasing, ChevronRight, CreditCard, Eye, EyeOff, Landmark, LayoutGrid, ListChecks, MessageCircle, QrCode, ScanLine, Search, ShieldCheck, Sparkles, Sprout, Wallet } from 'lucide-react';
 import { useBank } from '../bank';
 import { yuan, date, tail } from '../api';
-import { Card, Tile, Row, Brand, Empty, Avatar, Tabs, Pill, Promo, type Icon, type Tone } from '../ui';
-import { featuredFund, riskTag } from '../products';
-import type { Product } from '../types';
-import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, IcoGrid, IcoIn, IcoOut, Logo } from '../icons';
-
-/* 功能宫格以蓝色为主，少量橙 / 红 / 金点缀。 */
+import { Card, Tile, Empty, type Icon, type Tone } from '../ui';
+import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, Logo } from '../icons';
+import { HomeCashFlow } from './HomeCashFlow';
+import './home.css';
 export const services: { id: string; label: string; icon: Icon; tone: Tone }[] = [
   { id: 'accounts', label: '银行卡', icon: IcoWallet, tone: 'blue' }, { id: 'transfer', label: '转账汇款', icon: IcoTransfer, tone: 'blue' },
   { id: 'ledger', label: '交易记录', icon: IcoRecord, tone: 'blue' }, { id: 'deposit', label: '定期存款', icon: IcoDeposit, tone: 'gold' },
@@ -24,61 +22,64 @@ const greeting = () => { const h = new Date().getHours(); return h < 6 ? '夜深
 export function Home() {
   const { data, navigate, hidden, toggleHidden } = useBank();
   const balance = data.accounts.reduce((s, a) => s + a.balance, 0);
-  const deposits = data.holdings.filter(h => h.product.type === 'deposit'), wealth = data.holdings.filter(h => h.product.type !== 'deposit');
-  const depositTotal = deposits.reduce((s, h) => s + h.principal, 0), wealthTotal = wealth.reduce((s, h) => s + h.principal, 0);
-  const holdings = depositTotal + wealthTotal;
-  const outstanding = data.loans.reduce((s, l) => s + l.outstanding, 0), credit = data.creditCard;
+  const depositTotal = data.holdings.filter(h => h.product.type === 'deposit').reduce((s, h) => s + h.principal, 0);
+  const wealthTotal = data.holdings.filter(h => h.product.type !== 'deposit').reduce((s, h) => s + h.principal, 0);
+  const total = balance + depositTotal + wealthTotal;
   const unread = data.notifications.filter(n => !n.is_read).length;
   const pending = data.transactions.filter(t => t.status === 'pending').length;
+  const pendingActions = data.agentActions.filter(a => ['proposed', 'awaiting_verification'].includes(a.status));
+  const outstanding = data.loans.reduce((s, l) => s + l.outstanding, 0);
   const [cardId, setCardId] = useState(data.accounts[0]?.id ?? '');
   const account = data.accounts.find(a => a.id === cardId) ?? data.accounts[0];
-  const [assetTab, setAssetTab] = useState('wealth');
-  const bestRate = (test: (p: Product) => boolean) => Math.max(0, ...data.products.filter(test).map(p => p.rate ?? 0));
-  const funds = data.products.filter(p => p.type === 'wealth'), featured = featuredFund(funds);
-  const mask = (v: string) => hidden ? '****' : v;
-  return <>
-    <header className="hero">
-      <div className="hero-bar"><button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button><Brand light mark={false} /><div className="hero-actions"><button className="icon-button" aria-label="消息中心" onClick={() => navigate('messages')}><Bell size={23} strokeWidth={1.8} />{unread > 0 && <i className="dot" />}</button><button className="icon-button" aria-label="扫一扫" onClick={() => navigate('scan')}><ScanLine size={23} strokeWidth={1.8} /></button></div></div>
-      <button className="hero-user" onClick={() => navigate('profile')}><Avatar size={48} /><span className="hero-user-text"><span className="hero-name">{data.user.name}<em className="user-tag"><ShieldCheck size={11} />{data.user.riskLevel ? riskTag(data.user.riskLevel) : 'Ⅰ类账户'}</em></span><small>{greeting()}，欢迎回来</small></span></button>
-      <div className="hero-quick">
-        <Tile variant="header" icon={IcoRecord} label="交易记录" onClick={() => navigate('ledger')} />
-        <Tile variant="header" icon={IcoCard} label="银行卡" onClick={() => navigate('accounts')} />
-        <Tile variant="header" icon={IcoTransfer} label="转账" onClick={() => navigate('transfer')} id="quick-transfer" />
-        <Tile variant="header" icon={IcoQr} tone="orange" label="收款码" onClick={() => navigate('receive')} />
-        <Tile variant="header" icon={IcoGrid} label="全部" onClick={() => navigate('services')} />
-      </div>
-      <div className="hero-dots" aria-hidden="true"><i className="on" /><i /></div>
+  const mask = (n: number) => hidden ? '••••' : yuan(n);
+  const assets = [
+    { route: 'accounts', label: '活期余额', amount: balance, icon: Wallet, tone: 'blue' },
+    { route: 'deposit', label: '定期存款', amount: depositTotal, icon: Sprout, tone: 'sage' },
+    { route: 'wealth', label: '基金理财', amount: wealthTotal, icon: ChartNoAxesColumnIncreasing, tone: 'oak' },
+  ];
+  return <main className="home-dashboard">
+    <header className="home-welcome">
+      <div className="home-brand-row"><span className="home-brand"><Logo size={23} />澄川银行<span>私人财富空间</span></span><button className="home-icon-button home-notifications" aria-label={unread ? `消息中心，${unread}条未读` : '消息中心'} onClick={() => navigate('messages')}><Bell size={20} />{unread > 0 && <i />}</button></div>
+      <div className="home-greeting-row"><div><p className="home-greeting">{greeting()}，{data.user.name}</p><h1>让财富有序，<br />让生活从容。</h1></div><button className="home-profile" aria-label="查看我的资料" onClick={() => navigate('profile')}><span>{data.user.name.slice(-2)}</span><Sprout size={16} aria-hidden="true" /></button></div>
     </header>
-    <main className="home-body">
-      <section className="card asset-summary" aria-label="资产总览">
-        <div className="asset-row"><span className="asset-label">总资产<button className="eye" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={18} /> : <Eye size={18} />}</button></span><button className="asset-total" onClick={() => navigate('accounts')} data-testid="total-assets">{hidden ? '****' : `¥${yuan(balance + holdings)}`}</button></div>
-        <div className="asset-row sub"><span>活期余额 <b>{mask(yuan(balance))}</b></span><span>存款理财 <b>{mask(yuan(holdings))}</b></span></div>
-      </section>
-      {data.agentActions.some(a => ['proposed', 'awaiting_verification'].includes(a.status) && (a.level === 'red' || a.channel !== 'app')) && <button className="card ticker" onClick={() => navigate('tasks')}><em className="tag red">待确认</em><span>有操作等待您在App内确认</span><ChevronRight size={18} /></button>}
-      {pending > 0 && <button className="card ticker" onClick={() => navigate('transactions')}><em className="tag orange">待确认</em><span>您有 {pending} 笔交易待确认，请及时处理</span><ChevronRight size={18} className="chevron" /></button>}
-      <Card head={<Tabs items={data.accounts.map((a, i) => ({ id: a.id, label: data.accounts.length > 1 ? `储蓄卡${i + 1}` : '储蓄卡' }))} value={account?.id ?? ''} onChange={setCardId} />}>
-        {account && <>
-          <button className={`debit-card${account.status === 'frozen' ? ' frozen' : ''}`} onClick={() => navigate('accounts')}><span className="debit-head"><span>澄川卡</span><em>尾号 {tail(account.number)}</em>{account.status === 'frozen' && <em>已冻结</em>}</span><strong className="debit-balance">{mask(yuan(account.balance))}</strong><span className="debit-caption">余额{account.held > 0 && !hidden ? `，其中 ${yuan(account.held)} 为待确认预留` : ''}</span><span className="debit-mark" aria-hidden="true"><Logo size={150} watermark /></span></button>
-          <div className="pill-row"><Pill onClick={() => navigate('ledger')}>动账明细</Pill><Pill onClick={() => navigate('transfer')}>转出</Pill><Pill primary onClick={() => navigate('receive')}>从他行转入</Pill></div>
-        </>}
-      </Card>
-      <Card head={<Tabs items={[{ id: 'wealth', label: '财富' }, { id: 'loan', label: '贷款' }, { id: 'credit', label: '信用卡' }]} value={assetTab} onChange={setAssetTab} />}>
-        {assetTab === 'wealth' && <>
-          <Row glyph="存" tone="orange" title="定期存款" subtitle={`整存整取，最高年利率 ${bestRate(p => p.type === 'deposit').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(depositTotal))}</b>} trailingSub={`${deposits.length} 笔持有`} action={<Pill small primary onClick={() => navigate('deposit')}>转入</Pill>} />
-          <Row glyph="基" tone="coral" title="基金理财" subtitle={`${funds.length}只基金，货币基金7日年化最高 ${bestRate(p => p.category === 'money').toFixed(2)}%`} trailing={<b className="amount">{mask(yuan(wealthTotal))}</b>} trailingSub={`${wealth.length} 笔持有`} action={<Pill small primary onClick={() => navigate('wealth')}>转入</Pill>} />
-        </>}
-        {assetTab === 'loan' && <Row glyph="贷" tone="blue" title="澄心贷" subtitle={`可借额度 ¥${yuan(20000000 - outstanding)}`} trailing={<b className="amount">{mask(yuan(outstanding))}</b>} trailingSub="待还本金" action={<Pill small primary onClick={() => navigate('loan')}>借款</Pill>} />}
-        {assetTab === 'credit' && <Row glyph="卡" tone="red" title="澄光白金卡" subtitle={`可用额度 ¥${yuan(credit.credit_limit - credit.used)}`} trailing={<b className="amount">{mask(yuan(credit.used))}</b>} trailingSub="当前待还" action={<Pill small primary onClick={() => navigate('credit')}>还款</Pill>} />}
-      </Card>
-      {featured && <Promo title={featured.name} subtitle={[featured.risk, ...featured.tags.slice(0, 2)].join(' | ')} rate={featured.rate} caption={featured.rateLabel || '年化'} action="去看看" onClick={() => navigate('wealth')} note={data.productMeta?.stale ? '数据可能不是最新' : undefined} />}
-      <Card title="最近交易" action="全部" onAction={() => navigate('ledger')}>
-        {data.ledger.length ? data.ledger.slice(0, 4).map(l => <Row key={l.id} icon={l.amount > 0 ? IcoIn : IcoOut} tone={l.amount > 0 ? 'red' : 'blue'} title={l.title} subtitle={date(l.created_at)} trailing={<b className={`amount${l.amount > 0 ? ' income' : ''}`}>{hidden ? '****' : `${l.amount > 0 ? '+' : '-'}${yuan(Math.abs(l.amount))}`}</b>} onClick={() => navigate('ledger')} chevron={false} />) : <Empty />}
-      </Card>
-      <p className="footnote">澄川银行 · 模拟演示环境</p>
-    </main>
-  </>;
-}
 
+    <section className="home-card home-assets" aria-labelledby="assets-title">
+      <div className="home-section-head"><span className="home-asset-label" id="assets-title">总资产 <button className="home-icon-button" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></span><span className="home-currency">人民币 · CNY</span></div>
+      <button className="home-total" onClick={() => navigate('accounts')} data-testid="total-assets">{!hidden && <span>¥</span>}{mask(total)}</button>
+      <p className="home-asset-note"><ShieldCheck size={13} />账户余额与持仓本金合计</p>
+      <div className={`home-asset-bar${hidden ? ' is-hidden' : ''}`} aria-hidden="true">{total > 0 && !hidden ? assets.filter(a => a.amount > 0).map(a => <span key={a.route} className={a.tone} style={{ flex: a.amount }} />) : <span className="neutral" />}</div>
+      <div className="home-asset-breakdown">{assets.map(a => <button key={a.route} onClick={() => navigate(a.route)}><span className={`home-asset-icon ${a.tone}`}><a.icon size={18} strokeWidth={1.6} /></span><span className="home-asset-name">{a.label}<ChevronRight size={12} /></span><strong>{mask(a.amount)}</strong></button>)}</div>
+    </section>
+
+    <div className="home-shortcuts" aria-label="常用服务">{[
+      { route: 'transfer', label: '转账', icon: ArrowLeftRight }, { route: 'receive', label: '收款码', icon: QrCode },
+      { route: 'ledger', label: '交易记录', icon: ListChecks }, { route: 'scan', label: '扫一扫', icon: ScanLine },
+      { route: 'services', label: '全部服务', icon: LayoutGrid },
+    ].map(s => <button key={s.route} onClick={() => navigate(s.route)} data-testid={s.route === 'transfer' ? 'quick-transfer' : undefined}><span><s.icon size={21} strokeWidth={1.6} /></span>{s.label}</button>)}</div>
+
+    {pending > 0 && <button className="home-attention" onClick={() => navigate('transactions')}><ShieldCheck size={18} /><span>有 {pending} 笔交易等待您确认</span><ChevronRight size={16} /></button>}
+    <section className="home-card home-assistant" aria-labelledby="home-assistant-title">
+      <svg className="home-landscape" viewBox="0 0 230 160" aria-hidden="true"><path d="M0 130C45 110 60 15 115 28S185 104 230 52V160H0Z" fill="#ede1d2" /><path d="M15 160C58 125 90 64 135 75S188 127 230 94V160Z" fill="#dfcbb7" /><path d="M73 160C130 112 168 107 230 141V160Z" fill="#b5b69c" /><path d="M200 149C197 127 202 107 199 88M200 123C186 123 180 114 180 107C192 108 200 114 200 123M200 111C211 106 214 94 212 88C202 94 199 103 200 111" fill="none" stroke="#7f9479" strokeWidth="2" strokeLinecap="round" /></svg>
+      <div className="home-assistant-heading"><span><Sparkles size={19} />私人财富助手</span><button aria-label="查看助手操作与计划" onClick={() => navigate('tasks')}><ListChecks size={19} /></button></div>
+      <h2 id="home-assistant-title">每一笔收支，<br />都可以更有章法。</h2><p>聊聊账单、理财，或下一步的安排。</p>
+      {pendingActions.length > 0 && <button className="home-agent-pending" onClick={() => navigate('tasks')}>{pendingActions.length} 项助手操作待确认 <ChevronRight size={14} /></button>}
+      <div className="home-ai-actions"><button className="primary" onClick={() => navigate('assistant')}><MessageCircle size={17} />问问助手</button><button onClick={() => navigate('advice')}><ChartNoAxesColumnIncreasing size={17} />配置建议</button><button onClick={() => navigate('tasks')}><ListChecks size={17} />操作计划</button></div>
+    </section>
+
+    <HomeCashFlow />
+
+    <section className="home-card home-activity" aria-labelledby="activity-title"><div className="home-section-head"><h2 id="activity-title">最近交易</h2><button className="home-text-button" onClick={() => navigate('ledger')}>查看全部 <ChevronRight size={15} /></button></div>
+      {data.ledger.length ? data.ledger.slice(0, 4).map(l => <button className="home-transaction" key={l.id} onClick={() => { const day = l.bj_time?.slice(0, 10) || new Date(new Date(l.created_at).getTime() + 8 * 3600000).toISOString().slice(0, 10); navigate(`ledger?from=${day}&to=${day}&q=${encodeURIComponent(l.transaction_id)}`); }}>
+        <span className={`home-transaction-icon ${l.amount > 0 ? 'incoming' : 'outgoing'}`}>{l.amount > 0 ? <ArrowDownLeft size={21} /> : <ArrowUpRight size={21} />}</span><span className="home-transaction-description"><strong>{l.title}</strong><small>{l.tag || '账户交易'} · {l.time_precision === 'day' ? l.bj_time?.slice(5, 10) : date(l.created_at)}</small></span><strong className={`home-transaction-amount${l.amount > 0 ? ' incoming' : ''}`}>{hidden ? '••••' : `${l.amount > 0 ? '+' : '−'}${yuan(Math.abs(l.amount))}`}</strong><ChevronRight size={14} /></button>) : <Empty title="还没有交易记录" />}
+    </section>
+
+    <section className="home-card home-account" aria-labelledby="account-title"><div className="home-section-head"><h2 id="account-title">我的账户</h2><button className="home-text-button" onClick={() => navigate('accounts')}>管理 <ChevronRight size={15} /></button></div>
+      {account ? <><div className="home-account-heading"><span className="home-asset-icon blue"><CreditCard size={21} /></span><div><strong>澄川储蓄卡</strong><span>尾号 {tail(account.number)} · {account.status === 'active' ? '使用中' : account.status === 'lost' ? '已挂失' : '已冻结'}</span></div>{data.accounts.length > 1 && <select aria-label="选择储蓄卡" value={account.id} onChange={e => setCardId(e.target.value)}>{data.accounts.map(a => <option value={a.id} key={a.id}>尾号 {tail(a.number)}</option>)}</select>}</div><div className="home-account-values"><div><span>可用余额</span><strong>{mask(account.available)}</strong></div><div><span>待确认预留</span><strong>{mask(account.held)}</strong></div></div></> : <Empty title="暂无储蓄账户" />}
+      <div className="home-liabilities"><button onClick={() => navigate('credit')}><CreditCard size={17} /><span>信用卡待还<strong>{mask(data.creditCard.used)}</strong></span><ChevronRight size={14} /></button><button onClick={() => navigate('loan')}><Landmark size={17} /><span>贷款待还本金<strong>{mask(outstanding)}</strong></span><ChevronRight size={14} /></button></div>
+    </section>
+    <footer className="home-footnote"><ShieldCheck size={13} /><span>澄川银行 · 模拟演示环境</span></footer>
+  </main>;
+}
 export function ServiceDirectory({ search = false }: { search?: boolean }) {
   const { navigate } = useBank();
   const [q, setQ] = useState('');
