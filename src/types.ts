@@ -7,6 +7,17 @@ export type Product = {
   purchaseLimit?: number | null; purchasable?: boolean; source?: string; sourceUrl?: string; updatedAt?: string;
 };
 export type ProductMeta = { source: string; updatedAt: string; stale: boolean; fallback: string | null; notice: string | null };
+export type AdviceProduct = { id: string; name: string; category: string; risk: string; riskLevel: number; metric: { label: string; value: number | null }; metrics: { maxDrawdown: number; volatility: number; sharpe: number | null } | null; reason: string; amount: number; minimum: number };
+export type Advice = {
+  asOf: string; stage: 'risk_assessment' | 'no_funds' | 'horizon' | 'emergency' | 'plan'; user: { riskLevel: number; risk: string };
+  profile: { available: number; monthlySpend: number; monthlyIncome: number; monthlySurplus: number; months: number; basis: string; investable: number;
+    emergency: { target: number; min: number; covered: number; gap: number; months: number | null }; commitments: { creditCard: number };
+    holdings: { liquid: number; stable: number; growth: number; total: number; nextMaturity: { name: string; date: string; principal: number } | null } };
+  params: { amount: number; horizon: 'short' | 'mid' | 'long' | null; horizonSource: string | null; suggestedAmount: number };
+  gate: { title: string; text: string; action: { label: string; route: string } | null } | null;
+  plan: { mode: 'normal' | 'emergency'; template: Record<string, number>; buckets: { id: 'liquid' | 'stable' | 'growth'; label: string; share: number; amount: number; products: AdviceProduct[] }[]; excluded: { total: number; reasons: { reason: string; count: number }[] }; notes: string[] } | null;
+  warnings: string[]; suggestions: string[]; source: { products: string; updatedAt: string; stale: boolean; cashflow: string }; disclaimer: string;
+};
 export type MarketIndex = { code: string; name: string; price: number | null; change: number | null; changePct: number | null; open?: number | null; high?: number | null; low?: number | null; prevClose?: number | null; amount?: number | null; updatedAt: string };
 export type Holding = { id: string; product_id: string; principal: number; created_at: string; unlock_at: string; product: Product };
 export type Loan = { id: string; principal: number; outstanding: number; months: number; status: string; created_at: string };

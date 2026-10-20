@@ -505,3 +505,14 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .memory-heading { justify-content: space-between; }
 .memory-actions { margin-top: 12px; }
 .memory-actions button { min-height: 40px; }
+
+/* 理财页"配置建议"入口与独立页面 */
+.advice-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 14px 16px; text-align: left; color: var(--text); }
+.advice-entry strong { display: block; font-size: 15px; font-weight: 600; }
+.advice-entry small { display: block; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.advice-page .agent-card { margin-top: 0; border: 0; }
+.advice-page > .btn-text { display: block; margin: 4px auto 0; }
+.preview-note { margin: -4px 0 0; font-size: 12px; color: var(--text-3); }
+.btn-text.center { display: flex; align-items: center; justify-content: center; gap: 2px; width: 100%; padding: 12px 0 2px; }
+.funds-filter { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; position: sticky; top: 48px; z-index: 3; }
+.funds-filter .product-filter { margin: 0; }

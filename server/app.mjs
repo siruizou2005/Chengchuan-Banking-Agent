@@ -2,6 +2,7 @@ import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
 import { createProductCatalog, holdingSnapshot } from './products.mjs';
+import { wealthAdvice } from './wealth.mjs';
 import { registerChat } from './chat.mjs';
 import { registerVoice } from './voice.mjs';
 import { createChannels } from './channels/index.mjs';
@@ -374,6 +375,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const result = await catalog.history(req.params.id, range);
     requireThat(result, '该产品没有走势数据', 404, 'NOT_FOUND');
     res.json(result);
+  });
+  route('get', '/wealth/advice', '理财配置建议：amount（元，可选）、horizon=short/mid/long（可选）；按风险测评、活期余额、近3个月收支与应急资金确定性筛选排序，只读', async (req, res) => {
+    const horizon = req.query.horizon ? String(req.query.horizon) : undefined;
+    requireThat(!horizon || ['short', 'mid', 'long'].includes(horizon), '资金期限须为short、mid或long');
+    await catalog.ready();
+    res.json(await wealthAdvice(services, req.user, { amount: req.query.amount ? cents(String(req.query.amount)) : undefined, horizon }));
   });
   route('get', '/market/:code/history', '指数日线收盘点位：code 为 000001/399001/000300/399006，range=1m/3m/6m/1y，按需拉取并缓存', async (req, res) => {
     const range = String(req.query.range || '3m');

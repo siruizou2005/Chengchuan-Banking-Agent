@@ -4,7 +4,8 @@ import { ledgerFor, enrich, selectLedger, resolveRange, billReport, compactRepor
 import { runAnalysis } from './sandbox.mjs';
 import { id, now } from '../db.mjs';
 import { CATEGORY_LABEL } from '../products.mjs';
-import { requireThat } from '../errors.mjs';
+import { wealthAdvice, compactAdvice } from '../wealth.mjs';
+import { requireThat, cents } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 import { resolvePrincipal } from './principal.mjs';
 const str=(maxLength=100)=>({type:'string',minLength:1,maxLength});
@@ -28,6 +29,7 @@ const definitions={
  get_credit_card:['查询本人信用卡',obj()],get_loans:['查询本人贷款',obj()],get_payees:['查询本人收款人簿（脱敏）',obj()],
  resolve_recipient:['按姓名、手机号、账号查找收款人；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
  bill_report:['生成账单报告，不传参数为本月。日报用period=YYYY-MM-DD或preset=today/yesterday，周报this_week/last_week，月报YYYY-MM或this_month/last_month，年报YYYY，也可任意from+to。返回消费（已扣退款）、转账给他人、收入、消费分类占比、商户Top5、收入来源、不计入消费的本人互转/充值提现/理财、趋势、环比与数据覆盖范围；本工具金额单位为元',obj(range)],spending_stats:['按维度统计，默认本月消费（已扣退款）。by：category分类/merchant商户/platform支付平台/month按月/week按周/day按日/weekday按星期/hour按小时；category只看某分类（如餐饮美食），keyword按商户关键词（如美团），kind可改为income/transfer_out等。时段参数同bill_report；本工具金额单位为元',obj({...range,by:{type:'string',enum:STATS_BY},kind,category:str(20),keyword:str(40),limit:{type:'integer',minimum:1,maximum:31}},['by'])],detect_anomalies:['检测异常支出（大额、深夜、首次大额、24小时同额重复），仅为模拟规则提示；可选时段，不传为全部流水',obj(range)],list_subscriptions:['提议查询本人订阅与周期扣费明细，用户授权确认前只返回查询范围',obj()],
+ wealth_advice:['生成本人理财配置建议：服务端按风险测评、活期余额、近3个月收支、应急资金和资金期限确定性筛选排序产品，返回资金体检、引导步骤、分配方案及每款产品的理由。amount为拟投资金额（元，不传按建议可投资金额），horizon为资金期限：short随时可能用、mid 3-12个月、long 1年以上（不传按风险测评或由用户在卡片中选择）。推荐理财必须用本工具',obj({amount:money,horizon:{type:'string',enum:['short','mid','long']}})],
  compare_products:['按产品id对比近1/3/6/12个月收益、净值日期、费率、起购额、申购状态与风险等级（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含today（北京时间日期）、本人全部ledger（含kind、tag、bj_time及导入明细字段，金额整数分）和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
  remember:['记录待本人确认的记忆候选；value必须原样出现在当前用户消息的evidence片段中，不得猜测日期或风险能力。优先在最终回答附memory_candidates以避免额外工具轮次',obj({key:str(60),value:str(300),evidence:str(600)},['key','value','evidence'])],recall:['读取本人已确认且有效的记忆',obj()],
@@ -96,6 +98,7 @@ export async function executeTool(services,user,name,raw,context={}) {
  case 'bill_report':{const report=billReport(ledgerFor(bank,user.id),resolveRange(args,businessDate()));data=compactReport(report);event={type:'report',data:report};break;}
  case 'spending_stats':{const stats=spendingStats(ledgerFor(bank,user.id),resolveRange(args,businessDate()),{by:args.by,kind:args.kind,category:args.category,keyword:args.keyword,limit:args.limit||10});data=compactStats(stats);event={type:'stats',data:{...stats,buckets:['month','week','day','weekday','hour'].includes(stats.by)?stats.buckets:stats.buckets.slice(0,40)}};break;}
  case 'detect_anomalies':data=detectAnomalies(ledgerFor(bank,user.id),hasRange(args)?resolveRange(args,businessDate()):undefined);event={type:'anomalies',data};break;
+ case 'wealth_advice':{await services.catalog.ready();const advice=await wealthAdvice(services,user,{amount:args.amount?cents(args.amount):undefined,horizon:args.horizon});data=compactAdvice(advice);event={type:'advice',data:advice};break;}
  case 'compare_products':{await services.catalog.ready();const found=args.ids.map(i=>services.catalog.get(i)).filter(Boolean),meta=services.catalog.meta();
   const detail=fits(found.map(productDetail),3000);
   data={catalog:catalogNote(meta),products:detail,...(detail.length<found.length?{omitted:found.slice(detail.length).map(p=>p.id)}:{}),missing:args.ids.filter(i=>!services.catalog.get(i))};

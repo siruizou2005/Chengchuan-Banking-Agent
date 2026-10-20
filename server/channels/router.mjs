@@ -18,6 +18,12 @@ export function eventsText(result,{maskAmounts=false,origin=''}={}) {
   if(['action','plan'].includes(event.type)){text.push(a.level==='red'?`【待App加强验证】${a.title}\n操作编号：${a.id}\n请在App内完成人脸模拟、短信验证码及支付密码确认：${appLink(origin,a.id)}`:`【待授权确认】${a.title}${a.args.note?'\n备注：'+a.args.note:''}\n操作编号：${a.id}\n为保障资金安全，请在App内输入支付密码确认：${appLink(origin,a.id)}\n回复「取消 ${a.id}」可放弃。`);}
   if(event.type==='report')text.push(a.totals?`【账单·${a.label}】${a.from}至${a.to}\n消费¥${yuan(a.totals.consumption)}（已扣退款），转账给他人¥${yuan(a.totals.transferOut)}，收入¥${yuan(a.totals.income)}\n${a.categories.slice(0,6).map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}${a.excluded.length?'\n不计入消费：'+a.excluded.map(e=>`${e.name} 转出¥${yuan(e.out)} 转入¥${yuan(e.in)}`).join('；'):''}`:`【账单·${a.period}】收入¥${yuan(a.income)}，支出¥${yuan(a.expense)}\n${a.categories.map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}`);
   if(event.type==='stats')text.push(`【统计·${a.label}·${STATS_LABEL[a.by]}】合计¥${yuan(a.total)}\n${[...a.buckets].filter(b=>b.count).sort((x,y)=>y.amount-x.amount).slice(0,8).map(b=>`${b.key} ¥${yuan(b.amount)}`).join('；')}`);
+  if(event.type==='advice'){const p=a.profile,lines=[`【配置建议·${a.user.risk}】活期可用¥${yuan(p.available)}，月均支出¥${yuan(p.monthlySpend)}，建议可投资¥${yuan(p.investable)}`];
+   if(a.gate)lines.push(`${a.gate.title}：${a.gate.text}`);
+   for(const b of a.plan?.buckets||[])lines.push(`${b.label}${b.share}%：${b.products.map(x=>`${x.name}¥${yuan(x.amount)}（${x.reason}）`).join('；')}`);
+   if(a.plan?.excluded.total)lines.push(`已排除${a.plan.excluded.total}款：${a.plan.excluded.reasons.map(r=>`${r.reason}${r.count}款`).join('、')}`);
+   text.push(lines.join('\n'));}
+  if(event.type==='products')text.push(`【${a.title||'产品'}】`+a.products.slice(0,8).map(p=>`${p.name}（${p.risk}，${p.rateLabel||'收益'}${p.rate??'--'}%）`).join('；'));
   if(event.type==='subscriptions')text.push('【订阅】'+a.subscriptions.map(s=>`${s.merchant} ¥${yuan(s.amount)}/月（${s.status}）`).join('；'));
  }
  const output=redactIdentity(text.join('\n\n'));return maskAmounts?maskMoney(output):output;

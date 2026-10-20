@@ -29,5 +29,7 @@ export function wechatResultText(result,requestId,origin,bank) {
     let summary='',bytes=0;for(const character of text){bytes+=Buffer.byteLength(character,'utf8');if(bytes>3000)break;summary+=character;}
     return summary+`…\n完整结果：${resultLink(origin,requestId)}`;
   }
+  // The advice card lets the user change horizon and amount and open product details, which text cannot.
+  if((result.events||[]).some(e=>e.type==='advice'))return `${text}\n调整期限与金额、查看产品详情请在App操作：${resultLink(origin,requestId)}`;
   return text||`本次结果请在App查看：${resultLink(origin,requestId)}`;
 }

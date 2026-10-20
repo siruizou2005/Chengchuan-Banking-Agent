@@ -4,7 +4,7 @@ import { hasSmsFactor } from '../sms.mjs';
 export const POLICY_VERSION = 'permissions-v2';
 export const BUSINESS_TIMEZONE = 'Asia/Shanghai';
 export const THRESHOLD = 100000;
-export const READ_TOOLS = new Set(['get_overview','get_ledger','get_transactions','get_products_and_holdings','get_credit_card','get_loans','get_payees','resolve_recipient','bill_report','spending_stats','detect_anomalies','compare_products','get_risk_profile','get_scheduled_tasks','get_cards','run_analysis','recall','decline_off_topic']);
+export const READ_TOOLS = new Set(['wealth_advice','get_overview','get_ledger','get_transactions','get_products_and_holdings','get_credit_card','get_loans','get_payees','resolve_recipient','bill_report','spending_stats','detect_anomalies','compare_products','get_risk_profile','get_scheduled_tasks','get_cards','run_analysis','recall','decline_off_topic']);
 export const LOW_RISK_EFFECTS = new Set(['remember','set_reminder','handover_to_human']);
 export const cumulativeTools = new Set(['propose_transfer','propose_payment']);
 export const rank = { green: 0, yellow: 1, red: 2 };

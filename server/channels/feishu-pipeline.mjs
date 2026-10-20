@@ -8,7 +8,7 @@ import { channelText } from './preferences.mjs';
 
 const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 const pending=['queued','running'];
-const appCards={report:'账单图表',stats:'统计图表',subscriptions:'订阅明细',products:'产品对比',anomalies:'异常支出明细'};
+const appCards={report:'账单图表',stats:'统计图表',subscriptions:'订阅明细',products:'产品列表与对比',advice:'配置建议（可调整期限与金额、查看产品详情）',anomalies:'异常支出明细'};
 export const feishuResultLink=(origin,requestId)=>`${origin||''}/#feishu-requests/${requestId}`;
 
 // Acknowledgement follows durable acceptance. Network calls never run inside a transaction.

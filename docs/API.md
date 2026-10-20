@@ -59,6 +59,7 @@
 | GET /products /holdings /loans /credit-card | 分别获取业务资源。/products 返回 2 款定期与约 100 只公募基金，基金净值、近1/3/6/12月收益、风险等级、起购额、费率与申购状态来自东方财富公开接口；响应头 `X-Data-Updated-At`、`X-Data-Stale` 标注时效 |
 | GET /products/:id/history?range=1m\|3m\|6m\|1y | 基金走势 `{metric, unit, points[{date,value,nav\|perTenThousand}], source, updatedAt, stale, notice}`：货币基金为7日年化，其余为以区间首日为基准的累计收益率（按累计净值，含分红）；打开详情时按需拉取，按基金和区间缓存，失败时返回上次缓存并标注 |
 | GET /market/:code/history?range=1m\|3m\|6m\|1y | 指数日线 `{metric:'收盘点位', points[{date,value,open,high,low}], source:'腾讯财经', ...}`；code 为 000001/399001/000300/399006；按需拉取，缓存 30 分钟 |
+| GET /wealth/advice?amount=元&horizon=short\|mid\|long | 理财配置建议（只读、确定性）：`{stage, profile, params, gate, plan, suggestions, warnings, source, disclaimer}`。stage 依次为 `risk_assessment`（未测评，只给测评引导）、`no_funds`、`horizon`（未选资金期限）、`emergency`（应急资金不足，只推荐 R1 货币基金）、`plan`。profile 含活期可用、近3个整月月均支出与结余、应急资金（目标6个月支出）、信用卡待还与可投资金额；plan 按流动/稳健/进取分配，每部分 1–2 款产品附理由与建议金额，并列出排除原因。未传 horizon 时取最近一次风险测评第3题 |
 | GET /market | `{indices, meta}`：上证、深证、沪深300、创业板指数与产品数据时效；`meta.stale` 为 true 时 `meta.notice` 给出“可能不是最新”提示 |
 | PATCH /credit-card | status=active/frozen/lost、pin；解冻与挂失同上 |
 | GET /payees | 收款人列表 |
@@ -87,7 +88,7 @@
 
 - `messages` 只接受 user/assistant 角色，最多 24 条、单条 6000 字、合计 12000 字，最后一条必须是 user。历史 assistant 消息不构成已执行的证据。
 - `sessionId` 可选；首轮由服务端生成并返回，后续携带以归入同一对话。`expectedUserId` 可选，登录账户变化时返回 409 `ACCOUNT_CHANGED`。
-- 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`stats`（多维统计，两者都带 `suggestions` 追问建议，每轮最多一张）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
+- 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`advice`（理财配置建议，卡片内可改期限与金额并跳转产品详情）、`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`stats`（多维统计，两者都带 `suggestions` 追问建议，每轮最多一张）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
 - 智能体锁定时返回 200 且 `events` 含 `locked`；`AGENT_DISABLED=true` 或锁定期间的工具调用与提议接口返回 423 `AGENT_LOCKED`。
 
 ### 动作与计划
@@ -216,7 +217,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 
 ### 工具清单
 
-查询（绿）：`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`spending_stats`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
+查询（绿）：`wealth_advice`、`get_overview`、`get_ledger`、`get_transactions`、`get_products_and_holdings`、`get_credit_card`、`get_loans`、`get_payees`、`resolve_recipient`、`bill_report`、`spending_stats`、`detect_anomalies`、`compare_products`、`get_risk_profile`、`get_scheduled_tasks`、`get_cards`、`run_analysis`、`recall`。
 
 已登记低风险副作用（绿）：`remember` 仅保存有本轮原文证据的非敏感偏好候选，确认后才用于回答；`set_reminder` 仅创建站内提醒，`handover_to_human` 仅创建模拟工单。
 
