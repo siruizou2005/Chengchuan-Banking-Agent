@@ -176,3 +176,20 @@ test('指数走势取腾讯日线并缓存，行情断连时重试一次', async
   assert.equal(fetch.calls.length, calls);
   assert.equal(await catalog.indexHistory('600519', '1m'), null);
 });
+
+test('缓存来自旧版本格式时立即刷新一次，之后照常遵守缓存期限', async t => {
+  const fetch = fundOk();
+  const { bank, catalog } = catalogWith({ remote: true, fetch, ttlMs: 3600000 });
+  t.after(() => bank.db.close());
+  await catalog.refresh();
+  const old = catalog.get('fund-110020');
+  bank.run('UPDATE product_cache SET data=? WHERE id=?', JSON.stringify({ ...old, schema: undefined, navChange: undefined }), old.id);
+  const reloaded = createProductCatalog(bank, { snapshot, codes: CODES, remote: true, fetch, ttlMs: 3600000 });
+  const before = fetch.calls.length;
+  await reloaded.ready();
+  // One fund refresh (funds plus index quotes); the quote TTL itself has not expired.
+  assert.equal(fetch.calls.length - before, CODES.length + 1);
+  assert.equal(reloaded.get('fund-110020').schema, 2);
+  await reloaded.ready();
+  assert.equal(fetch.calls.length - before, CODES.length + 1);
+});

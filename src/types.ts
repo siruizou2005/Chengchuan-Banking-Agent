@@ -3,7 +3,7 @@ export type Account = { id: string; number: string; name: string; balance: numbe
 export type Product = {
   id: string; type: string; name: string; subtitle: string; rate: number | null; rateLabel?: string; days: number; minimum: number; risk: string; riskLevel?: number; tags: string[]; description: string;
   category?: string; fundType?: string; code?: string; issuer?: string; returns?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null };
-  nav?: number | null; accNav?: number | null; perTenThousand?: number | null; navDate?: string | null; fee?: string; purchaseStatus?: string; redeemStatus?: string;
+  nav?: number | null; accNav?: number | null; navChange?: number | null; perTenThousand?: number | null; navDate?: string | null; fee?: string; purchaseStatus?: string; redeemStatus?: string;
   purchaseLimit?: number | null; purchasable?: boolean; source?: string; sourceUrl?: string; updatedAt?: string;
 };
 export type ProductMeta = { source: string; updatedAt: string; stale: boolean; fallback: string | null; notice: string | null };

@@ -58,7 +58,9 @@ function purchaseLimit(status = '') {
   const m = status.match(/上限([\d.]+)(万|亿)?元/);
   return m ? Math.round(Number(m[1]) * ({ 万: 1e4, 亿: 1e8 }[m[2]] || 1) * 100) : null;
 }
-const yuanText = c => { const y = c / 100; return y >= 1e4 ? `${y / 1e4}万元` : `${y}元`; };
+const yuanText = c => { const y = c / 100; return y >= 1e8 ? `${y / 1e8}亿元` : y >= 1e4 ? `${y / 1e4}万元` : `${y}元`; };
+// Bump when normalizeFund gains fields, so cached rows from an older build are refetched at once.
+export const FUND_SCHEMA = 2;
 
 export function normalizeFund(d, fetchedAt) {
   const code = String(d.FCODE), cat = category(d.FTYPE), money = cat === 'money';
@@ -67,10 +69,10 @@ export function normalizeFund(d, fetchedAt) {
   const status = d.SGZT || '未知', limit = purchaseLimit(status), purchasable = !status.includes('暂停申购');
   const rate = money ? num(d.SYI) : num(d.SYL_1N);
   return {
-    id: `fund-${code}`, code, type: 'wealth', category: cat, fundType: d.FTYPE, name: d.SHORTNAME, issuer: d.JJGS,
+    id: `fund-${code}`, schema: FUND_SCHEMA, code, type: 'wealth', category: cat, fundType: d.FTYPE, name: d.SHORTNAME, issuer: d.JJGS,
     riskLevel, risk: RISK_LABEL[riskLevel], rate, rateLabel: money ? '7日年化' : '近一年收益',
     returns: { m1: num(d.SYL_Y), m3: num(d.SYL_3Y), m6: num(d.SYL_6Y), y1: num(d.SYL_1N) },
-    ...(money ? { perTenThousand: num(d.DWJZ) } : { nav: num(d.DWJZ), accNav: num(d.LJJZ) }), navDate: d.FSRQ || null,
+    ...(money ? { perTenThousand: num(d.DWJZ) } : { nav: num(d.DWJZ), accNav: num(d.LJJZ), navChange: num(d.RZDF) }), navDate: d.FSRQ || null,
     minimum, fee: d.RATE || '0.00%', purchaseStatus: status, redeemStatus: d.SHZT || '未知', purchaseLimit: limit, purchasable, days: 0,
     subtitle: `${CATEGORY_LABEL[cat]} · ${d.JJGS}`,
     tags: [`${yuanText(minimum)}起购`, purchasable ? (limit ? `单日上限${yuanText(limit)}` : '开放申购') : '暂停申购'],
@@ -173,7 +175,7 @@ export function createProductCatalog(bank, options = {}) {
   const codes = options.codes || FUND_CODES, timeoutMs = options.timeoutMs ?? 4000, concurrency = options.concurrency ?? 6;
   const snapshot = options.snapshot || JSON.parse(readFileSync(SNAPSHOT_URL, 'utf8'));
   const sync = () => db.prepare("SELECT * FROM product_sync WHERE source='eastmoney'").get();
-  let funds, market, inflight = null;
+  let funds, market, inflight = null, upgraded = false;
 
   function load() {
     const rows = db.prepare('SELECT data FROM product_cache').all().map(r => JSON.parse(r.data));
@@ -223,9 +225,12 @@ export function createProductCatalog(bank, options = {}) {
     if (!remote) return Promise.resolve();
     const s = sync();
     // After a failed refresh, retry sooner (10 minutes at most) instead of waiting a full TTL.
-    const failing = Boolean(s?.error);
+    // Rows cached by an older build skip the TTL once per process; funds that keep failing must not
+    // turn every request into a full refresh.
+    const failing = Boolean(s?.error), outdated = !upgraded && !failing && funds.some(f => f.schema !== FUND_SCHEMA);
     const last = Date.parse((failing ? s.attempt_at : s?.success_at) || 0);
-    if (Date.now() - last < (failing ? Math.min(ttlMs, 600000) : ttlMs)) return inflight || Promise.resolve();
+    if (!outdated && Date.now() - last < (failing ? Math.min(ttlMs, 600000) : ttlMs)) return inflight || Promise.resolve();
+    upgraded = true;
     if (!inflight) inflight = refresh().finally(() => { inflight = null; });
     return inflight;
   }

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { pct } from '../products';
 import type { MarketIndex, Product } from '../types';
 
 type Point = { date: string; value: number; nav?: number | null; perTenThousand?: number | null; open?: number | null; high?: number | null; low?: number | null };
 type History = { metric: string; unit: string; points: Point[]; source: string; updatedAt: string | null; stale: boolean; notice: string | null };
-// return: cumulative % from 0; yield: money-fund 7-day %; level: index points.
-type Kind = 'return' | 'yield' | 'level';
+// return: cumulative % from 0; yield: money-fund 7-day %; level: index points; nav: unit NAV or per-10k income.
+type Kind = 'return' | 'yield' | 'level' | 'nav';
 const RANGES = [{ id: '1m', label: '近1月' }, { id: '3m', label: '近3月' }, { id: '6m', label: '近6月' }, { id: '1y', label: '近1年' }];
 const H = 168, PAD = { top: 12, right: 10, bottom: 24, left: 46 };
 
@@ -21,7 +21,7 @@ function ticks(min: number, max: number) {
 }
 const tone = (v: number) => v < 0 ? ' down' : v > 0 ? ' up' : '';
 
-function TrendChart({ path, kind, title, label, note }: { path: string; kind: Kind; title: string; label: string; note: string }) {
+function TrendChart({ path, kind, title, label, note, field, extra }: { path: string; kind: Kind; title: string; label: string; note: string; field?: 'nav' | 'perTenThousand'; extra?: ReactNode }) {
   const [range, setRange] = useState('3m');
   const [state, setState] = useState<{ data?: History; error?: string; loading: boolean }>({ loading: true });
   const [hover, setHover] = useState<number | null>(null);
@@ -38,7 +38,8 @@ function TrendChart({ path, kind, title, label, note }: { path: string; kind: Ki
     return () => { live = false; };
   }, [path, range]);
 
-  const points = state.data?.points ?? [];
+  // With `field`, the same cached history is drawn from another column (unit NAV, per-10k income).
+  const points = (state.data?.points ?? []).flatMap(p => !field ? [p] : p[field] != null ? [{ ...p, value: p[field] as number }] : []);
   const values = points.map(p => p.value), withZero = kind === 'return' ? [0] : [];
   const yt = points.length ? ticks(Math.min(...values, ...withZero), Math.max(...values, ...withZero)) : [];
   const y0 = yt[0], y1 = yt[yt.length - 1];
@@ -46,12 +47,14 @@ function TrendChart({ path, kind, title, label, note }: { path: string; kind: Ki
   const y = (v: number) => PAD.top + (1 - (v - y0) / (y1 - y0 || 1)) * (H - PAD.top - PAD.bottom);
   const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join('');
   const area = points.length ? `${line}L${x(points.length - 1).toFixed(1)},${H - PAD.bottom}L${x(0).toFixed(1)},${H - PAD.bottom}Z` : '';
-  const fmt = (v: number) => kind === 'yield' ? `${v.toFixed(3)}%` : kind === 'level' ? v.toFixed(2) : pct(v);
-  const tickText = (v: number) => kind === 'yield' ? `${v.toFixed(2)}%` : kind === 'level' ? v.toFixed(y1 - y0 < 20 ? 1 : 0) : `${v > 0 ? '+' : ''}${v.toFixed(Math.abs(y1 - y0) < 5 ? 1 : 0)}%`;
+  const fmt = (v: number) => kind === 'yield' ? `${v.toFixed(3)}%` : kind === 'level' ? v.toFixed(2) : kind === 'nav' ? v.toFixed(4) : pct(v);
+  const tickText = (v: number) => kind === 'yield' ? `${v.toFixed(2)}%` : kind === 'nav' ? v.toFixed(y1 - y0 < 0.05 ? 4 : 3) : kind === 'level' ? v.toFixed(y1 - y0 < 20 ? 1 : 0) : `${v > 0 ? '+' : ''}${v.toFixed(Math.abs(y1 - y0) < 5 ? 1 : 0)}%`;
   const first = points[0], last = points[points.length - 1], active = hover === null ? null : points[hover];
   // Index ranges have one unambiguous change (first to last close), so it can headline the chart.
+  // Only index charts headline a range change: a fund's NAV change would sit beside the different 近N月 return above.
+  const priced = kind === 'level' || field === 'nav';
   const rangeChange = kind === 'level' && first && last ? (last.value / first.value - 1) * 100 : null;
-  const dayChange = kind === 'level' && hover ? (points[hover].value / points[hover - 1].value - 1) * 100 : null;
+  const dayChange = priced && hover ? (points[hover].value / points[hover - 1].value - 1) * 100 : null;
   const dateIdx = points.length ? [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])] : [];
   function onMove(e: React.PointerEvent<SVGRectElement>) {
     const rect = e.currentTarget.getBoundingClientRect(), rel = (e.clientX - rect.left) / rect.width;
@@ -61,7 +64,7 @@ function TrendChart({ path, kind, title, label, note }: { path: string; kind: Ki
 
   return <section className="nav-chart">
     <header className="nav-chart-head">
-      <div><strong>{title}</strong>
+      <div><strong>{title}{extra}</strong>
         {kind === 'yield' && last && <span className="nav-chart-headline">最新 {fmt(last.value)}</span>}
         {rangeChange !== null && <span className={`nav-chart-headline${tone(rangeChange)}`}>{rangeLabel}涨跌 {pct(rangeChange)}</span>}
       </div>
@@ -81,11 +84,11 @@ function TrendChart({ path, kind, title, label, note }: { path: string; kind: Ki
       </svg>}
       {active && <div className="nav-chart-tip" style={{ left: Math.min(Math.max(x(hover!), 70), width - 70) }}>
         <span>{active.date}</span>
-        <b className={kind === 'return' ? tone(active.value) : ''}>{kind === 'level' ? `收盘 ${fmt(active.value)}` : fmt(active.value)}</b>
+        <b className={kind === 'return' ? tone(active.value) : ''}>{kind === 'level' ? `收盘 ${fmt(active.value)}` : field === 'nav' ? `单位净值 ${fmt(active.value)}` : field === 'perTenThousand' ? `万份收益 ${fmt(active.value)}元` : fmt(active.value)}</b>
         {dayChange !== null && <span className={`tip-change${tone(dayChange)}`}>当日 {pct(dayChange)}</span>}
         {kind === 'level' && active.high != null && <span>最高 {active.high.toFixed(2)} · 最低 {active.low?.toFixed(2)}</span>}
-        {active.nav != null && <span>单位净值 {active.nav.toFixed(4)}</span>}
-        {active.perTenThousand != null && <span>万份收益 {active.perTenThousand.toFixed(4)}</span>}
+        {!field && active.nav != null && <span>单位净值 {active.nav.toFixed(4)}</span>}
+        {!field && active.perTenThousand != null && <span>万份收益 {active.perTenThousand.toFixed(4)}</span>}
       </div>}
     </div>
     {points.length > 0 && <p className="nav-chart-note">{note} · {state.data?.source}{state.data?.stale ? ' · 数据可能不是最新' : ''}</p>}
@@ -95,8 +98,12 @@ function TrendChart({ path, kind, title, label, note }: { path: string; kind: Ki
 
 export function NavChart({ product }: { product: Product }) {
   const money = product.category === 'money';
-  return <TrendChart path={`/products/${product.id}/history`} kind={money ? 'yield' : 'return'} title={money ? '7日年化走势' : '业绩走势'} label={product.name}
-    note={money ? '纵轴为7日年化收益率' : '纵轴为累计收益率，以区间首个交易日为基准、按累计净值计算（含分红），与上方阶段收益的统计口径不同'} />;
+  const [mode, setMode] = useState<'return' | 'nav'>('return');
+  const options = money ? [['return', '7日年化'], ['nav', '万份收益']] as const : [['return', '收益率'], ['nav', '单位净值']] as const;
+  const toggle = <span className="segmented small" role="group" aria-label="走势指标">{options.map(([id, label]) => <button key={id} type="button" className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</span>;
+  const note = mode === 'nav' ? (money ? '纵轴为每万份基金单位当日收益（元）' : '纵轴为单位净值，分红日净值会相应下调；含分红的表现请看收益率') : money ? '纵轴为7日年化收益率' : '纵轴为累计收益率，以区间首个交易日为基准、按累计净值计算（含分红），与上方阶段收益的统计口径不同';
+  return <TrendChart path={`/products/${product.id}/history`} kind={mode === 'nav' ? 'nav' : money ? 'yield' : 'return'} field={mode === 'nav' ? (money ? 'perTenThousand' : 'nav') : undefined}
+    title={mode === 'nav' ? (money ? '万份收益' : '净值走势') : money ? '7日年化走势' : '业绩走势'} label={product.name} note={note} extra={toggle} />;
 }
 
 const fixed = (v: number | null | undefined) => v == null ? '--' : v.toFixed(2);

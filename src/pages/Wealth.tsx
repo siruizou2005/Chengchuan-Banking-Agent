@@ -12,11 +12,25 @@ const termText = (p: Product) => p.type === 'deposit' ? `${p.days}天整存整�
 // Funds open for purchase need no badge; only limits and suspensions are worth flagging.
 const badge = (p: Product) => p.type === 'deposit' ? p.tags[1] : p.purchasable === false ? statusText(p) : p.purchaseLimit ? p.tags[1] : undefined;
 
-function ProductItem({ p, onClick }: { p: Product; onClick: () => void }) {
+export type Display = 'rate' | 'nav';
+// The list headline is either the return (收益率) or the latest NAV with its daily change; the choice is remembered per browser.
+export function useDisplay(): [Display, (d: Display) => void] {
+  const [display, setDisplay] = useState<Display>(() => { try { return localStorage.getItem('fund-display') === 'nav' ? 'nav' : 'rate'; } catch { return 'rate'; } });
+  return [display, d => { setDisplay(d); try { localStorage.setItem('fund-display', d); } catch { /* storage may be unavailable */ } }];
+}
+function DisplayToggle({ value, onChange }: { value: Display; onChange: (d: Display) => void }) {
+  return <span className="segmented" role="group" aria-label="列表显示">{([['rate', '收益率'], ['nav', '净值']] as const).map(([id, label]) => <button key={id} type="button" className={value === id ? 'active' : ''} aria-pressed={value === id} onClick={e => { e.stopPropagation(); onChange(id); }}>{label}</button>)}</span>;
+}
+function NavValue({ p }: { p: Product }) {
+  const money = p.category === 'money', value = money ? p.perTenThousand : p.nav, date = p.navDate?.slice(5);
+  return <span className={`rate nav-value${!money && (p.navChange ?? 0) < 0 ? ' down' : ''}`}><strong>{value == null ? '--' : value.toFixed(4)}{!money && p.navChange != null && <em className="nav-change">{p.navChange > 0 ? '+' : ''}{p.navChange.toFixed(2)}%</em>}</strong><span>{money ? '万份收益（元）' : '单位净值'}{date ? ` · ${date}` : ''}</span></span>;
+}
+
+function ProductItem({ p, onClick, display = 'rate' }: { p: Product; onClick: () => void; display?: Display }) {
   const deposit = p.type === 'deposit';
   return <button className="product" onClick={onClick} data-testid={`product-${p.id}`}>
     <span className="product-head"><span className="issuer"><Logo size={16} />{deposit ? '澄川银行' : p.issuer || '澄川理财'}</span><i className="vsep" /><strong>{p.name}</strong>{badge(p) && <em className={`tag ${p.purchasable === false ? 'gray' : 'orange'}`}>{badge(p)}</em>}</span>
-    <span className="product-metrics"><Rate value={p.rate} caption={p.rateLabel || '年化'} /><span className="product-terms"><strong>{termText(p)}</strong><small>{p.risk} | {minText(p)}</small></span></span>
+    <span className="product-metrics">{display === 'nav' && !deposit ? <NavValue p={p} /> : <Rate value={p.rate} caption={p.rateLabel || '年化'} />}<span className="product-terms"><strong>{termText(p)}</strong><small>{p.risk} | {minText(p)}</small></span></span>
     <span className="product-note"><Megaphone size={14} />{p.subtitle}{p.navDate ? ` · 净值日期 ${p.navDate}` : ''}</span>
   </button>;
 }
@@ -82,6 +96,7 @@ function previewPicks(products: Product[], level: number) {
 export function Wealth({ deposits = false }: { deposits?: boolean }) {
   const { data, navigate } = useBank();
   const productModal = useProductModal();
+  const [display, setDisplay] = useDisplay();
   const level = data.user.riskLevel;
   const holdings = data.holdings.filter(h => !deposits || h.product.type === 'deposit');
   const principal = holdings.reduce((s, h) => s + h.principal, 0);
@@ -117,8 +132,8 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
     <button className="card advice-entry" onClick={() => navigate('advice')} data-testid="advice-entry"><span><strong>不知道买什么？</strong><small>按收支、应急资金和风险测评，3 步生成配置建议</small></span><span className="pill primary small">生成建议</span></button>
     <MarketStrip />
     <Card title={level ? '适合你的产品' : '稳健之选'} action={`全部${all.length}款`} onAction={() => navigate('funds')} testId="wealth-list">
-      <p className="preview-note">{level ? `按你的测评结果 ${riskTag(level)} 筛选，优先各类别收益最高的一款` : '尚未测评，先展示 R1–R2 中各类别收益最高的产品'}</p>
-      {picks.map(p => <ProductItem key={p.id} p={p} onClick={() => productModal(p)} />)}
+      <div className="preview-note"><span>{level ? `按你的测评结果 ${riskTag(level)} 筛选，优先各类别收益最高的一款` : '尚未测评，先展示 R1–R2 中各类别收益最高的产品'}</span><DisplayToggle value={display} onChange={setDisplay} /></div>
+      {picks.map(p => <ProductItem key={p.id} p={p} display={display} onClick={() => productModal(p)} />)}
       <button className="btn-text center" onClick={() => navigate('funds')} data-testid="all-funds">查看全部 {all.length} 款基金<ChevronRight size={16} /></button>
       {meta && <p className="data-note">{sourceLine(meta)}。业绩与净值仅供参考，过往业绩不代表未来表现。</p>}
       {meta?.stale && <Notice>{meta.notice}</Notice>}
@@ -133,6 +148,7 @@ export function Funds() {
   const { data } = useBank();
   const productModal = useProductModal();
   const [category, setCategory] = useState('all'), [suitable, setSuitable] = useState(false), [sort, setSort] = useState('default');
+  const [display, setDisplay] = useDisplay();
   const level = data.user.riskLevel, meta = data.productMeta;
   const filtered = data.products.filter(p => p.type === 'wealth' && (category === 'all' || p.category === category) && (!suitable || (p.riskLevel ?? 0) <= level));
   const list = sort === 'return' ? [...filtered].sort((a, b) => (b.rate ?? -Infinity) - (a.rate ?? -Infinity)) : sort === 'risk' ? [...filtered].sort((a, b) => (a.riskLevel ?? 0) - (b.riskLevel ?? 0)) : filtered;
@@ -141,8 +157,8 @@ export function Funds() {
       <div className="chip-row product-filter">{CATEGORIES.map(c => <button key={c.id} className={`chip${category === c.id ? ' active' : ''}`} onClick={() => setCategory(c.id)}>{c.label}</button>)}</div>
       <div className="chip-row product-filter">{SORTS.map(s => <button key={s.id} className={`chip${sort === s.id ? ' active' : ''}`} onClick={() => setSort(s.id)}>{s.label}</button>)}{level > 0 && <button className={`chip${suitable ? ' active' : ''}`} onClick={() => setSuitable(!suitable)}>适合我（≤R{level}）</button>}</div>
     </section>
-    <Card title="基金理财" action={`${list.length}款`} testId="funds-list">
-      {list.map(p => <ProductItem key={p.id} p={p} onClick={() => productModal(p)} />)}
+    <Card title={`基金理财 · ${list.length}款`} action={<DisplayToggle value={display} onChange={setDisplay} />} testId="funds-list">
+      {list.map(p => <ProductItem key={p.id} p={p} display={display} onClick={() => productModal(p)} />)}
       {!list.length && <Empty title="暂无符合条件的产品" />}
       {meta && <p className="data-note">{sourceLine(meta)}。业绩与净值仅供参考，过往业绩不代表未来表现。</p>}
       {meta?.stale && <Notice>{meta.notice}</Notice>}

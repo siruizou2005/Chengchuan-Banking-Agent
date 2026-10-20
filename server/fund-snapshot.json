@@ -1,9 +1,10 @@
 {
- "capturedAt": "2026-10-20T02:28:51.592Z",
+ "capturedAt": "2026-10-20T05:01:34.732Z",
  "source": "东方财富天天基金",
  "funds": [
   {
    "id": "fund-000198",
+   "schema": 2,
    "code": "000198",
    "type": "wealth",
    "category": "money",
@@ -37,10 +38,11 @@
    "description": "货币型-普通货币，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000198.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000009",
+   "schema": 2,
    "code": "000009",
    "type": "wealth",
    "category": "money",
@@ -74,10 +76,11 @@
    "description": "货币型-普通货币，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000009.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-004501",
+   "schema": 2,
    "code": "004501",
    "type": "wealth",
    "category": "money",
@@ -111,10 +114,11 @@
    "description": "货币型-普通货币，基金管理人嘉实基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/004501.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-003474",
+   "schema": 2,
    "code": "003474",
    "type": "wealth",
    "category": "money",
@@ -148,10 +152,11 @@
    "description": "货币型-普通货币，基金管理人南方基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/003474.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-003003",
+   "schema": 2,
    "code": "003003",
    "type": "wealth",
    "category": "money",
@@ -185,10 +190,11 @@
    "description": "货币型-普通货币，基金管理人华夏基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/003003.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000330",
+   "schema": 2,
    "code": "000330",
    "type": "wealth",
    "category": "money",
@@ -222,10 +228,11 @@
    "description": "货币型-普通货币，基金管理人汇添富基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000330.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000397",
+   "schema": 2,
    "code": "000397",
    "type": "wealth",
    "category": "money",
@@ -259,10 +266,11 @@
    "description": "货币型-普通货币，基金管理人汇添富基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000397.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000569",
+   "schema": 2,
    "code": "000569",
    "type": "wealth",
    "category": "money",
@@ -296,10 +304,11 @@
    "description": "货币型-普通货币，基金管理人鹏华基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000569.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000686",
+   "schema": 2,
    "code": "000686",
    "type": "wealth",
    "category": "money",
@@ -333,10 +342,11 @@
    "description": "货币型-普通货币，基金管理人建信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000686.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-050003",
+   "schema": 2,
    "code": "050003",
    "type": "wealth",
    "category": "money",
@@ -370,10 +380,11 @@
    "description": "货币型-普通货币，基金管理人博时基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/050003.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-202301",
+   "schema": 2,
    "code": "202301",
    "type": "wealth",
    "category": "money",
@@ -407,10 +418,11 @@
    "description": "货币型-普通货币，基金管理人南方基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/202301.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-270004",
+   "schema": 2,
    "code": "270004",
    "type": "wealth",
    "category": "money",
@@ -444,10 +456,11 @@
    "description": "货币型-普通货币，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/270004.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-482002",
+   "schema": 2,
    "code": "482002",
    "type": "wealth",
    "category": "money",
@@ -481,10 +494,11 @@
    "description": "货币型-普通货币，基金管理人工银瑞信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/482002.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-006662",
+   "schema": 2,
    "code": "006662",
    "type": "wealth",
    "category": "bond",
@@ -503,6 +517,7 @@
    },
    "nav": 1.0141,
    "accNav": 1.1953,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.03%",
@@ -519,10 +534,11 @@
    "description": "债券型-中短债，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/006662.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-007194",
+   "schema": 2,
    "code": "007194",
    "type": "wealth",
    "category": "bond",
@@ -541,6 +557,7 @@
    },
    "nav": 1.2585,
    "accNav": 1.2585,
+   "navChange": 0.02,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.04%",
@@ -557,10 +574,11 @@
    "description": "债券型-中短债，基金管理人长城基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/007194.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-217022",
+   "schema": 2,
    "code": "217022",
    "type": "wealth",
    "category": "bond",
@@ -579,6 +597,7 @@
    },
    "nav": 1.8704,
    "accNav": 2.1104,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -595,10 +614,11 @@
    "description": "债券型-混合一级，基金管理人招商基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/217022.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000032",
+   "schema": 2,
    "code": "000032",
    "type": "wealth",
    "category": "bond",
@@ -617,6 +637,7 @@
    },
    "nav": 1.1403,
    "accNav": 1.6601,
+   "navChange": -0.03,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -633,10 +654,11 @@
    "description": "债券型-信用债，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000032.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-070009",
+   "schema": 2,
    "code": "070009",
    "type": "wealth",
    "category": "bond",
@@ -655,6 +677,7 @@
    },
    "nav": 1.0576,
    "accNav": 1.6324,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.00%",
@@ -666,15 +689,16 @@
    "subtitle": "债券基金 · 嘉实基金",
    "tags": [
     "10元起购",
-    "单日上限10000万元"
+    "单日上限1亿元"
    ],
    "description": "债券型-中短债，基金管理人嘉实基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/070009.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000084",
+   "schema": 2,
    "code": "000084",
    "type": "wealth",
    "category": "bond",
@@ -693,6 +717,7 @@
    },
    "nav": 1.2622,
    "accNav": 1.4984,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.03%",
@@ -709,10 +734,11 @@
    "description": "债券型-中短债，基金管理人博时基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000084.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-003376",
+   "schema": 2,
    "code": "003376",
    "type": "wealth",
    "category": "bond",
@@ -731,6 +757,7 @@
    },
    "nav": 1.3951,
    "accNav": 1.5139,
+   "navChange": 0.06,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.05%",
@@ -747,10 +774,11 @@
    "description": "指数型-固收，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/003376.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000147",
+   "schema": 2,
    "code": "000147",
    "type": "wealth",
    "category": "bond",
@@ -769,6 +797,7 @@
    },
    "nav": 1.2619,
    "accNav": 1.5839,
+   "navChange": 0,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -785,10 +814,11 @@
    "description": "债券型-信用债，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000147.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519718",
+   "schema": 2,
    "code": "519718",
    "type": "wealth",
    "category": "bond",
@@ -807,6 +837,7 @@
    },
    "nav": 1.0817,
    "accNav": 1.5497,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -823,10 +854,11 @@
    "description": "债券型-长债，基金管理人交银施罗德基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519718.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519762",
+   "schema": 2,
    "code": "519762",
    "type": "wealth",
    "category": "bond",
@@ -845,6 +877,7 @@
    },
    "nav": 1.1648,
    "accNav": 1.3798,
+   "navChange": 0,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -861,10 +894,11 @@
    "description": "债券型-长债，基金管理人交银施罗德基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519762.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-040045",
+   "schema": 2,
    "code": "040045",
    "type": "wealth",
    "category": "bond",
@@ -883,6 +917,7 @@
    },
    "nav": 1.1996,
    "accNav": 1.4772,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.045%",
@@ -899,10 +934,11 @@
    "description": "债券型-中短债，基金管理人华安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/040045.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-006597",
+   "schema": 2,
    "code": "006597",
    "type": "wealth",
    "category": "bond",
@@ -921,6 +957,7 @@
    },
    "nav": 1.233,
    "accNav": 1.233,
+   "navChange": 0.01,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.03%",
@@ -937,10 +974,11 @@
    "description": "债券型-中短债，基金管理人国泰基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/006597.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110008",
+   "schema": 2,
    "code": "110008",
    "type": "wealth",
    "category": "bond",
@@ -959,6 +997,7 @@
    },
    "nav": 1.418,
    "accNav": 2.6456,
+   "navChange": 0.17,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -975,10 +1014,11 @@
    "description": "债券型-混合二级，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110008.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110017",
+   "schema": 2,
    "code": "110017",
    "type": "wealth",
    "category": "bond",
@@ -997,6 +1037,7 @@
    },
    "nav": 1.403,
    "accNav": 2.697,
+   "navChange": 0.13,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -1013,10 +1054,11 @@
    "description": "债券型-混合一级，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110017.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000171",
+   "schema": 2,
    "code": "000171",
    "type": "wealth",
    "category": "bond",
@@ -1035,6 +1077,7 @@
    },
    "nav": 2.0016,
    "accNav": 2.4686,
+   "navChange": -0.29,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -1051,10 +1094,11 @@
    "description": "债券型-混合二级，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000171.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001316",
+   "schema": 2,
    "code": "001316",
    "type": "wealth",
    "category": "mixed",
@@ -1073,6 +1117,7 @@
    },
    "nav": 1.8359,
    "accNav": 1.8909,
+   "navChange": 0.23,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -1089,10 +1134,11 @@
    "description": "混合型-灵活，基金管理人安信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001316.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-090002",
+   "schema": 2,
    "code": "090002",
    "type": "wealth",
    "category": "bond",
@@ -1111,6 +1157,7 @@
    },
    "nav": 1.0993,
    "accNav": 2.444,
+   "navChange": 0.11,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -1127,10 +1174,11 @@
    "description": "债券型-混合一级，基金管理人大成基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/090002.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-485111",
+   "schema": 2,
    "code": "485111",
    "type": "wealth",
    "category": "bond",
@@ -1149,6 +1197,7 @@
    },
    "nav": 1.972,
    "accNav": 2.394,
+   "navChange": -0.05,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -1165,10 +1214,11 @@
    "description": "债券型-混合二级，基金管理人工银瑞信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/485111.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-002351",
+   "schema": 2,
    "code": "002351",
    "type": "wealth",
    "category": "bond",
@@ -1187,6 +1237,7 @@
    },
    "nav": 1.5962,
    "accNav": 1.9512,
+   "navChange": 0.17,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -1203,10 +1254,11 @@
    "description": "债券型-混合二级，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/002351.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110027",
+   "schema": 2,
    "code": "110027",
    "type": "wealth",
    "category": "bond",
@@ -1225,6 +1277,7 @@
    },
    "nav": 2.1431,
    "accNav": 3.2421,
+   "navChange": -0.15,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -1241,10 +1294,11 @@
    "description": "债券型-混合二级，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110027.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001182",
+   "schema": 2,
    "code": "001182",
    "type": "wealth",
    "category": "mixed",
@@ -1263,6 +1317,7 @@
    },
    "nav": 2.8083,
    "accNav": 2.8083,
+   "navChange": -0.7,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -1279,10 +1334,11 @@
    "description": "混合型-偏债，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001182.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-002015",
+   "schema": 2,
    "code": "002015",
    "type": "wealth",
    "category": "mixed",
@@ -1301,6 +1357,7 @@
    },
    "nav": 1.6989,
    "accNav": 1.6989,
+   "navChange": 0.07,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1312,15 +1369,16 @@
    "subtitle": "混合基金 · 南方基金",
    "tags": [
     "10元起购",
-    "单日上限30000万元"
+    "单日上限3亿元"
    ],
    "description": "混合型-偏债，基金管理人南方基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/002015.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-004010",
+   "schema": 2,
    "code": "004010",
    "type": "wealth",
    "category": "mixed",
@@ -1339,6 +1397,7 @@
    },
    "nav": 1.5435,
    "accNav": 1.8512,
+   "navChange": 0.06,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -1355,10 +1414,11 @@
    "description": "混合型-灵活，基金管理人华泰柏瑞基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/004010.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000215",
+   "schema": 2,
    "code": "000215",
    "type": "wealth",
    "category": "mixed",
@@ -1377,6 +1437,7 @@
    },
    "nav": 1.7196,
    "accNav": 2.1186,
+   "navChange": 0.07,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1393,10 +1454,11 @@
    "description": "混合型-灵活，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000215.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000875",
+   "schema": 2,
    "code": "000875",
    "type": "wealth",
    "category": "bond",
@@ -1415,6 +1477,7 @@
    },
    "nav": 1.4859,
    "accNav": 1.6059,
+   "navChange": -0.28,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.08%",
@@ -1431,10 +1494,11 @@
    "description": "债券型-混合二级，基金管理人建信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000875.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519736",
+   "schema": 2,
    "code": "519736",
    "type": "wealth",
    "category": "mixed",
@@ -1453,6 +1517,7 @@
    },
    "nav": 3.555,
    "accNav": 3.955,
+   "navChange": 1.02,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1469,10 +1534,11 @@
    "description": "混合型-偏股，基金管理人交银施罗德基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519736.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-005827",
+   "schema": 2,
    "code": "005827",
    "type": "wealth",
    "category": "mixed",
@@ -1491,6 +1557,7 @@
    },
    "nav": 1.4168,
    "accNav": 1.4168,
+   "navChange": 0.04,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1507,10 +1574,11 @@
    "description": "混合型-偏股，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/005827.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-163406",
+   "schema": 2,
    "code": "163406",
    "type": "wealth",
    "category": "mixed",
@@ -1529,6 +1597,7 @@
    },
    "nav": 1.9691,
    "accNav": 7.4885,
+   "navChange": -0.44,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.12%",
@@ -1545,10 +1614,11 @@
    "description": "混合型-偏股，基金管理人兴证全球基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/163406.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001714",
+   "schema": 2,
    "code": "001714",
    "type": "wealth",
    "category": "equity",
@@ -1567,6 +1637,7 @@
    },
    "nav": 2.849,
    "accNav": 3.038,
+   "navChange": 0.6,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1583,10 +1654,11 @@
    "description": "股票型，基金管理人工银瑞信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001714.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000083",
+   "schema": 2,
    "code": "000083",
    "type": "wealth",
    "category": "mixed",
@@ -1605,6 +1677,7 @@
    },
    "nav": 4.337,
    "accNav": 4.337,
+   "navChange": 0.93,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1621,10 +1694,11 @@
    "description": "混合型-偏股，基金管理人汇添富基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000083.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-260108",
+   "schema": 2,
    "code": "260108",
    "type": "wealth",
    "category": "mixed",
@@ -1643,6 +1717,7 @@
    },
    "nav": 1.517,
    "accNav": 3.324,
+   "navChange": 0.8,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1659,10 +1734,11 @@
    "description": "混合型-偏股，基金管理人景顺长城基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/260108.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-161005",
+   "schema": 2,
    "code": "161005",
    "type": "wealth",
    "category": "mixed",
@@ -1681,6 +1757,7 @@
    },
    "nav": 2.6856,
    "accNav": 5.7336,
+   "navChange": 0.52,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1697,10 +1774,11 @@
    "description": "混合型-偏股，基金管理人富国基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/161005.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001938",
+   "schema": 2,
    "code": "001938",
    "type": "wealth",
    "category": "equity",
@@ -1719,6 +1797,7 @@
    },
    "nav": 1.8025,
    "accNav": 3.1273,
+   "navChange": 0.48,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1735,10 +1814,11 @@
    "description": "股票型，基金管理人中欧基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001938.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-166002",
+   "schema": 2,
    "code": "166002",
    "type": "wealth",
    "category": "mixed",
@@ -1757,6 +1837,7 @@
    },
    "nav": 2.8657,
    "accNav": 4.4429,
+   "navChange": 0.2,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1773,10 +1854,11 @@
    "description": "混合型-偏股，基金管理人中欧基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/166002.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000751",
+   "schema": 2,
    "code": "000751",
    "type": "wealth",
    "category": "equity",
@@ -1795,6 +1877,7 @@
    },
    "nav": 4.057,
    "accNav": 4.057,
+   "navChange": -0.02,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1811,10 +1894,11 @@
    "description": "股票型，基金管理人嘉实基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000751.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-003095",
+   "schema": 2,
    "code": "003095",
    "type": "wealth",
    "category": "mixed",
@@ -1833,6 +1917,7 @@
    },
    "nav": 1.8235,
    "accNav": 2.0615,
+   "navChange": 1.5,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1849,10 +1934,11 @@
    "description": "混合型-偏股，基金管理人中欧基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/003095.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110022",
+   "schema": 2,
    "code": "110022",
    "type": "wealth",
    "category": "equity",
@@ -1871,6 +1957,7 @@
    },
    "nav": 2.821,
    "accNav": 2.821,
+   "navChange": 1.29,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1887,10 +1974,11 @@
    "description": "股票型，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110022.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-005911",
+   "schema": 2,
    "code": "005911",
    "type": "wealth",
    "category": "mixed",
@@ -1909,6 +1997,7 @@
    },
    "nav": 1.6898,
    "accNav": 1.8227,
+   "navChange": -0.95,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1925,10 +2014,11 @@
    "description": "混合型-偏股，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/005911.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-163402",
+   "schema": 2,
    "code": "163402",
    "type": "wealth",
    "category": "mixed",
@@ -1947,6 +2037,7 @@
    },
    "nav": 0.7626,
    "accNav": 10.8979,
+   "navChange": 0.41,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -1963,10 +2054,11 @@
    "description": "混合型-灵活，基金管理人兴证全球基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/163402.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519066",
+   "schema": 2,
    "code": "519066",
    "type": "wealth",
    "category": "mixed",
@@ -1985,6 +2077,7 @@
    },
    "nav": 2.901,
    "accNav": 4.23,
+   "navChange": -0.72,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2001,10 +2094,11 @@
    "description": "混合型-灵活，基金管理人汇添富基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519066.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-161903",
+   "schema": 2,
    "code": "161903",
    "type": "wealth",
    "category": "mixed",
@@ -2023,6 +2117,7 @@
    },
    "nav": 1.4825,
    "accNav": 5.2265,
+   "navChange": -0.35,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2039,10 +2134,11 @@
    "description": "混合型-偏股，基金管理人万家基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/161903.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-040025",
+   "schema": 2,
    "code": "040025",
    "type": "wealth",
    "category": "mixed",
@@ -2061,6 +2157,7 @@
    },
    "nav": 9.761,
    "accNav": 10.548,
+   "navChange": -0.6,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2077,10 +2174,11 @@
    "description": "混合型-偏股，基金管理人华安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/040025.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519697",
+   "schema": 2,
    "code": "519697",
    "type": "wealth",
    "category": "mixed",
@@ -2099,6 +2197,7 @@
    },
    "nav": 5.551,
    "accNav": 6.928,
+   "navChange": 0.58,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2115,10 +2214,11 @@
    "description": "混合型-灵活，基金管理人交银施罗德基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519697.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000977",
+   "schema": 2,
    "code": "000977",
    "type": "wealth",
    "category": "mixed",
@@ -2137,6 +2237,7 @@
    },
    "nav": 2.2016,
    "accNav": 2.2016,
+   "navChange": 0.52,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2153,10 +2254,11 @@
    "description": "混合型-灵活，基金管理人长城基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000977.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001410",
+   "schema": 2,
    "code": "001410",
    "type": "wealth",
    "category": "equity",
@@ -2175,6 +2277,7 @@
    },
    "nav": 5.515,
    "accNav": 5.577,
+   "navChange": -1.73,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2191,10 +2294,11 @@
    "description": "股票型，基金管理人信达澳亚基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001410.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001054",
+   "schema": 2,
    "code": "001054",
    "type": "wealth",
    "category": "equity",
@@ -2213,6 +2317,7 @@
    },
    "nav": 3.041,
    "accNav": 3.041,
+   "navChange": 1.06,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2229,10 +2334,11 @@
    "description": "股票型，基金管理人工银瑞信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001054.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000628",
+   "schema": 2,
    "code": "000628",
    "type": "wealth",
    "category": "equity",
@@ -2251,6 +2357,7 @@
    },
    "nav": 4.7669,
    "accNav": 4.7669,
+   "navChange": 0.48,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2267,10 +2374,11 @@
    "description": "股票型，基金管理人大成基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000628.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519005",
+   "schema": 2,
    "code": "519005",
    "type": "wealth",
    "category": "mixed",
@@ -2289,6 +2397,7 @@
    },
    "nav": 1.4974,
    "accNav": 3.4464,
+   "navChange": -2.19,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2305,10 +2414,11 @@
    "description": "混合型-偏股，基金管理人海富通基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519005.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-003567",
+   "schema": 2,
    "code": "003567",
    "type": "wealth",
    "category": "mixed",
@@ -2327,6 +2437,7 @@
    },
    "nav": 5.2848,
    "accNav": 5.2848,
+   "navChange": -0.47,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2343,10 +2454,11 @@
    "description": "混合型-偏股，基金管理人华夏基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/003567.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000220",
+   "schema": 2,
    "code": "000220",
    "type": "wealth",
    "category": "mixed",
@@ -2365,6 +2477,7 @@
    },
    "nav": 2.895,
    "accNav": 2.895,
+   "navChange": 0.38,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2381,10 +2494,11 @@
    "description": "混合型-偏股，基金管理人富国基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000220.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001156",
+   "schema": 2,
    "code": "001156",
    "type": "wealth",
    "category": "mixed",
@@ -2403,6 +2517,7 @@
    },
    "nav": 1.951,
    "accNav": 2.941,
+   "navChange": -1.37,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2419,10 +2534,11 @@
    "description": "混合型-灵活，基金管理人申万菱信基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001156.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-002190",
+   "schema": 2,
    "code": "002190",
    "type": "wealth",
    "category": "mixed",
@@ -2441,6 +2557,7 @@
    },
    "nav": 2.3539,
    "accNav": 2.3539,
+   "navChange": 0.21,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2457,10 +2574,11 @@
    "description": "混合型-灵活，基金管理人农银汇理基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/002190.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-320007",
+   "schema": 2,
    "code": "320007",
    "type": "wealth",
    "category": "mixed",
@@ -2479,6 +2597,7 @@
    },
    "nav": 2.32,
    "accNav": 2.765,
+   "navChange": -0.39,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2495,10 +2614,11 @@
    "description": "混合型-偏股，基金管理人诺安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/320007.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-519674",
+   "schema": 2,
    "code": "519674",
    "type": "wealth",
    "category": "mixed",
@@ -2517,6 +2637,7 @@
    },
    "nav": 9.7273,
    "accNav": 9.7273,
+   "navChange": -2.37,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2533,10 +2654,11 @@
    "description": "混合型-偏股，基金管理人银河基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/519674.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110013",
+   "schema": 2,
    "code": "110013",
    "type": "wealth",
    "category": "mixed",
@@ -2555,6 +2677,7 @@
    },
    "nav": 6.325,
    "accNav": 14.948,
+   "navChange": 0.09,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2571,10 +2694,11 @@
    "description": "混合型-偏股，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110013.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-006113",
+   "schema": 2,
    "code": "006113",
    "type": "wealth",
    "category": "mixed",
@@ -2593,6 +2717,7 @@
    },
    "nav": 1.5796,
    "accNav": 1.5796,
+   "navChange": 0.33,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2609,10 +2734,11 @@
    "description": "混合型-偏股，基金管理人汇添富基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/006113.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-004851",
+   "schema": 2,
    "code": "004851",
    "type": "wealth",
    "category": "equity",
@@ -2631,6 +2757,7 @@
    },
    "nav": 1.7322,
    "accNav": 1.7322,
+   "navChange": 0.69,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2647,10 +2774,11 @@
    "description": "股票型，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/004851.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001071",
+   "schema": 2,
    "code": "001071",
    "type": "wealth",
    "category": "mixed",
@@ -2669,6 +2797,7 @@
    },
    "nav": 3.707,
    "accNav": 3.707,
+   "navChange": -0.8,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2685,10 +2814,11 @@
    "description": "混合型-灵活，基金管理人华安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001071.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-002939",
+   "schema": 2,
    "code": "002939",
    "type": "wealth",
    "category": "mixed",
@@ -2707,6 +2837,7 @@
    },
    "nav": 2.2906,
    "accNav": 2.3356,
+   "navChange": -1.81,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -2723,10 +2854,11 @@
    "description": "混合型-灵活，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/002939.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110020",
+   "schema": 2,
    "code": "110020",
    "type": "wealth",
    "category": "index",
@@ -2745,6 +2877,7 @@
    },
    "nav": 1.724,
    "accNav": 1.724,
+   "navChange": 0.12,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.12%",
@@ -2761,10 +2894,11 @@
    "description": "指数型-股票，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110020.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-008888",
+   "schema": 2,
    "code": "008888",
    "type": "wealth",
    "category": "index",
@@ -2783,6 +2917,7 @@
    },
    "nav": 1.5526,
    "accNav": 1.5526,
+   "navChange": -2.22,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.00%",
@@ -2799,10 +2934,11 @@
    "description": "指数型-股票，基金管理人华夏基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/008888.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000216",
+   "schema": 2,
    "code": "000216",
    "type": "wealth",
    "category": "index",
@@ -2821,6 +2957,7 @@
    },
    "nav": 3.1133,
    "accNav": 3.1133,
+   "navChange": -0.06,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.06%",
@@ -2837,10 +2974,11 @@
    "description": "指数型-其他，基金管理人华安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000216.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-161725",
+   "schema": 2,
    "code": "161725",
    "type": "wealth",
    "category": "index",
@@ -2859,6 +2997,7 @@
    },
    "nav": 0.5441,
    "accNav": 2.2602,
+   "navChange": 0.82,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -2875,10 +3014,11 @@
    "description": "指数型-股票，基金管理人招商基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/161725.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000961",
+   "schema": 2,
    "code": "000961",
    "type": "wealth",
    "category": "index",
@@ -2897,6 +3037,7 @@
    },
    "nav": 1.5148,
    "accNav": 1.5148,
+   "navChange": 0.1,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -2913,10 +3054,11 @@
    "description": "指数型-股票，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000961.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001548",
+   "schema": 2,
    "code": "001548",
    "type": "wealth",
    "category": "index",
@@ -2935,6 +3077,7 @@
    },
    "nav": 1.4356,
    "accNav": 1.4356,
+   "navChange": 0.22,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -2951,10 +3094,11 @@
    "description": "指数型-股票，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001548.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000962",
+   "schema": 2,
    "code": "000962",
    "type": "wealth",
    "category": "index",
@@ -2973,6 +3117,7 @@
    },
    "nav": 1.373,
    "accNav": 1.373,
+   "navChange": 0.44,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -2989,10 +3134,11 @@
    "description": "指数型-股票，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000962.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-001594",
+   "schema": 2,
    "code": "001594",
    "type": "wealth",
    "category": "index",
@@ -3011,6 +3157,7 @@
    },
    "nav": 1.9101,
    "accNav": 1.9101,
+   "navChange": 1.46,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -3027,10 +3174,11 @@
    "description": "指数型-股票，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/001594.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-160119",
+   "schema": 2,
    "code": "160119",
    "type": "wealth",
    "category": "index",
@@ -3049,6 +3197,7 @@
    },
    "nav": 1.9524,
    "accNav": 2.0524,
+   "navChange": 0.44,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3065,10 +3214,11 @@
    "description": "指数型-股票，基金管理人南方基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/160119.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110003",
+   "schema": 2,
    "code": "110003",
    "type": "wealth",
    "category": "index",
@@ -3087,6 +3237,7 @@
    },
    "nav": 2.135,
    "accNav": 4.175,
+   "navChange": 0.04,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3103,10 +3254,11 @@
    "description": "指数型-股票，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110003.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-004752",
+   "schema": 2,
    "code": "004752",
    "type": "wealth",
    "category": "index",
@@ -3125,6 +3277,7 @@
    },
    "nav": 0.7947,
    "accNav": 0.7947,
+   "navChange": 0.42,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3141,10 +3294,11 @@
    "description": "指数型-股票，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/004752.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-161017",
+   "schema": 2,
    "code": "161017",
    "type": "wealth",
    "category": "index",
@@ -3163,6 +3317,7 @@
    },
    "nav": 2.226,
    "accNav": 2.832,
+   "navChange": 0.41,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3179,10 +3334,11 @@
    "description": "指数型-股票，基金管理人富国基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/161017.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-050025",
+   "schema": 2,
    "code": "050025",
    "type": "wealth",
    "category": "qdii",
@@ -3201,6 +3357,7 @@
    },
    "nav": 5.5437,
    "accNav": 5.6027,
+   "navChange": -1.11,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3217,10 +3374,11 @@
    "description": "指数型-海外股票，基金管理人博时基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/050025.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-270042",
+   "schema": 2,
    "code": "270042",
    "type": "wealth",
    "category": "qdii",
@@ -3239,6 +3397,7 @@
    },
    "nav": 7.9912,
    "accNav": 8.2612,
+   "navChange": -2.56,
    "navDate": "2026-10-16",
    "minimum": 200,
    "fee": "0.13%",
@@ -3255,10 +3414,11 @@
    "description": "指数型-海外股票，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/270042.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000369",
+   "schema": 2,
    "code": "000369",
    "type": "wealth",
    "category": "qdii",
@@ -3277,6 +3437,7 @@
    },
    "nav": 2.646,
    "accNav": 2.756,
+   "navChange": 0,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.13%",
@@ -3293,10 +3454,11 @@
    "description": "指数型-海外股票，基金管理人广发基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000369.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-162411",
+   "schema": 2,
    "code": "162411",
    "type": "wealth",
    "category": "qdii",
@@ -3315,6 +3477,7 @@
    },
    "nav": 1.0373,
    "accNav": 1.0373,
+   "navChange": 2.58,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3331,10 +3494,11 @@
    "description": "指数型-海外股票，基金管理人华宝基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/162411.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-096001",
+   "schema": 2,
    "code": "096001",
    "type": "wealth",
    "category": "qdii",
@@ -3353,6 +3517,7 @@
    },
    "nav": 2.7742,
    "accNav": 3.4763,
+   "navChange": -0.42,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3369,10 +3534,11 @@
    "description": "指数型-海外股票，基金管理人大成基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/096001.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-160213",
+   "schema": 2,
    "code": "160213",
    "type": "wealth",
    "category": "qdii",
@@ -3391,6 +3557,7 @@
    },
    "nav": 4.387,
    "accNav": 10.687,
+   "navChange": -2.53,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3407,10 +3574,11 @@
    "description": "指数型-海外股票，基金管理人国泰基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/160213.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000071",
+   "schema": 2,
    "code": "000071",
    "type": "wealth",
    "category": "qdii",
@@ -3429,6 +3597,7 @@
    },
    "nav": 1.4247,
    "accNav": 1.4247,
+   "navChange": -0.02,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3445,10 +3614,11 @@
    "description": "指数型-海外股票，基金管理人华夏基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000071.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-110011",
+   "schema": 2,
    "code": "110011",
    "type": "wealth",
    "category": "qdii",
@@ -3467,6 +3637,7 @@
    },
    "nav": 4.024,
    "accNav": 5.814,
+   "navChange": 0.36,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3483,10 +3654,11 @@
    "description": "QDII-混合偏股，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/110011.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-164906",
+   "schema": 2,
    "code": "164906",
    "type": "wealth",
    "category": "qdii",
@@ -3505,6 +3677,7 @@
    },
    "nav": 0.8725,
    "accNav": 0.8725,
+   "navChange": 0.84,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3521,10 +3694,11 @@
    "description": "指数型-海外股票，基金管理人交银施罗德基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/164906.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-000614",
+   "schema": 2,
    "code": "000614",
    "type": "wealth",
    "category": "qdii",
@@ -3543,6 +3717,7 @@
    },
    "nav": 1.9213,
    "accNav": 1.9213,
+   "navChange": 1.05,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3559,10 +3734,11 @@
    "description": "指数型-海外股票，基金管理人华安基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/000614.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-012348",
+   "schema": 2,
    "code": "012348",
    "type": "wealth",
    "category": "qdii",
@@ -3581,6 +3757,7 @@
    },
    "nav": 0.5595,
    "accNav": 0.5595,
+   "navChange": -0.02,
    "navDate": "2026-10-19",
    "minimum": 1000,
    "fee": "0.10%",
@@ -3597,10 +3774,11 @@
    "description": "指数型-海外股票，基金管理人天弘基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/012348.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-501018",
+   "schema": 2,
    "code": "501018",
    "type": "wealth",
    "category": "qdii",
@@ -3619,6 +3797,7 @@
    },
    "nav": 2.1702,
    "accNav": 2.1702,
+   "navChange": 1.3,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3635,10 +3814,11 @@
    "description": "QDII-商品，基金管理人南方基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/501018.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-160216",
+   "schema": 2,
    "code": "160216",
    "type": "wealth",
    "category": "qdii",
@@ -3657,6 +3837,7 @@
    },
    "nav": 0.622,
    "accNav": 0.622,
+   "navChange": 0.16,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.15%",
@@ -3673,10 +3854,11 @@
    "description": "QDII-商品，基金管理人国泰基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/160216.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-160723",
+   "schema": 2,
    "code": "160723",
    "type": "wealth",
    "category": "qdii",
@@ -3695,6 +3877,7 @@
    },
    "nav": 2.4748,
    "accNav": 2.4748,
+   "navChange": 1.47,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3711,10 +3894,11 @@
    "description": "QDII-商品，基金管理人嘉实基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/160723.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "id": "fund-161129",
+   "schema": 2,
    "code": "161129",
    "type": "wealth",
    "category": "qdii",
@@ -3733,6 +3917,7 @@
    },
    "nav": 2.0722,
    "accNav": 2.0722,
+   "navChange": 1.6,
    "navDate": "2026-10-16",
    "minimum": 1000,
    "fee": "0.12%",
@@ -3749,61 +3934,65 @@
    "description": "QDII-商品，基金管理人易方达基金。业绩与净值来自东方财富天天基金公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。",
    "source": "东方财富天天基金",
    "sourceUrl": "https://fund.eastmoney.com/161129.html",
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   }
  ],
  "market": [
   {
    "code": "000001",
    "name": "上证指数",
-   "price": 3728.07,
-   "change": -2.85,
-   "changePct": -0.08,
+   "price": 3719.02,
+   "change": -11.9,
+   "changePct": -0.32,
    "open": 3718.44,
-   "high": 3731.41,
+   "high": 3740.07,
    "low": 3711.03,
    "prevClose": 3730.92,
-   "amount": 299101578372.1,
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "amount": 452211674922,
+   "source": "腾讯财经",
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "code": "399001",
    "name": "深证成指",
-   "price": 11837.39,
-   "change": 19.97,
-   "changePct": 0.17,
+   "price": 11795.33,
+   "change": -22.09,
+   "changePct": -0.19,
    "open": 11774.39,
-   "high": 11855.51,
+   "high": 11938,
    "low": 11729.49,
    "prevClose": 11817.42,
-   "amount": 340831080757.2806,
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "amount": 501940858358,
+   "source": "腾讯财经",
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "code": "000300",
    "name": "沪深300",
-   "price": 4156.46,
-   "change": -18.07,
-   "changePct": -0.43,
+   "price": 4142.33,
+   "change": -32.2,
+   "changePct": -0.77,
    "open": 4157.93,
-   "high": 4162.46,
+   "high": 4175.21,
    "low": 4141.48,
    "prevClose": 4174.53,
-   "amount": 152898014004,
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "amount": 240581894212,
+   "source": "腾讯财经",
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   },
   {
    "code": "399006",
    "name": "创业板指",
-   "price": 2754.58,
-   "change": 8.29,
-   "changePct": 0.3,
+   "price": 2742.1,
+   "change": -4.19,
+   "changePct": -0.15,
    "open": 2732.68,
-   "high": 2760.88,
+   "high": 2790.12,
    "low": 2717.69,
    "prevClose": 2746.29,
-   "amount": 166116062211.44,
-   "updatedAt": "2026-10-20T02:28:51.592Z"
+   "amount": 247886489410,
+   "source": "腾讯财经",
+   "updatedAt": "2026-10-20T05:01:34.732Z"
   }
  ]
 }
