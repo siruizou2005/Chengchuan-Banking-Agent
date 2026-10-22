@@ -8,7 +8,7 @@ import { ChannelAmountSetting } from './ChannelAmountSetting';
 type Login = { id: string; image: string; status: string; message: string; expiresAt: string };
 type RequestRow = { id: string; status: string; received_at: number };
 const finished = new Set(['confirmed', 'expired', 'failed', 'cancelled']);
-export function WeChatChannel({ enabled }: { enabled: boolean }) {
+export function WeChatChannel({ enabled, closed = false }: { enabled: boolean; closed?: boolean }) {
   const { data, refresh, navigate } = useBank();
   const [login, setLogin] = useState<Login | null>(null), [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [requests, setRequests] = useState<RequestRow[]>([]);
@@ -58,7 +58,7 @@ export function WeChatChannel({ enabled }: { enabled: boolean }) {
     {connected ? <Notice>微信已绑定。{binding?.last_inbound_at ? '已收到你的微信消息。' : '请在微信给助手发送“你好”验证连接。'}</Notice> : <form className="stack-form form-card" onSubmit={e => { const f = formValues(e); void create(f.pin); }}>
       {binding && <Notice>微信需要重新认证，请重新扫码连接。已有业务结果可在 App 查看。</Notice>}
       {!enabled && <Notice>微信渠道尚未开启。</Notice>}
-      <PinField /><button className="btn-primary" disabled={busy || !enabled || Boolean(login && !finished.has(login.status))}>{binding ? '重新认证微信' : '连接我的微信助手'}</button>
+      <PinField /><button className="btn-primary" disabled={busy || !enabled || closed || Boolean(login && !finished.has(login.status))}>{binding ? '重新认证微信' : '连接我的微信助手'}</button>
     </form>}
     {login && !finished.has(login.status) && <div className="channel-qr"><img src={login.image} width="260" height="260" alt="微信助手绑定二维码" /><p>请用支持微信助手功能的微信扫码，并在微信中确认。</p><p className="data-note">有效期至 {date(login.expiresAt)}</p><button className="pill" onClick={() => void cancel()} disabled={busy}>取消本次连接</button></div>}
     {login?.status === 'awaiting_code' && <form className="stack-form form-card" onSubmit={async e => {

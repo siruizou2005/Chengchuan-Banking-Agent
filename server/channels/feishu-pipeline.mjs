@@ -5,6 +5,7 @@ import { enqueueExecution, assertChannelExecution } from '../agent/execution.mjs
 import { redact } from '../agent/guard.mjs';
 import { eventsText } from './router.mjs';
 import { channelText } from './preferences.mjs';
+import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
 
 const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 const pending=['queued','running'];
@@ -85,7 +86,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
       if(bank.get('SELECT 1 FROM feishu_inbox WHERE binding_id=? AND message_id=?',b.id,input.messageId)||bank.get("SELECT 1 FROM channel_messages WHERE channel='feishu' AND message_id=?",input.messageId))return;
       requestId=id('FSREQ');const time=Date.now(),command=commandPattern.test(input.text.trim());
       const count=bank.get("SELECT count(*) n FROM feishu_inbox WHERE user_id=? AND status IN ('queued','running') AND is_command=0",b.user_id).n;
-      const reason=!command&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':!command&&process.env.AGENT_DISABLED==='true'?'智能助手暂不可用，请在App办理。':null;
+      const reason=!command&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':!command&&process.env.AGENT_DISABLED==='true'?'智能助手暂不可用，请在App办理。':!command&&!services.enrollment.enabled(b.user_id)?IM_NOT_ENABLED_REPLY:null;
       bank.run(`INSERT INTO feishu_inbox(id,binding_id,binding_session_id,binding_generation,user_id,message_id,input_cipher,status,is_command,received_at,queue_deadline,run_id)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,b.id,b.binding_session_id,b.binding_generation,b.user_id,input.messageId,crypto.encrypt(input.text),reason?'failed':'queued',command?1:0,time,time+(options.queueMs||30000),id('RUN'));
       if(reason){bank.run('UPDATE feishu_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);enqueue(b,{requestId,messageId:input.messageId,kind:'final',body:reason});}
@@ -172,7 +173,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
     }catch(error){
       const current=bank.get('SELECT * FROM feishu_inbox WHERE id=?',row.id);
       if(current?.status==='running'&&current.lease_epoch===row.lease_epoch){
-        try{complete(row,{text:'本次处理未完成，已有操作请在App查看；查询可以稍后重试。',events:[]},error);}
+        try{complete(row,{text:error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:'本次处理未完成，已有操作请在App查看；查询可以稍后重试。',events:[]},error);}
         catch{bank.run("UPDATE feishu_inbox SET status='interrupted',finished_at=?,lease_epoch=lease_epoch+1 WHERE id=? AND status='running' AND lease_epoch=?",Date.now(),row.id,row.lease_epoch);cancelFeedback(row.id);}
       }
     }finally{clearInterval(heartbeat);}

@@ -19,6 +19,8 @@ import { createMemoryManager } from './agent/memory.mjs';
 import { createInferenceManager } from './agent/inference.mjs';
 import { createMemoryEvolution } from './agent/memory-evolution.mjs';
 import { createContextAssembler } from './agent/context-assembler.mjs';
+import { createEnrollment, registerEnrollmentRoutes } from './agent/enrollment.mjs';
+import { createOnboarding } from './agent/onboarding.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
@@ -268,6 +270,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       transactions: all('SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 100', user.id).map(transactionView),
       payees: all('SELECT * FROM payees WHERE user_id=? ORDER BY name', user.id),
       notifications: all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100', user.id),
+      ...(services?.enrollment ? { agent: (({ status, onboarding, enabledAt }) => ({ status, onboarding, enabledAt }))(services.enrollment.status(user.id)) } : {}),
       tickets: all('SELECT * FROM tickets WHERE user_id=? ORDER BY created_at DESC', user.id),
       appointments: all('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC', user.id),
     };
@@ -278,6 +281,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
   services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
+  services.enrollment = createEnrollment(services, { agreements: options.agreements });
+  services.onboarding = createOnboarding(services);
   const agent = createAgent(services, options.chat);
   const scheduler = createScheduler(services);
   registerChat(route, state, options.chat);
@@ -287,6 +292,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   registerVoice(route, services, options.voice);
   const channels = createChannels(services, agent, options.channels);
   channels.register(route);
+  services.enrollment.attachChannels(channels);
+  registerEnrollmentRoutes(route, services);
   route('get', '/health', '服务健康状态', (_req, res) => res.json({ status: 'ok', simulation: true }), false);
   route('post', '/auth/login', '登录，返回会话 Cookie 与 Bearer Token', (req, res) => {
     const key = `login:${req.ip}`; checkRate(key);

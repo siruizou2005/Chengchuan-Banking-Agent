@@ -40,6 +40,8 @@ async function faceFixture(t, { provider = fakeProvider(), timeoutMs, configured
   const user = f.bank.get('SELECT * FROM users WHERE id=?', userId);
   const token = (await f.req('/auth/login', { phone: user.phone, password: 'Bank123456' })).data.token;
   const call = (path, body) => f.req(path, body, token);
+  f.services.enrollment.enable(user, f.services.enrollment.status(user.id).documents);
+  f.services.onboarding.end(user);
   if (enrolled && configured) assert.equal((await call('/verify/identity', IDENTITY)).status, 200);
   const action = (await call('/agent/actions', { tool: 'propose_set_daily_limit', args: { amount: '60000' } })).data;
   async function begin() {

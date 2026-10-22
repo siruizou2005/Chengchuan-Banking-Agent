@@ -179,7 +179,7 @@ export function createFeishuBots(services,router,options={}) {
   }
  }
  async function register(user,pin){
-  requireThat(enabled(),'飞书专属机器人未开启',503,'FEISHU_PERSONAL_DISABLED');services.pin(user,pin);crypto.encrypt('configuration-check');
+  requireThat(enabled(),'飞书专属机器人未开启',503,'FEISHU_PERSONAL_DISABLED');services.enrollment.assertEnabled(user.id);services.pin(user,pin);crypto.encrypt('configuration-check');
   const key=`feishu-register:${user.id}`;services.checkRate(key);services.badAttempt(key);
   // A restart during setup leaves a hidden row that would otherwise block this depositor forever.
   bank.run("DELETE FROM channel_bindings WHERE user_id=? AND channel='feishu' AND status='setup' AND created_at<?",user.id,new Date(Date.now()-600000).toISOString());

@@ -18,7 +18,13 @@ async function fixture(t, provider, extra = {}) {
     const response = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, data: await response.json() };
   }
-  const login = async phone => (await request('/auth/login', { phone, password: 'Bank123456' })).data;
+  const login = async phone => {
+    const session = (await request('/auth/login', { phone, password: 'Bank123456' })).data;
+    const { documents } = (await request('/agent/enrollment', undefined, session.token)).data;
+    await request('/agent/enrollment', { documents: documents.map(d => ({ id: d.id, version: d.version })) }, session.token);
+    await request('/agent/onboarding/end', {}, session.token);
+    return session;
+  };
   const alice = await login('13800138000'), bob = await login('13900139000');
   return { calls, request, alice, bob, bank };
 }

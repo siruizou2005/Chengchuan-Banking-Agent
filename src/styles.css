@@ -537,3 +537,13 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .nav-value strong { color: var(--red); }
 .nav-value.down strong { color: var(--green); }
 .nav-change { margin-left: 6px; font-size: 13px; font-style: normal; font-weight: 600; }
+
+/* 关闭智能助手、开通协议等勾选项：复选框在左，标题与说明在右。 */
+.check-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 10px; background: var(--pill); cursor: pointer; }
+.check-option input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; accent-color: var(--brand); }
+.check-option span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-option strong { font-size: 15px; font-weight: 500; }
+.check-option small { font-size: 12px; line-height: 1.6; color: var(--text-3); }
+.btn-primary.danger { background: var(--red); }
+.channel-closed { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.channel-closed .pill { flex-shrink: 0; }

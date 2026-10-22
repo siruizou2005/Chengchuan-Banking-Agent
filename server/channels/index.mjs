@@ -20,7 +20,7 @@ export function createChannels(services,agent,options={}){
   pipeline.kick();
  }
  async function flush(){maintain();await Promise.all([wechat.flush(),pipeline.flush()]);}
- return {router,wechat,bots,feishuPipeline:pipeline,
+ return {router,wechat,bots,feishuPipeline:pipeline,revokeAll:router.revokeAll,
   register(route){router.register(route);wechat.register(route);bots.routes(route);pipeline.routes(route);},
   async start(){feishu=await startFeishu(router,options.feishu);pipeline.start();wechat.start();timer=setInterval(maintain,1000);timer.unref();},
   async stop(){clearInterval(timer);services.onChannelResult=undefined;await Promise.all([pipeline.stop(),wechat.stop(),feishu?.stop(),bots.stop()]);},flush};

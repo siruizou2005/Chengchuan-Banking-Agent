@@ -18,6 +18,7 @@ import { AgentTasks, PayRequest } from './pages/AgentTasks';
 import { Approval, type ApprovalProof } from './Approval';
 import { FaceReturn } from './pages/FaceReturn';
 import ChatApp from './chat/ChatApp';
+import { Enroll } from './chat/Enroll';
 import type { Snapshot, Transaction } from './types';
 
 const titles: Record<string, string> = { personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '账户', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
@@ -107,7 +108,7 @@ export default function App() {
   const isTabPage = tabPages.includes(page);
   return <BankContext.Provider value={{ data, busy, route, hidden, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : ''}`}>
     {page !== 'home' && page !== 'assistant' && <header className="page-header">{isTabPage ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button>}<h1>{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
-    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}><ChatApp key={data.user.id} /></div>}
+    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}>{data.agent && data.agent.status !== 'enabled' ? <Enroll key={data.user.id} /> : <ChatApp key={data.user.id} />}</div>}
     {page !== 'assistant' && (page.startsWith('pay-request/') ? <PayRequest path={page} /> : pages[page] || <div className="page"><Notice>未找到该页面。</Notice><button className="btn-primary" onClick={() => navigate('home')}>返回账户</button></div>)}
     <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} onClick={() => navigate(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon"><t.icon active={activeTab === t.id} /></span><span>{t.title}</span></button>)}</nav>
   </div>

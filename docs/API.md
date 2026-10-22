@@ -79,6 +79,23 @@
 
 ## 智能体接口
 
+### 开通与首次引导
+
+智能助手需本人开通：未开通、已关闭或协议升版本后未重新同意时，`/agent/chat`、`/voice/transcribe`、渠道绑定（`/channels/code`、`/channels/feishu/register`、`/channels/wechat/qr`）返回 403 `AGENT_NOT_ENABLED`，飞书和微信消息收到开通提示且不进入模型。银行业务接口、从业务页面发起的 `/agent/actions`、对已有动作的确认与取消、已授权的定时任务与订阅代扣、记忆的查看与删除不受影响。外部 Agent 使用对话接口前，用户须先在 App「智能助手」中开通。
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /agent/enrollment` | `{status, enabledAt, onboarding, documents, accepted, onboardingState}`；`status` 为 `not_enabled` / `enabled` / `reconsent_required`，`documents` 为当前协议 `{id, title, version, effectiveDate, summary}` |
+| `GET /agent/agreements/:id` | 协议全文（Markdown），`id` 为 `service` / `privacy` / `risk` |
+| `POST /agent/enrollment` | `{documents:[{id,version}]}`，须与当前全部协议版本一致，否则 409 `AGREEMENT_VERSION_MISMATCH`；同意记录写入 `agent_consents` 并审计 `agent.enabled`（协议名、版本、同意时间） |
+| `POST /agent/enrollment/disable` | `{unbindChannels?, clearData?, pin?}`；只停用不需要密码，解绑渠道或清空数据须支付密码。取消对话与 IM 提出的未确认动作，已确认的定时任务照常执行；清空会删除记忆、行为假设并归档对话，审计与决策链路保留。审计 `agent.disabled` |
+| `POST /agent/onboarding/end` | 结束首次引导，已记下的偏好保留 |
+| `POST /agent/onboarding/reset` | 重新开始首次引导 |
+
+`GET /dashboard` 的 `agent` 字段为 `{status, onboarding, enabledAt}`。
+
+开通后 App 渠道（`onboarding=pending` 时）进入首次引导：模型额外获得 `save_onboarding_answer`、`skip_onboarding` 两个工具，用自然对话了解称呼、关注业务、回复详略、飞书/微信是否隐藏金额和理财目标。服务端校验每次保存的 `evidence` 必须逐字出自本轮用户消息，称呼和自由填写的理财目标须是用户原话，并经过记忆系统的敏感信息与注入检查；风险偏好以风险测评为准，不另行记录。答案在本轮结束时与对话记录同一事务写入（称呼、关注业务等写入记忆 `preferred_name`、`focus_areas`、`answer_length`、`investment_goal`，隐藏金额写入两个渠道的设置），每项审计 `agent.onboarding.saved`（仅字段名）。全部问完或用户说结束后状态变为 `completed` / `skipped`。每轮返回 `onboarding` 事件 `{status, answered, skipped, remaining, next, riskLevel, personalization}`。飞书和微信始终按普通对话处理；外部调用可先 `POST /agent/onboarding/end` 跳过引导。
+
 ### 对话
 
 `POST /agent/chat`（`POST /chat` 为兼容别名）：
@@ -90,6 +107,7 @@
 - `messages` 只接受 user/assistant 角色，最多 24 条、单条 6000 字、合计 12000 字，最后一条必须是 user。历史 assistant 消息不构成已执行的证据。
 - `sessionId` 可选；首轮由服务端生成并返回，后续携带以归入同一对话。`expectedUserId` 可选，登录账户变化时返回 409 `ACCOUNT_CHANGED`。
 - 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`advice`（理财配置建议，卡片内可改期限与金额并跳转产品详情）、`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`stats`（多维统计，两者都带 `suggestions` 追问建议，每轮最多一张）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
+- 未开通或已关闭返回 403 `AGENT_NOT_ENABLED`，见上节。
 - 智能体锁定时返回 200 且 `events` 含 `locked`；`AGENT_DISABLED=true` 或锁定期间的工具调用与提议接口返回 423 `AGENT_LOCKED`。
 
 ### 动作与计划
@@ -232,7 +250,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 
 400 参数错误，401 认证失效，403 支付密码/验证/来源错误，404 资源不存在或无权访问，409 业务状态冲突，415 非 JSON 或非 WAV 请求，423 智能体锁定，429 限频，502 上游模型或语音服务错误，503 未配置，504 对话超时。
 
-常见代码：`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`RISK_MISMATCH`、`PRODUCT_UNAVAILABLE`、`PURCHASE_LIMIT`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
+常见代码：`AGENT_NOT_ENABLED`、`AGREEMENT_VERSION_MISMATCH`、`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`RISK_MISMATCH`、`PRODUCT_UNAVAILABLE`、`PURCHASE_LIMIT`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
 
 `GET /ledger` 与 `GET /transactions` 均只返回自己的资源。行内转账收款人可在自己的流水中看到入账，但不能查询发款人的交易资源或支付信息。智能体的所有查询与动作同样按会话或渠道绑定的用户隔离。
 

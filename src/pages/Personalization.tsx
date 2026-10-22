@@ -6,11 +6,11 @@ import { useBank } from '../bank';
 type Memory = { memory_id: string; key: string; value: string; status: string; version: number; source_channel: string; updated_at: string; expires_at: string | null };
 type View = { enabled: boolean; profile: Record<string, string>; memories: Memory[] };
 type Hypothesis = { hypothesis_id: string; hypothesis: string; status: string; version: number; evidence_count: number; session_count: number };
-const labels: Record<string, string> = { language: '回答语言', answer_length: '回答长度', analysis_style: '分析方式', markets: '关注市场', sectors: '关注行业', watchlist: '关注资产或主题', investment_goal: '投资目标', investment_horizon: '投资期限' };
+const labels: Record<string, string> = { preferred_name: '称呼', focus_areas: '关注业务', language: '回答语言', answer_length: '回答长度', analysis_style: '分析方式', markets: '关注市场', sectors: '关注行业', watchlist: '关注资产或主题', investment_goal: '投资目标', investment_horizon: '投资期限' };
 const states: Record<string, string> = { active: '已确认', candidate: '待确认', expired: '已过期' };
 
 export function Personalization() {
-  const { data: account, toast } = useBank();
+  const { data: account, toast, refresh: refreshBank, navigate } = useBank();
   const [view, setView] = useState<View | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
   const [key, setKey] = useState('answer_length'), [value, setValue] = useState('简短'), [editing, setEditing] = useState<Memory | null>(null);
@@ -26,11 +26,24 @@ export function Personalization() {
   }
   const selectKey = (next: string) => { setKey(next); setValue(next === 'language' ? '中文' : next === 'answer_length' ? '简短' : ''); };
   const currentKey = editing?.key || key;
+  async function restartGuide() {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await api('/agent/onboarding/reset', 'POST', {}); await refreshBank(); navigate('assistant'); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
   return <div className="page">
     <Notice>已绑定的微信、飞书和App共享你的长期偏好，各渠道的短期对话独立。关注资产不代表持有资产，投资目标不替代风险测评。</Notice>
     {error && <p role="alert" className="inline-error">{error}</p>}
     {!view && !error && <p role="status">正在读取记忆…</p>}
     {view && !view.enabled && <Notice>个性化已关闭，记忆不会用于回答。你仍可查看或删除已保存的信息。</Notice>}
+    {account.agent?.status === 'enabled' && <Card title="对话设置偏好">
+      <div className="stack-form">
+        <p className="muted">由智能助手通过几句对话了解你的称呼、关注业务、回复详略、飞书/微信是否隐藏金额和理财目标，每一项都可以跳过。</p>
+        <button className="pill primary" disabled={busy} onClick={() => void restartGuide()} data-testid="restart-guide">在智能助手中重新设置</button>
+      </div>
+    </Card>}
     {view?.enabled && <Card title={editing ? '纠正记忆' : '设置回答偏好'}>
       <form className="stack-form" onSubmit={e => { e.preventDefault(); void save(editing ? `/agent/memory/${editing.memory_id}` : '/agent/memory', editing ? 'PATCH' : 'POST', editing ? { value, version: editing.version } : { key, value }); }}>
         {!editing && <Field label="偏好类别"><select aria-label="偏好类别" value={key} onChange={e => selectKey(e.target.value)}>{Object.entries(labels).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select></Field>}

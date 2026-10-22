@@ -15,7 +15,7 @@ export function registerVoice(route,services,options={}) {
   await new Promise((resolve,reject)=>express.raw({type:['audio/wav','audio/x-wav'],limit:'8mb'})(req,res,error=>error?reject(error):resolve()));
   requireThat(req.is('audio/wav')||req.is('audio/x-wav'),'仅支持audio/wav',415,'UNSUPPORTED_AUDIO');
   const duration=validateWav(req.body),config=options.config?.()||{apiKey:process.env.DASHSCOPE_API_KEY,baseUrl:process.env.ASR_BASE_URL||'https://dashscope.aliyuncs.com/compatible-mode/v1',model:process.env.ASR_MODEL||'qwen3-asr-flash'};
-  requireThat(config.apiKey,'语音服务尚未配置',503,'VOICE_NOT_CONFIGURED');services.guard.assertOpen(req.user.id);
+  requireThat(config.apiKey,'语音服务尚未配置',503,'VOICE_NOT_CONFIGURED');services.guard.assertOpen(req.user.id);services.enrollment.assertEnabled(req.user.id);
   services.checkRate(`voice:${req.user.id}`);services.badAttempt(`voice:${req.user.id}`);
   const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),options.timeoutMs||45000);const close=()=>{if(!res.writableEnded)abort.abort();};res.on('close',close);
   try{
