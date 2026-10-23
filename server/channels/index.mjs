@@ -16,6 +16,9 @@ export function createChannels(services,agent,options={}){
  router.acceptFeishu=pipeline.ingest;
  router.onRevoke(bots.forget);router.onRevoke(pipeline.cancelBinding);
  services.onChannelResult=()=>pipeline.kick();
+ // What a user could bind right now; the first conversation offers only these.
+ const sharedFeishu=()=>Boolean((options.feishu?.appId||process.env.FEISHU_APP_ID)&&(options.feishu?.appSecret||process.env.FEISHU_APP_SECRET));
+ services.channelAvailability=()=>({wechat:wechat.enabled(),feishu:bots.enabled()?'personal':sharedFeishu()?'shared':null});
  // Reports are proactive, so WeChat is woken too instead of waiting for its next long-poll to return.
  const reports=createReportPush(services,{publicOrigin:options.publicOrigin,...options.reports,kick:()=>{pipeline.kick();wechat.delivery.kick();}});
  function maintain(){

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, LoaderCircle, Plus, RotateCcw, Menu, Mic, Square, X, History, ChevronRight } from 'lucide-react';
+import { Check, Copy, LoaderCircle, Plus, RotateCcw, Menu, Mic, Square, X, History } from 'lucide-react';
 import { ChatError, liveAdapter, initialMessages, type ChatAdapter, type Message } from './adapter';
 import { api, date } from '../api';
 import { useBank } from '../bank';
 import { Avatar, Empty, InlineError, Modal } from '../ui';
-import type { AgentSession, AgentSessionDetail, Enrollment, OnboardingState } from '../types';
+import type { AgentSession, AgentSessionDetail, ChannelName, Enrollment, OnboardingState } from '../types';
 import { Logo } from '../icons';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
 import { startRecording, transcribe, type Recording } from './voice';
-import { OnboardingCard, ONBOARDING_OPENING, ONBOARDING_RESUME } from './OnboardingCard';
+import { OnboardingCard, ONBOARDING_LABEL, ONBOARDING_OPENING, ONBOARDING_RESUME } from './OnboardingCard';
+import { CHANNEL_NAME } from './OnboardingSteps';
+import { riskTag } from '../products';
 import './chat.css';
 
 const money = (cents: number) => (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -60,8 +62,6 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   // 开通后的首次引导：开场白固定显示，之后由助手对话引导；进度来自服务端。
   const opening = () => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING : undefined;
   const [guide, setGuide] = useState<OnboardingState | null>(null);
-  // 引导聊完且尚未风险测评时，在总结下方给出测评入口；发下一句话或选「晚点再说」后收起。
-  const [riskPrompt, setRiskPrompt] = useState(false);
   const guiding = data.agent?.onboarding === 'pending' && guide?.status === 'pending';
   const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening()));
   const [draft, setDraft] = useState('');
@@ -138,7 +138,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
-      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) { setGuide(state); setRiskPrompt(state.status === 'completed' && state.riskLevel === 0); } await refresh(); }
+      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) setGuide(state); await refresh(); }
     } catch (failure) {
       if (!active.signal.aborted) {
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
@@ -153,11 +153,24 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     const content = text.trim(); if (!content || controller.current || !configured) return;
     started.current = true;
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text: content }];
-    setMessages(next); setDraft(''); setRiskPrompt(false); void requestReply(next); input.current?.focus();
+    setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
   }
-  function riskLater() {
-    setRiskPrompt(false); shouldScroll.current = true;
-    setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text: '好的，之后想要配置建议时，在「理财 → 风险测评」完成测评再来找我就行。' }]);
+  // 卡片里完成的步骤（扫码绑定、风险测评）由服务端核实后推进，这里只补一句确认并引出下一项，不调用模型。
+  function say(text: string) { shouldScroll.current = true; setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text }]); }
+  async function advanceGuide(field: 'channels' | 'risk', text: string) {
+    try {
+      const state = await api<OnboardingState>('/agent/onboarding/advance', 'POST', { field });
+      setGuide(state);
+      say(text + (state.status === 'pending' && state.next ? `接下来是${ONBOARDING_LABEL[state.next]}，可以在下方选择，也可以直接告诉我。` : '首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？'));
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
+  function channelBound(channel: ChannelName) {
+    const hint = channel === 'wechat' ? '请在微信里给助手发一句“你好”，之后就能在微信查询和接收推送。' : '';
+    const waiting = guide?.channels.choice.filter(c => c !== channel && !guide.channels.bound.includes(c)) || [];
+    if (!waiting.length) { void advanceGuide('channels', `${CHANNEL_NAME[channel]}已绑定。${hint}`); return; }
+    setGuide(current => current && { ...current, channels: { ...current.channels, bound: [...current.channels.bound, channel] } });
+    say(`${CHANNEL_NAME[channel]}已绑定。${hint}再扫一下${waiting.map(c => CHANNEL_NAME[c]).join('、')}的二维码就好。`);
   }
   async function endGuide() {
     try {
@@ -171,7 +184,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   function reset() {
     cancelVoice();
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
-    setBusy(false); setError(''); setNotice(''); setDraft(''); setRiskPrompt(false); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
+    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
     storeSession(user.id, '');
     scroller.current?.scrollTo({ top: 0 });
   }
@@ -213,8 +226,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
-        {guiding && guide ? <OnboardingCard state={guide} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onRisk={() => navigate('risk')} />
-        : riskPrompt && user.riskLevel === 0 ? <div className="chat-chips risk-followup" role="group" aria-label="风险测评"><button className="primary" onClick={() => { setRiskPrompt(false); navigate('risk'); }} data-testid="risk-followup-go">去做风险测评<ChevronRight size={14} /></button><button onClick={riskLater} data-testid="risk-followup-later">晚点再说</button></div>
+        {guiding && guide ? <OnboardingCard state={guide} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onBound={channelBound} onContinue={() => void advanceGuide('channels', '')} onRiskDone={level => advanceGuide('risk', `风险测评完成：${riskTag(level)}。`)} />
         : messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">聊天服务尚未配置，请在服务器 .env 中设置 CHAT_API_KEY 后重启。</div>}
         <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>

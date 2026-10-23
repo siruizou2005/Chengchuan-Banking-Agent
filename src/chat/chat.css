@@ -233,10 +233,18 @@
 .assistant-page .onboarding-chips button.selected { background: var(--brand-soft); border-color: var(--brand); }
 .assistant-page .onboarding-chips button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
 .assistant-page .onboarding-chips button:disabled { opacity: .5; }
-.assistant-page .risk-followup { margin: 10px 0 0 42px; }
-.assistant-page .risk-followup button { display: inline-flex; align-items: center; gap: 2px; }
-.assistant-page .risk-followup button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
-@media (max-width: 360px) { .assistant-page .risk-followup { margin-left: 0; } }
+.assistant-page .onboarding-card .data-note { margin: 6px 0 0; font-size: 12px; color: var(--text-3); line-height: 1.6; }
+.assistant-page .onboarding-pin { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.assistant-page .onboarding-pin .field { flex: 1; min-width: 0; margin: 0; }
+.assistant-page .onboarding-pin .pill { flex-shrink: 0; height: 40px; }
+.assistant-page .onboarding-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--bg); text-align: center; font-size: 13px; color: var(--text-2); }
+.assistant-page .onboarding-qr img { display: block; width: 180px; height: 180px; border-radius: 8px; background: #fff; }
+.assistant-page .onboarding-qr form { width: 100%; }
+.assistant-page .onboarding-bound { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--brand); }
+.assistant-page .onboarding-options { flex-direction: column; align-items: stretch; }
+.assistant-page .onboarding-options button { text-align: left; }
+.assistant-page .onboarding-back { margin-top: 6px; font-size: 12px; }
+.assistant-page .onboarding-card .binding-code { margin-top: 10px; }
 .assistant-page .onboarding-name { flex-wrap: nowrap; }
 .assistant-page .onboarding-name input { flex: 1; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 13px; }
 .assistant-page .onboarding-name input:focus { outline: none; border-color: var(--brand); background: #fff; }

@@ -90,12 +90,13 @@
 | `GET /agent/agreements/:id` | 协议全文（Markdown），`id` 为 `service` / `privacy` / `risk` |
 | `POST /agent/enrollment` | `{documents:[{id,version}]}`，须与当前全部协议版本一致，否则 409 `AGREEMENT_VERSION_MISMATCH`；同意记录写入 `agent_consents` 并审计 `agent.enabled`（协议名、版本、同意时间） |
 | `POST /agent/enrollment/disable` | `{unbindChannels?, clearData?, pin?}`；只停用不需要密码，解绑渠道或清空数据须支付密码。取消对话与 IM 提出的未确认动作，已确认的定时任务照常执行；清空会删除记忆、行为假设并归档对话，审计与决策链路保留。审计 `agent.disabled` |
+| `POST /agent/onboarding/advance` | `{field:'channels'|'risk'}`：App 卡片里完成飞书/微信扫码绑定或风险测评后推进引导；服务端核实已有可用绑定或风险等级，否则 409 `ONBOARDING_STEP_INCOMPLETE`，其他字段 400 |
 | `POST /agent/onboarding/end` | 结束首次引导，已记下的偏好保留 |
 | `POST /agent/onboarding/reset` | 重新开始首次引导 |
 
 `GET /dashboard` 的 `agent` 字段为 `{status, onboarding, enabledAt}`。
 
-开通后 App 渠道（`onboarding=pending` 时）进入首次引导：模型额外获得 `save_onboarding_answer`、`skip_onboarding` 两个工具，用自然对话了解称呼、关注业务、回复详略、飞书/微信是否隐藏金额和理财目标。服务端校验每次保存的 `evidence` 必须逐字出自本轮用户消息，称呼和自由填写的理财目标须是用户原话，并经过记忆系统的敏感信息与注入检查；风险偏好以风险测评为准，不另行记录。答案在本轮结束时与对话记录同一事务写入（称呼、关注业务等写入记忆 `preferred_name`、`focus_areas`、`answer_length`、`investment_goal`，隐藏金额写入两个渠道的设置），每项审计 `agent.onboarding.saved`（仅字段名）。全部问完或用户说结束后状态变为 `completed` / `skipped`。每轮返回 `onboarding` 事件 `{status, answered, skipped, remaining, next, riskLevel, personalization}`。飞书和微信始终按普通对话处理；外部调用可先 `POST /agent/onboarding/end` 跳过引导。
+开通后 App 渠道（`onboarding=pending` 时）进入首次引导：模型额外获得 `save_onboarding_answer`、`skip_onboarding` 两个工具，用自然对话依次了解称呼、关注业务、回复详略、理财目标，再问是否绑定飞书/微信、飞书/微信是否隐藏金额、要哪几种账单推送，最后是风险测评，每项都可跳过。绑定和风险测评在 App 卡片里完成：模型只用 `save_onboarding_answer` 记下要绑的渠道（`channels`：微信 / 飞书 / 都绑，只能选服务端已开放且未绑定的），支付密码、扫码和测评答案不经过模型，完成后 App 调用 `/agent/onboarding/advance`。`reports`（日报、周报、月报）写入已绑定渠道的账单推送设置。已测评的用户自动跳过风险测评，可用渠道都已绑定时自动跳过绑定；服务端没有开放任何渠道时不问绑定，没有绑定时不再问隐藏金额和账单推送（记入 `unavailable`，不计入进度）。服务端校验每次保存的 `evidence` 必须逐字出自本轮用户消息，称呼和自由填写的理财目标须是用户原话，并经过记忆系统的敏感信息与注入检查；风险偏好以风险测评为准，不另行记录。答案在本轮结束时与对话记录同一事务写入（称呼、关注业务等写入记忆 `preferred_name`、`focus_areas`、`answer_length`、`investment_goal`，隐藏金额写入两个渠道的设置），每项审计 `agent.onboarding.saved`（仅字段名）。全部问完或用户说结束后状态变为 `completed` / `skipped`。每轮返回 `onboarding` 事件 `{status, answered, skipped, remaining, unavailable, total, next, riskLevel, personalization, channels:{available, bound, choice, feishu}}`，`feishu` 为 `personal`（一键创建专属机器人）、`shared`（银行机器人绑定码）或 `null`。飞书和微信始终按普通对话处理；外部调用可先 `POST /agent/onboarding/end` 跳过引导。
 
 ### 对话
 

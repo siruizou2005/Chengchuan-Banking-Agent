@@ -63,6 +63,15 @@ export function unsubscribeCommand(bank,binding,text){
   });
   return `已退订${CHANNEL_NAMES[binding.channel]}${kinds.length>1?'全部账单推送':NAMES[kinds[0]]}，可在澄川银行App「消息渠道绑定」重新开通。`;
 }
+// choices maps kind→boolean; an unchanged enabled report keeps its next slot.
+export function setReportSubscriptions(bank,userId,channel,choices){
+  const changes=REPORT_KINDS.filter(kind=>choices[kind]!==undefined);
+  bank.atomic(()=>{
+    for(const kind of changes)bank.run(`INSERT INTO report_subscriptions(user_id,channel,kind,enabled,next_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,channel,kind) DO UPDATE SET
+      next_at=CASE WHEN report_subscriptions.enabled=1 AND excluded.enabled=1 THEN report_subscriptions.next_at ELSE excluded.next_at END,enabled=excluded.enabled,updated_at=excluded.updated_at`,userId,channel,kind,choices[kind]?1:0,choices[kind]?nextSlot(kind,now()):null,now());
+    bank.audit(userId,'channel.report_updated',channel,Object.fromEntries(changes.map(kind=>[kind,choices[kind]])));
+  });
+}
 export function reportDeliveryNotice(bank,origin,outboxId,channel){
   const push=outboxId&&bank.get('SELECT kind,period_from,period_to FROM report_pushes WHERE outbox_id=?',outboxId);
   return push?{title:'账单推送未确认送达',body:`${CHANNEL_NAMES[channel]}${NAMES[push.kind]}暂时无法确认送达，可在App查看：${reportLink(origin,push.period_from,push.period_to)}`}:null;
@@ -152,11 +161,7 @@ export function createReportPush(services,options={}){
     const input=body&&typeof body==='object'?body:{},changes=REPORT_KINDS.filter(kind=>input[kind]!==undefined);
     requireThat(changes.length&&changes.every(kind=>typeof input[kind]==='boolean'),'账单推送设置必须为布尔值',400,'INVALID_CHANNEL_SETTING');
     if(changes.some(kind=>input[kind]))services.enrollment.assertEnabled(user.id);
-    atomic(()=>{
-      for(const kind of changes)run(`INSERT INTO report_subscriptions(user_id,channel,kind,enabled,next_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,channel,kind) DO UPDATE SET
-        next_at=CASE WHEN report_subscriptions.enabled=1 AND excluded.enabled=1 THEN report_subscriptions.next_at ELSE excluded.next_at END,enabled=excluded.enabled,updated_at=excluded.updated_at`,user.id,channel,kind,input[kind]?1:0,input[kind]?nextSlot(kind,now()):null,now());
-      audit(user.id,'channel.report_updated',channel,Object.fromEntries(changes.map(kind=>[kind,input[kind]])));
-    });
+    setReportSubscriptions(bank,user.id,channel,Object.fromEntries(changes.map(kind=>[kind,input[kind]])));
     return settings(user.id)[channel];
   }
   function routes(route){

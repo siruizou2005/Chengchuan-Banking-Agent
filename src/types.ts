@@ -53,7 +53,10 @@ export type AgentSessionDetail = { id: string; handover: boolean; updatedAt: str
 export type AgentRun = { id: string; channel: string; input: string; output: string; trace: AgentTrace[]; injection: string[]; duration_ms: number; tokens: number; created_at: string };
 export type AgentEnrollmentStatus = 'not_enabled' | 'enabled' | 'reconsent_required';
 export type OnboardingStatus = 'pending' | 'completed' | 'skipped';
-export type OnboardingField = 'preferred_name' | 'focus_areas' | 'answer_length' | 'mask_amounts' | 'investment_goal';
-export type OnboardingState = { status: OnboardingStatus; answered: OnboardingField[]; skipped: OnboardingField[]; remaining: OnboardingField[]; next: OnboardingField | null; riskLevel: number; personalization: boolean };
+export type OnboardingField = 'preferred_name' | 'focus_areas' | 'answer_length' | 'investment_goal' | 'channels' | 'mask_amounts' | 'reports' | 'risk';
+export type ChannelName = 'feishu' | 'wechat';
+// feishu: 'personal' 一键创建专属机器人，'shared' 银行机器人绑定码，null 未开放。
+export type OnboardingChannels = { available: ChannelName[]; bound: ChannelName[]; choice: ChannelName[]; feishu: 'personal' | 'shared' | null };
+export type OnboardingState = { status: OnboardingStatus; answered: OnboardingField[]; skipped: OnboardingField[]; remaining: OnboardingField[]; unavailable: OnboardingField[]; total: number; next: OnboardingField | null; riskLevel: number; personalization: boolean; channels: OnboardingChannels };
 export type Agreement = { id: string; title: string; version: string; effectiveDate: string; summary: string; body?: string };
 export type Enrollment = { status: AgentEnrollmentStatus; enabledAt: string | null; onboarding: OnboardingStatus; documents: Agreement[]; accepted: { id: string; version: string; acceptedAt: string }[]; onboardingState: OnboardingState };

@@ -78,6 +78,7 @@ export function registerEnrollmentRoutes(route,services) {
  route('get','/agent/agreements/:id','智能助手协议全文（Markdown）',(req,res)=>res.json(enrollment.document(req.params.id)));
  route('post','/agent/enrollment','同意当前全部协议并开通智能助手',(req,res)=>{enrollment.enable(req.user,req.body.documents);res.json(view(req.user));});
  route('post','/agent/enrollment/disable','关闭智能助手；可选同时解绑渠道或清空记忆与对话（需支付密码）',(req,res)=>res.json({...enrollment.disable(req.user,{unbindChannels:req.body.unbindChannels??false,clearData:req.body.clearData??false,pin:req.body.pin}),onboardingState:onboarding.state(req.user.id)}));
+ route('post','/agent/onboarding/advance','App内完成飞书/微信绑定或风险测评后推进首次引导',(req,res)=>{enrollment.assertEnabled(req.user.id);res.json(onboarding.advance(req.user,req.body?.field));});
  route('post','/agent/onboarding/end','结束首次引导（已记下的偏好保留）',(req,res)=>{enrollment.assertEnabled(req.user.id);res.json(onboarding.end(req.user));});
  route('post','/agent/onboarding/reset','重新开始首次引导',(req,res)=>{enrollment.assertEnabled(req.user.id);res.json(onboarding.reset(req.user));});
 }

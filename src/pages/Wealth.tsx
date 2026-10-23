@@ -4,7 +4,7 @@ import { useBank } from '../bank';
 import { yuan, formValues, date, tail } from '../api';
 import { Card, Row, Empty, Amount, Field, AccountSelect, Notice, Submit, PinField, Tile, CircleIcon, Rate, Promo, Pill } from '../ui';
 import { IcoDeposit, IcoWealth, IcoShield, IcoWallet, IcoSnow, IcoBag, IcoRecord, Logo } from '../icons';
-import { CATEGORIES, minText, pct, statusText, sourceLine, featuredFund, riskTag } from '../products';
+import { CATEGORIES, minText, pct, statusText, sourceLine, featuredFund, riskTag, RISK_QUESTIONS } from '../products';
 import { NavChart, IndexDetail } from './NavChart';
 import type { Product, Holding } from '../types';
 
@@ -166,14 +166,6 @@ export function Funds() {
     <p className="footnote">基金有风险，投资须谨慎；本模拟环境不发生真实申购</p>
   </div>;
 }
-
-const RISK_QUESTIONS = [
-  { key: 'a', title: '您的投资经验', options: ['没有投资经验', '只买过存款或货币基金', '买过债券基金或银行理财', '买过股票或偏股基金三年以上'] },
-  { key: 'b', title: '您能接受的最大本金亏损', options: ['不能接受亏损', '5%以内', '5%至20%', '20%以上'] },
-  { key: 'c', title: '这笔资金的计划投资期限', options: ['3个月以内', '3个月至1年', '1至3年', '3年以上'] },
-  { key: 'd', title: '投资资产占家庭总资产的比例', options: ['50%以上', '30%至50%', '10%至30%', '10%以下'] },
-  { key: 'e', title: '您的主要投资目标', options: ['保本保息', '略高于存款的稳定收益', '收益与风险兼顾', '追求较高收益，可承受较大波动'] },
-];
 
 export function Risk() {
   const { mutate, navigate, data } = useBank();
