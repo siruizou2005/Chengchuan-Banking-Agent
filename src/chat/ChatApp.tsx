@@ -5,7 +5,8 @@ import { api, date } from '../api';
 import { useBank } from '../bank';
 import { Avatar, Empty, InlineError, Modal } from '../ui';
 import type { AgentSession, AgentSessionDetail } from '../types';
-import { Logo } from '../icons';
+import { AgentMark } from '../AgentMark';
+import { BotanicalArt } from '../Botanical';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
 import { startRecording, transcribe, type Recording } from './voice';
@@ -26,7 +27,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
   }
   if (message.role === 'user') return <article className="msg user"><div className="bubble">{message.text}</div><Avatar size={34} /></article>;
   return <article className="msg assistant" id={`msg-${message.id}`}>
-    <span className="chat-avatar" aria-hidden="true"><Logo size={34} /></span>
+    <span className="chat-avatar" aria-hidden="true"><AgentMark size={25} /></span>
     <div className="msg-body">
       <span className="msg-name">澄川智能助手</span>
       <div className="bubble">
@@ -156,10 +157,10 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     catch (e) { if (generation === voiceGeneration.current) setError((e as Error).message); }
     finally { if (generation === voiceGeneration.current) setVoiceBusy(false); }
   }
-  return <section className="assistant-page" aria-label="智能助手">
+  return <section className="assistant-page satin-assistant" aria-label="智能助手">
     <header className="chat-header">
       <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button>
-      <div className="chat-title"><h1>智能助手</h1><span className={`chat-state${configured ? ' on' : ''}`}>{configured === null ? '连接中…' : configured ? '在线，7×24小时服务' : '服务暂不可用'}</span></div>
+      <div className="chat-title"><h1><AgentMark size={22} />智能助手</h1><span className={`chat-state${configured ? ' on' : ''}`}>{configured === null ? '连接中…' : configured ? '已连接' : '服务暂不可用'}</span></div>
       <div className="chat-header-actions"><button className="icon-button" aria-label="对话历史" onClick={() => void openHistory()}><History size={21} strokeWidth={1.8} /></button><button className="btn-text" onClick={reset}><Plus size={15} />新对话</button></div>
     </header>
     {historyOpen && <Modal title="对话历史" onClose={() => setHistoryOpen(false)}>
@@ -176,12 +177,13 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     </Modal>}
     <div ref={scroller} className="chat-scroll" role="log" aria-label="对话记录">
       <div className="chat-inner">
+        {messages.length === 1 && <section className="agent-welcome"><div className="agent-botanical-core"><BotanicalArt theme="assistant" /><span className="surface-satin finish-mist agent-core-metal"><AgentMark size={32} /></span></div><span className="oak-eyebrow">脉络 · 你的银行智能助手</span><h2>理解需求，理清每一步</h2><p>从账户查询到业务办理<br />让信息有条理，让操作有依据。</p><div className="agent-path" aria-label="服务流程"><span>理解</span><i /><span>规划</span><i /><span>协助办理</span></div></section>}
         {data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() && <LockedCard message={`锁定至 ${new Date(data.agentLockedUntil).toLocaleTimeString('zh-CN')}`} />}
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
         {messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
-        {configured === false && !error && <div className="chat-error" role="alert">聊天服务尚未配置，请在服务器 .env 中设置 CHAT_API_KEY 后重启。</div>}
+        {configured === false && !error && <div className="chat-error" role="alert">智能助手暂不可用，请稍后再试。你仍可通过底部导航办理业务。</div>}
         <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>
         {error && <div className="chat-error" role="alert">{error}{configured && <button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重试</button>}</div>}
         <div ref={bottom} className="scroll-anchor" />

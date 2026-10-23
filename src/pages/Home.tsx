@@ -5,6 +5,8 @@ import { yuan, date, tail } from '../api';
 import { Card, Tile, Empty, type Icon, type Tone } from '../ui';
 import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, Logo } from '../icons';
 import { HomeCashFlow } from './HomeCashFlow';
+import { BotanicalArt } from '../Botanical';
+import { AgentMark } from '../AgentMark';
 import './home.css';
 export const services: { id: string; label: string; icon: Icon; tone: Tone }[] = [
   { id: 'accounts', label: '银行卡', icon: IcoWallet, tone: 'blue' }, { id: 'transfer', label: '转账汇款', icon: IcoTransfer, tone: 'blue' },
@@ -59,8 +61,8 @@ export function Home() {
 
     {pending > 0 && <button className="home-attention" onClick={() => navigate('transactions')}><ShieldCheck size={18} /><span>有 {pending} 笔交易等待您确认</span><ChevronRight size={16} /></button>}
     <section className="home-card home-assistant" aria-labelledby="home-assistant-title">
-      <svg className="home-landscape" viewBox="0 0 230 160" aria-hidden="true"><path d="M0 130C45 110 60 15 115 28S185 104 230 52V160H0Z" fill="#ede1d2" /><path d="M15 160C58 125 90 64 135 75S188 127 230 94V160Z" fill="#dfcbb7" /><path d="M73 160C130 112 168 107 230 141V160Z" fill="#b5b69c" /><path d="M200 149C197 127 202 107 199 88M200 123C186 123 180 114 180 107C192 108 200 114 200 123M200 111C211 106 214 94 212 88C202 94 199 103 200 111" fill="none" stroke="#7f9479" strokeWidth="2" strokeLinecap="round" /></svg>
-      <div className="home-assistant-heading"><span><Sparkles size={19} />私人财富助手</span><button aria-label="查看助手操作与计划" onClick={() => navigate('tasks')}><ListChecks size={19} /></button></div>
+      <BotanicalArt theme="home" className="home-landscape" />
+      <div className="home-assistant-heading"><span><AgentMark size={19} />私人财富助手</span><button aria-label="查看助手操作与计划" onClick={() => navigate('tasks')}><ListChecks size={19} /></button></div>
       <h2 id="home-assistant-title">每一笔收支，<br />都可以更有章法。</h2><p>聊聊账单、理财，或下一步的安排。</p>
       {pendingActions.length > 0 && <button className="home-agent-pending" onClick={() => navigate('tasks')}>{pendingActions.length} 项助手操作待确认 <ChevronRight size={14} /></button>}
       <div className="home-ai-actions"><button className="primary" onClick={() => navigate('assistant')}><MessageCircle size={17} />问问助手</button><button onClick={() => navigate('advice')}><ChartNoAxesColumnIncreasing size={17} />配置建议</button><button onClick={() => navigate('tasks')}><ListChecks size={17} />操作计划</button></div>

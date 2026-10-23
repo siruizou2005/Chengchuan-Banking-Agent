@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AgentMark } from '../AgentMark';
 import { api, date } from '../api';
 import { Card, Empty, Field, Notice } from '../ui';
 import { useBank } from '../bank';
@@ -43,7 +44,7 @@ export function Personalization() {
         {editing && <button type="button" className="pill" onClick={() => { setEditing(null); selectKey(key); }}>取消修改</button>}
       </form>
     </Card>}
-    <Card title="已保存记忆与候选">
+    <Card head={<h2 className="card-title memory-brand"><AgentMark size={22} />已保存记忆与候选</h2>}>
       {view?.memories.map(m => <article className="memory-item" key={m.memory_id}>
         <div className="memory-heading"><strong>{labels[m.key] || m.key}</strong><span className="tag gray">{states[m.status] || m.status}</span></div>
         <p>{m.value}</p>

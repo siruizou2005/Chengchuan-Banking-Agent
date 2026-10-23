@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AgentMark } from '../AgentMark';
+import { BotanicalArt } from '../Botanical';
 import { ChevronRight } from 'lucide-react';
 import { useBank } from '../bank';
 import { IcoWallet, IcoShield, IcoBell, IcoPerson, IcoRecord, IcoHeadset, IcoCode, IcoLock, IcoSliders, IcoKeypad, IcoDoc, IcoActivity, IcoTerminal, IcoTransfer, IcoHelp, IcoClock } from '../icons';
@@ -11,18 +13,22 @@ import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelec
 export function Profile() {
   const { data, navigate, logout, openModal, closeModal } = useBank();
   const unread = data.notifications.filter(n => !n.is_read).length;
-  return <div className="page">
-    <section className="card profile-card"><Avatar size={56} /><div className="profile-text"><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}{data.user.email ? ` · ${data.user.email}` : ''}</small></div><em className="tag gray">Ⅰ类账户</em></section>
-    <section className="card stats"><button onClick={() => navigate('accounts')}><strong>{data.accounts.length}</strong><span>银行卡</span></button><button onClick={() => navigate('wealth')}><strong>{data.holdings.length}</strong><span>持有产品</span></button><button onClick={() => navigate('messages')}><strong>{unread}</strong><span>未读消息</span></button></section>
-    <Card>
-      <Row icon={IcoSliders} tone="blue" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
+  return <div className="page oak-page profile-page satin-profile">
+    <section className="card profile-card"><span className="profile-identity-art"><BotanicalArt theme="profile" /><Avatar size={34} /></span><div className="profile-text"><span className="profile-kicker">树心 · 个人空间</span><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}{data.user.email ? ` · ${data.user.email}` : ''}</small></div></section>
+    <Card title="安全与授权" className="profile-settings" material="matte">
+      <Row icon={IcoShield} tone="green" title="安全中心" subtitle="密码、验证与转账限额" onClick={() => navigate('security')} />
+      <Row icon={AgentMark} tone="orange" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
+      <Row icon={IcoBell} tone="gray" title="消息渠道绑定" subtitle="管理飞书、微信绑定与渠道设置" onClick={() => navigate('channels')} />
+      <Row icon={IcoClock} tone="gray" title="智能助手操作与计划" subtitle="查看操作、确认请求与执行状态" onClick={() => navigate('tasks')} />
+    </Card>
+    <Card title="账户与消息" className="profile-settings" material="matte">
       <Row icon={IcoWallet} tone="blue" title="银行卡" onClick={() => navigate('accounts')} />
+      <Row icon={IcoWallet} tone="gray" title="持有产品" trailing={`${data.holdings.length} 笔`} onClick={() => navigate('wealth')} />
       <Row icon={IcoRecord} tone="coral" title="交易进度" subtitle="待确认、已完成与失败的交易" onClick={() => navigate('transactions')} />
       <Row icon={IcoPerson} tone="orange" title="收款人管理" onClick={() => navigate('payees')} />
       <Row icon={IcoBell} tone="red" title="消息中心" trailing={unread > 0 ? <em className="badge">{unread}</em> : undefined} onClick={() => navigate('messages')} />
     </Card>
-    <Card>
-      <Row icon={IcoShield} tone="blue" title="安全中心" subtitle="登录密码、支付密码、转账限额" onClick={() => navigate('security')} />
+    <Card title="帮助与其他" className="profile-settings" material="matte">
       <Row icon={IcoHeadset} tone="gold" title="帮助与客服" onClick={() => navigate('support')} />
       <Row icon={IcoCode} tone="coral" title="开发者中心" subtitle="API、能力清单与操作记录" onClick={() => navigate('agent')} />
       <Row icon={IcoHelp} tone="gray" title="关于澄川银行" trailing={<span className="muted">v1.0.0</span>} onClick={() => openModal('关于澄川银行', <div className="stack-form"><p className="body-copy">澄川银行是面向银行业务体验与 Agent 开发的中文手机银行模拟环境，使用虚拟账户、虚拟资金和可追踪的业务状态。</p><Notice>本项目不是持牌银行，不接入真实支付、短信、征信或金融产品服务。</Notice><button className="pill full" onClick={closeModal}>我知道了</button></div>)} />

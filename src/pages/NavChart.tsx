@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { pct } from '../products';
 import type { MarketIndex, Product } from '../types';
@@ -27,6 +27,7 @@ function TrendChart({ path, kind, title, label, note, field, extra }: { path: st
   const [hover, setHover] = useState<number | null>(null);
   const [width, setWidth] = useState(320);
   const box = useRef<HTMLDivElement>(null);
+  const washId = `trend-wash-${useId().replace(/:/g, '')}`;
   useEffect(() => {
     const el = box.current; if (!el) return;
     const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, Math.round(entry.contentRect.width))));
@@ -74,11 +75,12 @@ function TrendChart({ path, kind, title, label, note, field, extra }: { path: st
       {state.loading && !points.length && <p className="nav-chart-empty">走势加载中…</p>}
       {!state.loading && !points.length && <p className="nav-chart-empty">{state.error || state.data?.notice || '暂无走势数据'}</p>}
       {points.length > 1 && <svg width={width} height={H} role="img" aria-label={`${label}${rangeLabel}${state.data?.metric}走势，最新${fmt(last.value)}`} onPointerLeave={() => setHover(null)}>
+        <defs><linearGradient id={washId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity=".18" /><stop offset="100%" stopColor="var(--accent)" stopOpacity=".015" /></linearGradient></defs>
         {yt.map(v => <g key={v}><line className={v === 0 && kind === 'return' ? 'zero' : 'grid'} x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} /><text className="axis" x={PAD.left - 6} y={y(v)} dy="0.35em" textAnchor="end">{tickText(v)}</text></g>)}
         {dateIdx.map((i, k) => <text key={i} className="axis" x={x(i)} y={H - 6} textAnchor={k === 0 ? 'start' : k === dateIdx.length - 1 ? 'end' : 'middle'}>{points[i].date.slice(5)}</text>)}
-        <path className="wash" d={area} />
+        <path className="wash" d={area} style={{ fill: `url(#${washId})`, opacity: 1 }} />
         <path className="series" d={line} />
-        {active ? <g><line className="crosshair" x1={x(hover!)} x2={x(hover!)} y1={PAD.top} y2={H - PAD.bottom} /><circle className="dot" cx={x(hover!)} cy={y(active.value)} r={4} /></g>
+        {active ? <g><line className="crosshair" x1={x(hover!)} x2={x(hover!)} y1={PAD.top} y2={H - PAD.bottom} /><circle className="node-halo" cx={x(hover!)} cy={y(active.value)} r={8} /><circle className="dot" cx={x(hover!)} cy={y(active.value)} r={4} /></g>
           : <circle className="dot" cx={x(points.length - 1)} cy={y(last.value)} r={4} />}
         <rect className="hit" x={PAD.left} y={0} width={width - PAD.left - PAD.right} height={H} onPointerMove={onMove} onPointerDown={onMove} />
       </svg>}

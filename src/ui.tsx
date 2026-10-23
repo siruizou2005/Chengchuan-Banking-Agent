@@ -2,9 +2,11 @@ import { useContext, useEffect, useId, useRef, useState, type ReactNode, type Co
 import { ChevronRight, X, LoaderCircle, CircleAlert } from 'lucide-react';
 import { BankContext, useBank } from './bank';
 import { Logo } from './icons';
+import { ThemeGlyph } from './Botanical';
 
 export type Icon = ComponentType<{ size?: number; className?: string }>;
 export type Tone = 'blue' | 'cyan' | 'coral' | 'red' | 'orange' | 'green' | 'purple' | 'gold' | 'gray';
+export type Material = 'matte' | 'satin' | 'signature';
 /* 宫格轮换只用五个常用色系，避免彩虹感。 */
 export const tones: Tone[] = ['blue', 'orange', 'coral', 'red', 'gold'];
 
@@ -25,8 +27,8 @@ export function CircleIcon({ icon: I, text, tone = 'blue', size = 44, glyph = 22
 }
 
 /* 白卡：标题下带蓝色短横条，右侧可放“全部 >”。也可用 head 传入 Tabs。 */
-export function Card({ title, action, onAction, children, className = '', head, testId }: { title?: string; action?: ReactNode; onAction?: () => void; children: ReactNode; className?: string; head?: ReactNode; testId?: string }) {
-  return <section className={`card ${className}`} data-testid={testId}>{(title || head || action) && <header className="card-head">{head ?? <h2 className="card-title">{title}</h2>}{action && (onAction ? <button className="card-action" onClick={onAction}>{action}<ChevronRight size={16} /></button> : <span className="card-action">{action}</span>)}</header>}{children}</section>;
+export function Card({ title, action, onAction, children, className = '', head, testId, material }: { title?: string; action?: ReactNode; onAction?: () => void; children: ReactNode; className?: string; head?: ReactNode; testId?: string; material?: Material }) {
+  return <section className={`card ${className}${material ? ` surface-${material}` : ''}`} data-testid={testId}>{(title || head || action) && <header className="card-head">{head ?? <h2 className="card-title"><span className="card-theme-icon"><ThemeGlyph size={19} /></span>{title}</h2>}{action && (onAction ? <button className="card-action" onClick={onAction}>{action}<ChevronRight size={16} /></button> : <span className="card-action">{action}</span>)}</header>}{children}</section>;
 }
 
 /* 下划线 tab：激活项加粗放大，下方蓝色横条。 */
@@ -69,7 +71,7 @@ export function Promo({ title, subtitle, rate, caption, action, onClick, note }:
   return <button className="promo" onClick={onClick}><span className="promo-title">{title}</span>{subtitle && <span className="promo-sub">{subtitle}</span>}<span className="promo-foot"><Rate value={rate} caption={caption} /><span className="pill primary small">{action}</span></span>{note && <span className="promo-note">{note}</span>}</button>;
 }
 
-export function Empty({ title = '暂无记录', text }: { title?: string; text?: string }) { return <div className="empty"><strong>{title}</strong>{text && <p>{text}</p>}</div>; }
+export function Empty({ title = '暂无记录', text }: { title?: string; text?: string }) { return <div className="empty"><span className="empty-botanical"><ThemeGlyph size={30} /></span><strong>{title}</strong>{text && <p>{text}</p>}</div>; }
 
 /* 表单 cell：标签在上、输入在下，行间细分隔线。 */
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <label className="field"><span className="field-label">{label}</span>{children}{hint && <small className="field-hint">{hint}</small>}</label>; }

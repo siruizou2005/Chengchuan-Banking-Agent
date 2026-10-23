@@ -1,0 +1,182 @@
+/* Route accents vary; shared oak controls, typography and financial colors do not. */
+body { background: #eeeae3; }
+.theme-wealth { --accent: #416c53; --accent-soft: #e8edde; --accent-line: #c7d4bb; }
+.theme-assistant { --accent: #537783; --accent-soft: #e9eeec; --accent-line: #c3d1cc; }
+.theme-life { --accent: #94664e; --accent-soft: #f3e7d9; --accent-line: #dfc8af; }
+.theme-profile { --accent: #775b43; --accent-soft: #ede5db; --accent-line: #d6c5b0; }
+.bank-theme .page-header h1 { display: flex; align-items: center; gap: 9px; }
+.bank-theme .page-header h1 > svg { color: var(--accent); }
+.bank-theme .page { gap: 16px; padding: 12px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
+.bank-theme .card { background: var(--card); border: 1px solid #e6ded380; box-shadow: 0 3px 16px #60452c04; border-radius: 20px; min-width: 0; }
+.bank-theme .card-title { display: flex; align-items: center; gap: 8px; font-size: 18px; line-height: 1.5; padding-bottom: 0; }
+.bank-theme .card-title::after { display: none; }
+.card-theme-icon { display: inline-flex; color: var(--accent); flex-shrink: 0; }
+.bank-theme .card-head { align-items: center; gap: 8px; flex-wrap: wrap; }
+.bank-theme .card-action { min-height: 40px; display: inline-flex; align-items: center; color: var(--oak); font-size: 12px; flex-shrink: 0; }
+.bank-theme .row { min-width: 0; min-height: 60px; }
+.bank-theme .row-body { min-width: 0; }
+.bank-theme .row-title { font-size: 14px; }
+.bank-theme .row-subtitle { line-height: 1.7; }
+.bank-theme .chevron { color: #998a79; }
+.bank-theme .circle-icon { background: var(--accent-soft); color: var(--accent); --tone-color: var(--accent-soft); border-radius: 14px; }
+.bank-theme .circle-icon.gray { color: #776e62; background: #ede9e1; --tone-color: #ede9e1; }
+.bank-theme .circle-icon.red { color: #995448; background: #f2e2da; --tone-color: #f2e2da; }
+.bank-theme .tile-flat { color: var(--accent); background: var(--accent-soft); --tone-color: var(--accent-soft); border-radius: 15px; }
+.bank-theme .tile-flat svg { width: 28px; height: 28px; filter: none; }
+.bank-theme .tile-flat svg [fill="currentColor"] { fill: currentColor; }
+.bank-theme .tile-flat svg [stroke="currentColor"] { stroke: currentColor; }
+.bank-theme .tile-label { font-size: 12px; }
+.bank-theme .tile-badge { background: #eee7db; color: var(--oak); left: auto; right: 0; margin: 0; }
+.bank-theme .avatar { background: #e9dfd0; color: var(--oak); }
+.bank-theme :is(.btn-primary, .pill) { border-radius: 12px; min-height: 44px; }
+.bank-theme .pill { height: auto; padding: 9px 16px; }
+.bank-theme .pill.small { min-height: 36px; padding: 7px 12px; }
+.bank-theme .btn-primary { height: auto; padding: 12px 16px; }
+.bank-theme .btn-text { min-height: 40px; line-height: 1.5; }
+.bank-theme :is(.chip, .segmented button) { min-height: 36px; border-radius: 10px; }
+.bank-theme .chip { background: var(--card); border: 1px solid var(--line); }
+.bank-theme .chip.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+.bank-theme .segmented { border-radius: 12px; }
+.bank-theme .segmented button.active { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px #60452c14; }
+.bank-theme .tab.active { color: var(--accent); }
+.bank-theme .tab.active::after { background: var(--accent); }
+.bank-theme .field { border-color: var(--line); gap: 9px; }
+.bank-theme .field input:not([type=checkbox]):not([type=radio]), .bank-theme .field select, .bank-theme .field textarea {
+  background: #faf7f1; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; min-height: 44px; font-size: 15px;
+}
+.bank-theme .field .amount-input { background: #faf7f1; border: 1px solid var(--line); padding: 0 12px; border-radius: 12px; }
+.bank-theme .field .amount-input input:not([type=checkbox]):not([type=radio]) { border: 0; background: none; padding-left: 0; font-size: clamp(24px, 7vw, 30px) !important; }
+.bank-theme input::placeholder, .bank-theme textarea::placeholder { color: #8b8175; }
+.bank-theme :is(input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bank-theme input:is([type=checkbox], [type=radio]) { accent-color: var(--accent); }
+.bank-theme :is(.notice, .product-note, .drill, .decision-trace pre, .binding-code, .chat-markdown pre, .chat-markdown code) { background: var(--surface-soft); border-radius: 12px; }
+.bank-theme .notice { border-left: 2px solid var(--accent-line); }
+.bank-theme :is(.data-note, .footnote, .muted, .chat-note) { color: var(--muted); }
+.bank-theme .tag.orange { background: #f2e6d6; color: #85592f; }
+.bank-theme .status.completed { background: #e6eddf; color: #416c53; }
+.bank-theme .status.pending { background: #f3e8d4; color: #865d2e; }
+.bank-theme .status.failed { background: #f5e3dd; color: #a3483c; }
+.bank-theme .inline-error { color: #a33f34; }
+.bank-theme .empty { gap: 10px; padding: 26px 16px; }
+.empty-botanical { display: grid; place-items: center; width: 54px; height: 54px; color: var(--accent); background: var(--accent-soft); border-radius: 19px 19px 19px 7px; }
+.bank-theme .empty strong { color: var(--text-2); }
+.bank-theme .modal { background: var(--card); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 20px 80px #392b252b; }
+.bank-theme .modal::backdrop { background: #31282066; backdrop-filter: blur(3px); }
+.bank-theme .modal-heading { background: var(--card); padding: 17px 48px; border-top: 3px solid var(--accent-line); }
+.bank-theme .modal-heading h2 { font-size: 17px; }
+.bank-theme .modal-body { padding: 8px 18px 20px; }
+.bank-theme .receipt-icon.pending { background: #f3e8d4; color: #865d2e; }
+.bank-theme .receipt-icon.completed { background: #e6eddf; color: #416c53; }
+.bank-theme .receipt-icon.failed { background: #f5e3dd; color: #a3483c; }
+.bank-theme .toast { background: #4e4035f5; border-radius: 14px; }
+.bank-theme .toast.error { background: #983f34f5; }
+.bank-theme .debit-card { background: linear-gradient(115deg, #876a4c, #624b39); border-radius: 20px; box-shadow: 0 6px 18px #60452c12; }
+.bank-theme .debit-card.frozen { background: linear-gradient(115deg, #938879, #716a60); }
+.bank-theme .debit-card.credit { background: linear-gradient(115deg, #63755b, #3d574b); }
+.bank-theme :is(.debit-caption, .debit-head em) { color: #f3e9db; }
+.bank-theme .promo { background: linear-gradient(115deg, var(--accent-soft), #faf7f0); border: 1px solid var(--accent-line); border-radius: 20px; }
+.bank-theme .loan-card { background: linear-gradient(115deg, #e8edde, #f7f5ed); }
+.bank-theme .payee { background: var(--surface-soft); }
+.bank-theme .payee.selected { border-color: var(--accent); background: var(--accent-soft); }
+.bank-theme .search-bar { height: 46px; border: 1px solid var(--line); background: var(--card); border-radius: 13px; }
+.bank-theme .range-row input { background: var(--card); border: 1px solid var(--line); min-height: 42px; }
+.bank-theme .funds-filter, .bank-theme .ledger-month { top: calc(52px + env(safe-area-inset-top)); }
+.bank-theme .product-note { color: var(--text-2); }
+.bank-theme .preview-note { flex-wrap: wrap; line-height: 1.7; }
+.bank-theme .demo-code { background: #f4ecdf; border-color: #c5a888; }
+.bank-theme .demo-code small { color: #85592f; }
+.bank-theme .memory-item { border-color: var(--line); }
+.bank-theme .channel-amount-setting { border-color: var(--line); }
+.bank-theme .channel-amount-switch { background: #b7afa3; }
+.bank-theme .channel-amount-switch[aria-checked="true"] { background: var(--accent); }
+.bank-theme .channel-amount-switch:focus-visible { outline-color: var(--accent); }
+.bank-theme .code-snippet { background: #f0e9de; color: #5e4a38; border-radius: 12px; }
+.bank-theme .agent-card { background: var(--card); border-radius: 20px; border-color: var(--line); }
+.bank-theme .agent-card > header { gap: 10px; }
+.bank-theme .agent-level { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; }
+.bank-theme .agent-level.green { color: #416c53; background: #e6eddf; }
+.bank-theme .agent-level.yellow { color: #865d2e; background: #f3e8d4; }
+.bank-theme .agent-level.red { color: #a3483c; background: #f5e3dd; }
+.bank-theme .report-bar > div { background: var(--surface-soft); }
+.bank-theme :is(.legend button.active, .rank-list button.active) { background: var(--accent-soft); }
+.bank-theme .card-suggestions button { background: var(--card); border-color: var(--accent-line); border-radius: 10px; min-height: 40px; }
+.bank-theme .chat-markdown blockquote { background: var(--surface-soft); border-color: var(--accent); }
+.bank-theme .markdown-table-scroll { background: var(--card); border-color: var(--line); }
+.bank-theme .chat-markdown th { background: var(--surface-soft); }
+.bank-theme .chat-markdown tbody tr:nth-child(even) td { background: #f7f3eb; }
+.bank-theme .advice-gate { background: #f4ecdf; border-color: #dfc8af; }
+.bank-theme .advice-gate:is(.risk_assessment, .horizon) { background: var(--accent-soft); border-color: var(--accent-line); }
+.bank-theme .advice-warning { color: #8e5e2c; }
+.bank-theme .seg.liquid { background: #8ca8b8; }
+.bank-theme .seg.stable { background: #849b75; }
+.bank-theme .seg.growth { background: #b88d65; }
+.bank-theme .agent-brand-label { display: inline-flex; align-items: center; gap: 6px; color: var(--oak); }
+.bank-theme .nav-chart .series { stroke: var(--accent); }
+.bank-theme .nav-chart .wash { fill: var(--accent-soft); }
+.bank-theme .nav-chart .dot { fill: var(--accent); }
+.bank-theme .nav-chart-tip { background: var(--card); border-color: var(--line); box-shadow: 0 4px 18px #60452c16; }
+.bank-theme .login-hero { background: linear-gradient(135deg, #a58b6d, #77533c); }
+.bank-theme .login-slogan { color: #f3e9db; }
+.bank-theme .login-card { padding: 14px 18px 24px; }
+.bank-theme .login-promo-note { color: var(--text-2); }
+
+/* Botanical illustrations are real SVG assets, excluded from accessibility and
+   hit testing. They never overlap a chart or indicate a financial direction. */
+.botanical-art { display: block; flex-shrink: 0; pointer-events: none; user-select: none; }
+.oak-eyebrow { display: flex; align-items: center; gap: 7px; }
+.botanical-intro { display: grid; grid-template-columns: minmax(0, 1fr) 124px; align-items: center; gap: 2px; padding-top: 2px; padding-bottom: 2px; }
+.botanical-intro > div { min-width: 0; }
+.botanical-intro h2 { font-size: 29px; line-height: 1.45; }
+.botanical-intro p { max-width: 17em; font-size: 11px; line-height: 1.8; }
+.botanical-intro > .botanical-art { width: 142px; height: 166px; justify-self: end; margin-right: -5px; }
+.bank-theme .wealth-overview { background: linear-gradient(115deg, #e8edde, #f5f6ef); border-color: #d4dfc9; border-top: 3px solid #a2b590; }
+.bank-theme .oak-agent-entry { background: #f0ebe2; border-color: var(--line); }
+.bank-theme .life-service-hero { background: linear-gradient(118deg, #eee2d2, #faf3e8 60%, #e9daca); border-color: #e5d4c0; padding-bottom: 24px; }
+.life-service-hero > .botanical-art { width: 158px; height: 168px; right: -1px; bottom: 14px; opacity: 1; }
+.life-service-hero > p { max-width: 14em; }
+.life-service-hero > .pill { z-index: 2; }
+.oak-mode .agent-welcome { padding: 0 8px 18px; }
+.agent-botanical-core { position: relative; width: 220px; height: 140px; margin: 0 auto 5px; }
+.agent-botanical-core > .botanical-art { width: 220px; height: 140px; }
+.agent-botanical-core > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--oak); display: grid; place-items: center; }
+.agent-welcome > .oak-eyebrow { justify-content: center; }
+.agent-welcome .agent-path { margin-top: 16px; }
+.agent-welcome .agent-path i { background: #b6c4bc; }
+.profile-identity-art { position: relative; width: 72px; height: 72px; flex-shrink: 0; display: grid; place-items: center; }
+.profile-identity-art > .botanical-art { position: absolute; width: 72px; height: 72px; }
+.profile-identity-art > .avatar { position: relative; background: #e7d9c7; color: #77533c; }
+.profile-kicker { display: block; font-size: 10px; letter-spacing: .08em; color: var(--text-2); margin-bottom: 7px; }
+.bank-theme .profile-page { gap: 14px; }
+.bank-theme .profile-page .profile-card { background: none; box-shadow: none; border: 0; padding: 10px 0 14px; }
+.bank-theme .profile-page .card-title { font-family: inherit; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.bank-theme .profile-page .card-theme-icon { display: none; }
+.bank-theme .profile-page .circle-icon { background: transparent; --tone-color: var(--card); }
+.home-dashboard .home-landscape { opacity: .9; width: 162px; height: 148px; right: -4px; bottom: 50px; }
+.home-dashboard .home-assistant > .botanical-art { position: absolute; z-index: 0; }
+.home-dashboard .home-assistant-heading .agent-mark { color: var(--oak); }
+.bank-theme .oak-secondary .page { padding-top: 16px; }
+.bank-theme .oak-secondary .card { padding: 18px; }
+.bank-theme .oak-secondary .card-title { font-size: 17px; }
+.bank-theme .oak-secondary .split { padding: 18px 10px; background: linear-gradient(115deg, var(--accent-soft), var(--card)); }
+.bank-theme .oak-secondary .agent-card { border-top: 2px solid var(--accent-line); }
+.bank-theme .oak-secondary .card-head { margin-bottom: 10px; }
+@media (max-width: 359px) {
+  .bank-theme .page { padding-left: 12px; padding-right: 12px; gap: 13px; }
+  .bank-theme .oak-secondary .card { padding: 14px; }
+  .botanical-intro { grid-template-columns: minmax(0, 1fr) 100px; }
+  .botanical-intro h2 { font-size: 25px; }
+  .botanical-intro > .botanical-art { width: 112px; height: 150px; }
+  .life-service-hero > .botanical-art { width: 122px; height: 143px; right: -4px; bottom: 20px; }
+  .life-service-hero > p { max-width: 12em; }
+  .bank-theme .modal-body { padding: 8px 14px 18px; }
+  .bank-theme .agent-card { padding: 12px; }
+  .bank-theme .advice-steps { font-size: 11px; gap: 5px; }
+  .bank-theme .advice-steps li { gap: 4px; }
+  .bank-theme .advice-steps li + li::before { flex-basis: 4px; }
+  .bank-theme .modal .nav-chart-head { flex-wrap: wrap; }
+  .bank-theme .code-row { flex-wrap: wrap; }
+  .bank-theme .code-row input { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bank-theme *, .bank-theme *::before, .bank-theme *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

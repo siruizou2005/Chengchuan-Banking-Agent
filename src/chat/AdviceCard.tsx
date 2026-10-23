@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AgentMark } from '../AgentMark';
 import { ChevronRight, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import { useBank } from '../bank';
@@ -47,8 +48,8 @@ export function AdviceCard({ initial, onAsk }: { initial: Advice; onAsk?: (text:
   }
   const p = advice.profile, e = p.emergency, plan = advice.plan, choosing = ['horizon', 'plan'].includes(advice.stage);
   const coverage = e.target ? Math.min(1, e.covered / e.target) : 1;
-  return <section className={`agent-card advice-card${busy ? ' busy' : ''}`}>
-    <header><span className="agent-level green">配置建议</span><span>{advice.user.risk}</span></header>
+  return <section className={`agent-card advice-card surface-satin finish-sage${busy ? ' busy' : ''}`}>
+    <header><span className="agent-brand-label"><AgentMark size={20} />配置建议</span><span>{advice.user.risk}</span></header>
     <h3>理财配置建议</h3>
     <Steps stage={advice.stage} />
 
