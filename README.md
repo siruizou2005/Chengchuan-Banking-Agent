@@ -254,9 +254,9 @@ ssh gcp-hk 'sudo systemctl restart chengchuan-bank'
 
 更新流程：本地 `npm run build` 后用 `git ls-files` 加 `dist/` 打包为 `bank-release.tar.gz`，连同可选的 `env` 文件（即本地 `.env` 内容，含新增的语音与渠道变量）上传到 `~/chengchuan-bank-upload-<日期>`，然后在服务器执行 `deploy/update-release.sh <版本名> <上传目录>`。脚本会安装依赖、运行测试、写入凭据、原子切换 `current` 并重启，健康检查失败自动回滚。保留旧版本以便回滚，**不要覆盖数据库目录**。数据库备份应使用 SQLite 在线备份接口，不能仅复制运行中的 `.sqlite` 文件而忽略 WAL。线上配置见 `deploy/chengchuan-bank.service`。
 
-**自动部署**：GitHub push 到 `main` 后自动上线。GitHub webhook 发到 `https://bank.siruizou.com/_deploy/github`，Caddy 转给 `127.0.0.1:8317` 上由 systemd socket 激活的 `deploy/webhook.mjs`：只在请求到来时启动，30 秒无请求即退出，空闲不占内存。它校验 `X-Hub-Signature-256`（密钥在 `/etc/chengchuan-bank/webhook.env`）后写入 `~/chengchuan-bank-deploy/request`，`chengchuan-bank-deploy.path` 随即启动 `chengchuan-bank-deploy.service` 执行 `deploy/auto-deploy.sh`：在 `~/chengchuan-bank-deploy/src` 拉取 main、构建、在线备份数据库（保留 5 份，`/var/lib/chengchuan-bank/backups`）、调用 `update-release.sh`（版本名 `<日期-时间>-<提交>`，健康检查失败自动回滚），最后保留 8 个版本。部署期间的新推送会在结束后补上；线上提交记录在 `current/REVISION`。首次安装运行 `deploy/setup-auto-deploy.sh <检出目录>`。
+**自动部署**：GitHub push 到 `master` 后自动上线。GitHub webhook 发到 `https://bank.siruizou.com/_deploy/github`，Caddy 转给 `127.0.0.1:8317` 上由 systemd socket 激活的 `deploy/webhook.mjs`：只在请求到来时启动，30 秒无请求即退出，空闲不占内存。它校验 `X-Hub-Signature-256`（密钥在 `/etc/chengchuan-bank/webhook.env`）后写入 `~/chengchuan-bank-deploy/request`，`chengchuan-bank-deploy.path` 随即启动 `chengchuan-bank-deploy.service` 执行 `deploy/auto-deploy.sh`：在 `~/chengchuan-bank-deploy/src` 拉取 master、构建、在线备份数据库（保留 5 份，`/var/lib/chengchuan-bank/backups`）、调用 `update-release.sh`（版本名 `<日期-时间>-<提交>`，健康检查失败自动回滚），最后保留 8 个版本。部署期间的新推送会在结束后补上；线上提交记录在 `current/REVISION`。首次安装运行 `deploy/setup-auto-deploy.sh <检出目录>`。
 
 ```sh
 ssh gcp-hk 'journalctl -u chengchuan-bank-deploy -n 50 --no-pager'   # 部署日志
-ssh gcp-hk 'sudo systemctl start chengchuan-bank-deploy'             # 手动触发一次与 main 比对
+ssh gcp-hk 'sudo systemctl start chengchuan-bank-deploy'             # 手动触发一次与 master 比对
 ```

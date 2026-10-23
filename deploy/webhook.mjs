@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
-const secret = process.env.GITHUB_WEBHOOK_SECRET, requestFile = process.env.DEPLOY_REQUEST_FILE, branch = process.env.DEPLOY_BRANCH || 'main';
+const secret = process.env.GITHUB_WEBHOOK_SECRET, requestFile = process.env.DEPLOY_REQUEST_FILE, branch = process.env.DEPLOY_BRANCH || 'master';
 if (!secret || !requestFile) { console.error('缺少 GITHUB_WEBHOOK_SECRET 或 DEPLOY_REQUEST_FILE'); process.exit(1); }
 
 function validSignature(body, header, key = secret) {
