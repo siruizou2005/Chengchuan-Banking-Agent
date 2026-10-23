@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AgentMark } from '../AgentMark';
 import { Check, ShieldCheck } from 'lucide-react';
 import { api, date, formValues, yuan } from '../api';
 import { useBank } from '../bank';
@@ -17,7 +18,7 @@ export function ActionCard({ action: initial }: { action: AgentAction }) {
   async function cancel() { setBusy(true); try { await api(`/agent/actions/${action.id}/cancel`, 'POST', {}); await refresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
   function start() { setError(''); if (action.tool === 'direct_operation') { const tx = data.transactions.find(t => t.id === args.resource); if (tx) showTransaction(tx); else navigate(args.path === '/settings' ? 'security' : 'accounts'); return; } action.level === 'red' ? setVerify(true) : setPinOpen(true); }
   return <section className="agent-card" aria-label={action.title} data-testid="agent-action">
-    <header><span className={`agent-level ${action.level}`}>{action.level === 'red' ? '需加强验证' : '需授权确认'}</span><span>{status[action.status] || action.status}</span></header>
+    <header><span className={`agent-level ${action.level}`}><AgentMark size={17} />{action.level === 'red' ? '需加强验证' : '需授权确认'}</span><span>{status[action.status] || action.status}</span></header>
     <h3>{action.title}</h3>
     <p className="data-note">操作编号：{action.id}{action.accountTail ? ` · 账户尾号 ${action.accountTail}` : ''}{action.amount > 0 ? ` · 金额 ¥${yuan(action.amount)}` : ''}</p>
     {action.decision?.reasons.map(r => <p className="data-note" key={r.code}>{r.message}</p>)}
@@ -48,7 +49,7 @@ const span = (r: { from: string; to: string }) => r.from === r.to ? r.from : `${
 const STATS_LABEL: Record<string, string> = { category: '按分类', merchant: '按商户', platform: '按支付平台', month: '按月', week: '按周', day: '按日', weekday: '按星期', hour: '按小时' };
 const KIND_TEXT: Record<string, string> = { consumption: '消费', income: '收入', transfer_out: '转账给他人', self: '本人账户互转', wallet: '充值提现', investment: '理财存款', debt: '信用卡/贷款', refund: '退款' };
 // Reference categorical slots in fixed order; the folded tail is neutral gray.
-const SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'], OTHER = '#b8b7b2';
+const SLOTS = ['#8ca8b8', '#a47551', '#849b75', '#c4ac75', '#ba8c80'], OTHER = '#b8b1a5';
 const isUnknownTag = (tag: string) => tag === '未识别商户' || /^(支付宝|微信支付|京东支付|抖音支付)支出$/.test(tag);
 const dayText = (d: string) => `${+d.slice(5, 7)}月${+d.slice(8, 10)}日`;
 type Bucket = { key: string; amount: number; count: number; share: number };

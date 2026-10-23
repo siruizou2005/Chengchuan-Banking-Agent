@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AgentMark } from '../AgentMark';
+import { BotanicalArt, ThemeGlyph } from '../Botanical';
 import { Megaphone, ChevronRight } from 'lucide-react';
 import { useBank } from '../bank';
 import { yuan, formValues, date, tail } from '../api';
@@ -76,7 +78,7 @@ function HoldingsCard({ holdings }: { holdings: Holding[] }) {
     const deposit = h.product.type === 'deposit';
     openModal(deposit ? '支取定期存款' : '赎回', <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'redeem', holdingId: h.id }); }}><h3 className="modal-subtitle">{h.product.name}</h3><dl className="kv"><div><dt>持有本金</dt><dd>¥{yuan(h.principal)}</dd></div><div><dt>{deposit ? '到期日' : '可赎回日'}</dt><dd>{h.unlock_at.slice(0, 10)}</dd></div></dl><Notice>{deposit ? '支持提前支取，本模拟版本按本金结算，不结算利息。' : '本模拟版本按本金赎回，不计算净值涨跌；固定持有期产品须到期后赎回。'}</Notice><AccountSelect /><Amount defaultValue={(h.principal / 100).toFixed(2)} max={(h.principal / 100).toFixed(2)} label={deposit ? '支取金额（元）' : '赎回金额（元）'} /><Submit>下一步</Submit></form>);
   }
-  return <Card title="我的持有" action={holdings.length ? `${holdings.length}笔` : undefined}>
+  return <Card title="我的持有" className="wealth-holdings" action={holdings.length ? `${holdings.length}笔` : undefined}>
     <div id="my-holdings" />
     {holdings.map(h => <Row key={h.id} glyph={h.product.type === 'deposit' ? '存' : '基'} tone={h.product.type === 'deposit' ? 'orange' : 'coral'} title={h.product.name} subtitle={h.product.type === 'deposit' ? `到期 ${h.unlock_at.slice(0, 10)}` : h.unlock_at <= new Date().toISOString() ? `${h.product.risk} · 可随时赎回` : `可赎回 ${h.unlock_at.slice(0, 10)}`} trailing={<b className="amount">{yuan(h.principal)}</b>} trailingSub="持有本金" action={<Pill small onClick={() => redeem(h)}>{h.product.type === 'deposit' ? '支取' : '赎回'}</Pill>} />)}
     {!holdings.length && <><Empty title="暂无持有产品" /><button className="btn-text center" onClick={() => navigate('advice')}>不知道买什么？生成配置建议<ChevronRight size={16} /></button></>}
@@ -107,7 +109,7 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
     const q = new URLSearchParams(location.hash.split('?')[1] || ''), p = data.products.find(x => x.id === q.get('product'));
     if (p) { productModal(p, q.get('amount') || undefined); history.replaceState(null, '', '#wealth'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   const meta = data.productMeta;
   const summary = <section className="card split"><div><CircleIcon icon={IcoWallet} tone="blue" size={30} glyph={16} /><span>{deposits ? '存款本金' : '持有本金'}</span><b>¥{yuan(principal)}</b></div><button onClick={() => navigate('risk')}><CircleIcon icon={IcoShield} tone="orange" size={30} glyph={16} /><span>风险等级</span><b>{level ? `R${level}` : '未测评'}</b></button></section>;
   if (deposits) {
@@ -120,18 +122,19 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
     </div>;
   }
   const picks = previewPicks(all, level);
-  return <div className="page">
+  return <div className="page oak-page wealth-page satin-wealth">
+    <header className="oak-intro wealth-heading"><div><span className="oak-eyebrow"><ThemeGlyph theme="wealth" size={15} />生长 · 财富管理</span><h2>为长远，做好配置。</h2></div><BotanicalArt theme="wealth" /></header>
+    <section className="card wealth-overview surface-signature finish-champagne" aria-label="持有概览"><div className="wealth-overview-heading"><span>持有本金</span><span className="wealth-currency">人民币 · CNY</span></div><strong data-testid="wealth-principal"><span className="wealth-currency-symbol">¥</span>{yuan(principal)}</strong><p className="wealth-principal-note">按持有本金统计，不代表当前市值或收益</p><div className="wealth-overview-footer"><span>{holdings.length} 笔持有</span><button onClick={() => navigate('risk')}>风险测评 · {level ? `R${level}` : '未测评'}<ChevronRight size={14} /></button></div></section>
     <div className="entry-grid four bare">
       <Tile icon={IcoDeposit} tone="blue" label="定期存款" onClick={() => navigate('deposit')} />
       <Tile icon={IcoWealth} tone="cyan" label="基金理财" onClick={() => navigate('funds')} />
       <Tile icon={IcoShield} tone="coral" label="风险测评" badge={level ? undefined : '未测评'} onClick={() => navigate('risk')} />
       <Tile icon={IcoWallet} tone="red" label="我的持有" onClick={() => scrollTo('my-holdings')} />
     </div>
-    {summary}
+    <button className="card oak-agent-entry wealth-advisor surface-satin finish-sage" onClick={() => navigate('advice')} data-testid="advice-entry"><span className="oak-agent-icon"><AgentMark size={24} /></span><span><small>财富顾问 · 配置建议</small><strong>从收支与风险出发</strong><span className="oak-agent-copy">结合应急资金与投资期限，规划下一步</span></span><ChevronRight size={18} /></button>
     <HoldingsCard holdings={holdings} />
-    <button className="card advice-entry" onClick={() => navigate('advice')} data-testid="advice-entry"><span><strong>不知道买什么？</strong><small>按收支、应急资金和风险测评，3 步生成配置建议</small></span><span className="pill primary small">生成建议</span></button>
     <MarketStrip />
-    <Card title={level ? '适合你的产品' : '稳健之选'} action={`全部${all.length}款`} onAction={() => navigate('funds')} testId="wealth-list">
+    <Card title={level ? '适合你的产品' : '稳健之选'} className="wealth-products" action={`全部${all.length}款`} onAction={() => navigate('funds')} testId="wealth-list">
       <div className="preview-note"><span>{level ? `按你的测评结果 ${riskTag(level)} 筛选，优先各类别收益最高的一款` : '尚未测评，先展示 R1–R2 中各类别收益最高的产品'}</span><DisplayToggle value={display} onChange={setDisplay} /></div>
       {picks.map(p => <ProductItem key={p.id} p={p} display={display} onClick={() => productModal(p)} />)}
       <button className="btn-text center" onClick={() => navigate('funds')} data-testid="all-funds">查看全部 {all.length} 款基金<ChevronRight size={16} /></button>

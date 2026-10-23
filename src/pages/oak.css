@@ -1,0 +1,123 @@
+/* Shared Oak tokens reach every route and its dialogs through BankTheme.
+   Financial up/down colors remain semantic, independent of botanical accents. */
+.bank-theme {
+  --brand: #77533c; --brand-deep: #61432f; --brand-soft: #eee7db;
+  --bg: #f7f4ee; --card: #fffcf8; --line: #e6ded3; --pill: #f0ebe3;
+  --text: #1f1f1a; --text-2: #6f685e; --text-3: #746d63;
+  --red: #b34f40; --green: #416c53; --orange: #926331;
+  --radius: 23px; --oak: #77533c; --moss: #416c53;
+  --accent: #77533c; --accent-soft: #eee5d8; --accent-line: #d8c6af;
+  --surface: #fffcf8; --surface-soft: #f2eee6; --muted: #746d63;
+  color: var(--text); background: var(--bg); font-variant-numeric: tabular-nums;
+}
+.oak-mode .page-header { background: var(--bg); height: calc(52px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+.oak-mode .icon-button { color: var(--text-2); min-width: 44px; min-height: 44px; }
+.oak-mode .bottom-nav { background: #fffcf8f5; padding-top: 8px; backdrop-filter: blur(12px); }
+.oak-mode .bottom-nav button { font-size: 11px; color: #81796f; gap: 4px; }
+.oak-mode .bottom-nav button.active { color: var(--oak); }
+.oak-mode .bottom-nav .nav-icon { width: 42px; border-radius: 13px; }
+.oak-mode .bottom-nav button.active .nav-icon { background: #eee5d8; }
+.oak-page { padding: 10px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); gap: 16px; }
+.oak-page .card { min-width: 0; padding: 20px; border: 1px solid #ffffffb3; box-shadow: 0 4px 20px #60452c05; }
+.oak-page .card-title { font-family: "Noto Serif SC", "Songti SC", SimSun, serif; font-size: 20px; padding: 0; line-height: 1.5; }
+.oak-page .card-title::after { display: none; }
+.oak-page .card-head { align-items: center; margin-bottom: 14px; }
+.oak-page .card-action { color: var(--oak); min-height: 44px; display: inline-flex; align-items: center; }
+.oak-intro { padding: 10px 5px 4px; }
+.oak-eyebrow { display: block; color: var(--oak); font-size: 11px; letter-spacing: .12em; margin-bottom: 10px; }
+.oak-intro h2, .agent-welcome h2, .life-service-hero h2 { font-family: "Noto Serif SC", "Songti SC", SimSun, serif; font-size: 27px; font-weight: 500; letter-spacing: .025em; line-height: 1.5; }
+.oak-intro p { font-size: 12px; color: var(--text-2); margin-top: 8px; line-height: 1.8; }
+.oak-page .circle-icon { background: #eee7db; color: var(--oak); --tone-color: #eee7db; border-radius: 14px; }
+.oak-page .circle-icon.green, .wealth-page .circle-icon { background: #e3e9dc; color: var(--moss); --tone-color: #e3e9dc; }
+.oak-page .tile-flat { background: #eee7db; border-radius: 15px; color: var(--oak); --tone-color: #eee7db; }
+.oak-page .tile-flat svg { width: 27px; height: 27px; filter: none; }
+.oak-page .tile-flat svg [fill="currentColor"] { fill: currentColor; }
+.oak-page .tile-flat svg [stroke="currentColor"] { stroke: currentColor; }
+.oak-page .tile-label { font-size: 12px; color: var(--text-2); }
+.oak-page .tile-badge { background: #eee7db; color: var(--oak); left: auto; right: 0; margin-left: 0; }
+.oak-page .row { min-height: 62px; }
+.oak-page .row-title { font-size: 14px; }
+.oak-page .row-subtitle { line-height: 1.6; }
+.oak-page .footnote { color: var(--text-2); }
+.oak-page .pill { border-radius: 12px; }
+.oak-page .pill.primary { background: var(--oak); }
+.oak-page .chevron { color: #938b80; }
+.oak-page .oak-agent-entry { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #f0ebe2; padding: 18px 16px; border-color: #e6ded3; }
+.oak-agent-icon { display: inline-grid; place-items: center; width: 42px; height: 46px; flex-shrink: 0; color: var(--oak); }
+.oak-agent-entry > span:nth-child(2) { flex: 1; min-width: 0; }
+.oak-agent-entry small { display: block; font-size: 10px; color: var(--oak); margin-bottom: 6px; }
+.oak-agent-entry strong { display: block; font-size: 15px; line-height: 1.5; font-weight: 500; }
+.oak-agent-copy { display: block; font-size: 11px; color: var(--text-2); line-height: 1.7; margin-top: 5px; }
+.oak-agent-entry > svg { color: var(--oak); }
+.wealth-page .wealth-overview { background: linear-gradient(115deg, #e8eddf, #f4f5ed); border-color: #e0e5d7; padding: 23px 20px 12px; }
+.wealth-overview > span { font-size: 12px; color: var(--moss); }
+.wealth-overview > strong { display: block; font-size: clamp(26px, 8.3vw, 38px); font-weight: 500; letter-spacing: -.04em; padding: 14px 0 20px; overflow-wrap: anywhere; }
+.wealth-overview > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #cbd6c3; font-size: 11px; color: var(--text-2); }
+.wealth-overview button { display: flex; align-items: center; gap: 3px; min-height: 44px; color: var(--moss); }
+.wealth-page .entry-grid { padding: 4px 0; }
+.wealth-page .tile-flat { color: var(--moss); background: #e3e9dc; --tone-color: #e3e9dc; }
+.wealth-page .market-strip { gap: 4px; padding: 16px 10px; }
+.wealth-page .market-strip button { min-width: 0; }
+.wealth-page .market-strip b { font-size: 17px; }
+.wealth-page .preview-note { flex-wrap: wrap; gap: 10px; color: var(--text-2); line-height: 1.7; }
+.wealth-page .segmented { flex-shrink: 0; }
+.wealth-page .segmented button { min-height: 36px; }
+.wealth-page .product { padding-top: 18px; padding-bottom: 18px; }
+.wealth-page .product-note { background: #f5f1ea; color: var(--text-2); }
+.wealth-page .tag.orange { color: #85592f; background: #f1e5d7; }
+.life-page .life-service-hero { position: relative; overflow: hidden; padding: 25px 22px; background: linear-gradient(118deg, #eee2d2, #faf3e8 60%, #e9daca); border-color: #e9ddcf; }
+.life-service-hero > :not(svg) { position: relative; z-index: 1; }
+.life-service-hero > svg { position: absolute; right: 18px; bottom: 28px; color: #b79a7c; opacity: .3; --tone-color: #f3eadc; }
+.life-service-hero h2 { font-size: 29px; }
+.life-service-hero p { color: var(--text-2); font-size: 12px; line-height: 1.7; margin: 12px 0 20px; }
+.life-service-hero .pill { display: inline-flex; align-items: center; gap: 16px; min-height: 44px; }
+.life-page .entry-grid { row-gap: 22px; padding: 8px 0; }
+.profile-page { gap: 14px; }
+.profile-page .profile-card { padding: 18px 4px; background: none; border: 0; box-shadow: none; }
+.profile-page .avatar { background: #e9dfd0; color: var(--oak); }
+.profile-page .profile-text small { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; line-height: 1.7; }
+.profile-page .profile-settings { border-radius: 18px; padding: 16px; box-shadow: none; }
+.profile-page .card-head { margin-bottom: 3px; }
+.profile-page .card-title { font-family: inherit; font-size: 12px; font-weight: 500; color: var(--text-2); }
+.profile-page .row { padding: 14px 0; }
+.profile-page .circle-icon { width: 34px !important; height: 34px !important; border-radius: 10px; background: transparent; --tone-color: var(--card); }
+.profile-page .circle-icon .agent-mark { color: var(--oak); }
+.profile-page .cell-button { min-height: 48px; padding: 14px; font-size: 13px; color: var(--text-2); background: none; border-color: var(--line); }
+.oak-mode .assistant-page .chat-header { background: var(--bg); height: auto; min-height: 62px; padding-top: env(safe-area-inset-top); }
+.oak-mode .chat-title h1 { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 16px; }
+.oak-mode .chat-title .agent-mark { color: var(--oak); }
+.oak-mode .assistant-page .chat-inner { padding: 12px 16px 20px; }
+.oak-mode .agent-welcome { text-align: center; padding: 22px 8px 26px; }
+.agent-welcome-mark { display: grid; place-items: center; width: 82px; height: 82px; border: 1px solid #ded4c4; border-radius: 28px; margin: 0 auto 20px; color: #77533c; background: #eee7db; }
+.oak-mode .agent-welcome h2 { font-size: 25px; }
+.oak-mode .agent-welcome p { font-size: 12px; line-height: 1.9; color: var(--text-2); margin-top: 12px; }
+.agent-path { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 10px; color: var(--text-2); margin-top: 22px; }
+.agent-path i { width: 28px; height: 1px; background: #c5b9a8; }
+.oak-mode .assistant-page .chat-avatar { color: var(--oak); background: #eee7db; border-radius: 12px; }
+.oak-mode .assistant-page .assistant .bubble { background: var(--card); border: 1px solid #e6ded380; border-radius: 4px 18px 18px; }
+.oak-mode .assistant-page .user .bubble { border-radius: 18px 4px 18px 18px; }
+.oak-mode .assistant-page .chat-chips { gap: 8px; margin-left: 42px; }
+.oak-mode .assistant-page .chat-chips button { border-color: var(--line); background: var(--card); min-height: 44px; border-radius: 12px; text-align: left; }
+.oak-mode .assistant-page .chat-composer { background: var(--card); padding: 12px 16px 10px; }
+.oak-mode .assistant-page .composer textarea { border: 1px solid var(--line); border-radius: 14px; }
+.oak-mode .assistant-page .composer textarea:focus-visible { outline: 2px solid var(--oak); outline-offset: 2px; }
+.oak-mode .assistant-page .composer .pill { border-radius: 12px; min-height: 44px; }
+.oak-mode .assistant-page :is(.chat-time, .chat-note, .data-note, .copy-button) { color: var(--text-2); }
+.oak-mode .assistant-page .overview { background: #f0ebe3; }
+.oak-mode .assistant-page .agent-card { background: var(--card); border-color: var(--line); border-radius: 18px; }
+.oak-mode button { touch-action: manipulation; }
+.memory-brand { display: flex; align-items: center; gap: 8px; }
+.memory-brand .agent-mark { color: #77533c; }
+@media (max-width: 359px) {
+  .oak-page { padding-left: 12px; padding-right: 12px; gap: 13px; }
+  .oak-page .card { padding: 16px; }
+  .oak-intro h2 { font-size: 24px; }
+  .wealth-page .market-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .oak-page .oak-agent-entry { gap: 8px; padding: 14px 10px; }
+  .oak-mode .chat-title h1 { font-size: 14px; gap: 4px; }
+  .oak-mode .chat-header-actions { gap: 0; }
+  .oak-mode .chat-header .btn-text { padding: 6px 3px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oak-mode *, .oak-mode *::before, .oak-mode *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

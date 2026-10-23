@@ -17,6 +17,7 @@ export function ChannelRequest() {
   useEffect(() => {
     let cancelled = false, timer: ReturnType<typeof setTimeout>;
     setResult(null); setError('');
+    if (!requestId) { setError('缺少请求编号，请从渠道通知中的链接打开。'); return; }
     async function poll() {
       try { const data = await api<RequestResult>(`/channels/${channel}/requests/${encodeURIComponent(requestId || '')}`); if (cancelled) return; setResult(data); if (['queued', 'running'].includes(data.status) || data.deliveries.some(d => ['pending', 'sending', 'retry_wait'].includes(d.status))) timer = setTimeout(poll, 2000); }
       catch (e) { if (!cancelled) setError((e as Error).message); }

@@ -1,0 +1,185 @@
+/* Luminous Oak: opt-in finishes. Unmarked components, especially Home, retain their
+   existing surfaces. No motion layer, sweeping highlight, canvas or image texture. */
+.bank-theme {
+  --finish-pearl: #fffdf7;
+}
+.bank-theme .surface-matte { background: var(--card); box-shadow: none; border-color: #e6ded380; }
+/* Five optical layers: base, local daylight, directional reflection, inner rim,
+   and two short elevation shadows. Reflection sits below every content child. */
+.bank-theme :is(.surface-satin, .surface-signature) {
+  --satin-light: #fffdf7; --satin-base: #f8ead7; --satin-mid: #f1dbc0; --satin-edge: #e6c9a5; --satin-ink: #584332;
+  --satin-shadow: 120 87 59; --satin-reflection: .42;
+  position: relative; isolation: isolate; color: var(--satin-ink);
+  background: radial-gradient(ellipse 85% 85% at 2% -8%, #fffffff2 0%, #ffffff40 38%, transparent 72%), linear-gradient(128deg, var(--satin-light) 0%, var(--satin-base) 27%, var(--satin-mid) 65%, var(--satin-edge) 100%);
+  border: 1px solid #fffdf7cc;
+  box-shadow: inset 0 1px 0 #ffffffed, inset 0 -1px 0 rgb(var(--satin-shadow) / .1), inset 1px 0 0 #ffffff66, 0 8px 18px rgb(var(--satin-shadow) / .045), 0 2px 4px rgb(var(--satin-shadow) / .025);
+}
+.bank-theme .surface-signature { --satin-reflection: .72; box-shadow: inset 0 1px 0 #ffffffed, inset 0 -1px 0 rgb(var(--satin-shadow) / .12), inset 1px 0 0 #ffffff66, 0 12px 28px rgb(var(--satin-shadow) / .09), 0 3px 7px rgb(var(--satin-shadow) / .045); }
+.bank-theme :is(.surface-satin, .surface-signature)::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background: linear-gradient(116deg, transparent 27%, #ffffff0a 39%, #ffffffcc 59%, #ffffff4d 69%, transparent 84%);
+  opacity: var(--satin-reflection);
+}
+.bank-theme :is(.surface-satin, .surface-signature) > * { position: relative; z-index: 1; }
+.bank-theme .finish-champagne { --satin-light: #fffdf7; --satin-base: #f8ead7; --satin-mid: #f1dbc0; --satin-edge: #e6c9a5; --satin-ink: #584332; }
+.bank-theme .finish-sage { --satin-light: #f8fcf5; --satin-base: #e3efe1; --satin-mid: #d6e7d7; --satin-edge: #bcd4c1; --satin-ink: #345740; --satin-shadow: 62 96 68; }
+.bank-theme .finish-apricot { --satin-light: #fff9f6; --satin-base: #f8e8df; --satin-mid: #f0d8cf; --satin-edge: #e9c6ba; --satin-ink: #704b3e; --satin-shadow: 129 90 77; }
+.bank-theme .finish-mist { --satin-light: #f8fcfc; --satin-base: #e6f1f1; --satin-mid: #d9e9ea; --satin-edge: #c4dee1; --satin-ink: #365b61; --satin-shadow: 71 108 114; }
+.bank-theme button.surface-satin { transition: box-shadow 180ms ease, filter 180ms ease; }
+.bank-theme button.surface-satin:active { filter: brightness(.985); box-shadow: inset 0 1px 0 #ffffffb3, inset 0 -1px 0 rgb(var(--satin-shadow) / .12), 0 3px 8px rgb(var(--satin-shadow) / .07); }
+
+/* Wealth: one luminous financial focus, with open holdings and market columns. */
+.bank-theme .satin-wealth { gap: 20px; padding-top: 0; }
+.bank-theme .satin-wealth .wealth-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 3px; }
+.bank-theme .satin-wealth .wealth-heading h2 { font-size: 25px; font-weight: 500; letter-spacing: .01em; line-height: 1.5; }
+.bank-theme .satin-wealth .wealth-heading .oak-eyebrow { font-size: 10px; margin-bottom: 6px; }
+.bank-theme .satin-wealth .wealth-heading .botanical-art { width: 74px; height: 84px; opacity: .85; }
+.bank-theme .satin-wealth .wealth-overview { padding: 22px 22px 10px; border-radius: 20px; }
+.bank-theme .satin-wealth .wealth-overview > div { border: 0; }
+.bank-theme .satin-wealth .wealth-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--satin-ink); font-size: 12px; }
+.bank-theme .satin-wealth .wealth-currency { font-size: 10px; letter-spacing: .045em; color: #654d38; }
+.bank-theme .satin-wealth .wealth-overview > strong { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; color: var(--satin-ink); font-size: clamp(29px, 10vw, 43px); font-weight: 450; letter-spacing: -.045em; line-height: 1.25; padding: 23px 0 10px; font-variant-numeric: tabular-nums; }
+.bank-theme .satin-wealth .wealth-currency-symbol { font-size: .56em; font-weight: 400; letter-spacing: 0; }
+.bank-theme .satin-wealth .wealth-principal-note { color: #654d38; font-size: 11px; line-height: 1.8; margin-bottom: 19px; }
+.bank-theme .satin-wealth .wealth-overview > .wealth-overview-footer { border-top: 1px solid #ae855f33; color: var(--satin-ink); font-size: 11px; padding-top: 5px; }
+.bank-theme .satin-wealth .wealth-overview button { color: var(--satin-ink); font-size: 11px; }
+.bank-theme .satin-wealth .wealth-overview button:focus-visible { outline-color: var(--oak); }
+.bank-theme .satin-wealth .entry-grid { margin: 0; padding: 0 2px; }
+.bank-theme .satin-wealth .tile-flat { width: 39px; height: 39px; border-radius: 13px; border: 1px solid #d5dccb; background: transparent; --tone-color: var(--bg); }
+.bank-theme .satin-wealth .tile-flat svg { width: 23px; height: 23px; }
+.bank-theme .satin-wealth .tile-label { font-size: 11px; }
+.bank-theme .satin-wealth .wealth-advisor { border-radius: 15px; padding: 16px 14px; gap: 10px; }
+.bank-theme .satin-wealth .wealth-advisor .oak-agent-icon { width: 31px; color: var(--moss); }
+.bank-theme .satin-wealth .wealth-advisor small { color: #345740; font-size: 10px; letter-spacing: .03em; }
+.bank-theme .satin-wealth .wealth-advisor strong { font-family: "Noto Serif SC", "Songti SC", SimSun, serif; font-size: 18px; }
+.bank-theme .satin-wealth .wealth-advisor .oak-agent-copy { color: #435a46; font-size: 10px; }
+.bank-theme .satin-wealth :is(.wealth-holdings, .wealth-products) { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 7px 3px 0; }
+.bank-theme .satin-wealth :is(.wealth-holdings, .wealth-products) .card-theme-icon { display: none; }
+.bank-theme .satin-wealth .card-title { font-size: 21px; font-weight: 500; }
+.bank-theme .satin-wealth .card-head { margin-bottom: 7px; }
+.bank-theme .satin-wealth .wealth-holdings .row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.bank-theme .satin-wealth .wealth-holdings .circle-icon { width: 34px !important; height: 34px !important; border-radius: 11px; background: #e7ebdf; }
+.bank-theme .satin-wealth .wealth-holdings .row-title { font-size: 14px; }
+.bank-theme .satin-wealth .wealth-holdings .amount { font-weight: 500; }
+.bank-theme .satin-wealth .market-strip { border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 18px 0; background: none; box-shadow: none; }
+.bank-theme .satin-wealth .market-strip button + button { border-left: 1px solid var(--line); border-radius: 0; }
+.bank-theme .satin-wealth .market-strip span { font-size: 10px; }
+.bank-theme .satin-wealth .market-strip b { font-size: 15px; font-weight: 500; }
+.bank-theme .satin-wealth .market-strip small { font-size: 10px; }
+.bank-theme .satin-wealth .product { padding: 22px 0; }
+.bank-theme .satin-wealth .issuer { font-size: 11px; }
+.bank-theme .satin-wealth .product-head strong { font-size: 14px; }
+.bank-theme .satin-wealth .rate strong { font-weight: 500; }
+.bank-theme .satin-wealth .preview-note { font-size: 11px; gap: 10px; padding: 2px 0 10px; }
+.bank-theme .satin-wealth .product-note { background: #eee9e0; border-radius: 6px; font-size: 11px; }
+.bank-theme .satin-wealth .product-terms strong { font-size: 13px; }
+.bank-theme .advice-card.surface-satin { --satin-reflection: .26; color: var(--text); }
+.bank-theme .nav-chart-plot .grid { stroke: #dfe5dc; stroke-opacity: .7; }
+.bank-theme .nav-chart-plot .node-halo { fill: var(--accent); opacity: .1; }
+.bank-theme .nav-chart-tip { border: 1px solid #e5e6dc; box-shadow: 0 4px 12px #60452c0d; }
+
+/* Agent: champagne daylight over a pearl-mist core, with matte conversations. */
+.bank-theme .satin-assistant .agent-welcome { padding: 2px 10px 18px; }
+.bank-theme .satin-assistant .agent-botanical-core { width: 220px; height: 135px; margin-bottom: 10px; }
+.bank-theme .satin-assistant .agent-botanical-core > .botanical-art { height: 135px; opacity: .75; }
+.bank-theme .satin-assistant .agent-core-metal { position: absolute; width: 60px; height: 60px; border-radius: 50%; --satin-light: #fff3df; --satin-reflection: .6; color: var(--oak); box-shadow: inset 0 1px 0 #ffffffed, inset 0 -1px 0 #b3c9c566, 0 5px 15px #476c7212, 0 1px 3px #77533c0a; }
+.bank-theme .satin-assistant .agent-welcome h2 { font-size: 24px; font-weight: 500; }
+.bank-theme .satin-assistant .agent-welcome .oak-eyebrow { font-size: 10px; letter-spacing: .06em; }
+.bank-theme .satin-assistant .agent-welcome p { font-size: 12px; margin-top: 10px; }
+.bank-theme .satin-assistant .agent-path { margin-top: 15px; }
+.bank-theme .satin-assistant .chat-time { margin-bottom: 13px; font-size: 10px; }
+.bank-theme .satin-assistant .assistant .bubble { background: #fffcf8; border: 0; border-radius: 3px 17px 17px; }
+.bank-theme .satin-assistant .user .bubble { background: #775b45; }
+.bank-theme .satin-assistant .chat-avatar { background: none; border: 1px solid #dfd4c4; border-radius: 11px; }
+.bank-theme .satin-assistant .chat-chips { gap: 7px; }
+.bank-theme .satin-assistant .chat-chips button { background: none; border-color: #d9cdbd; font-size: 12px; padding: 8px 10px; }
+.bank-theme .satin-assistant .chat-composer { padding: 9px 12px 7px; border-top: 1px solid #e6ded380; background: var(--bg); }
+.bank-theme .satin-assistant .composer { align-items: flex-end; padding: 5px; border: 1px solid #ccbba5; background: var(--finish-pearl); border-radius: 17px; box-shadow: 0 4px 14px -8px #513c2d33; }
+.bank-theme .satin-assistant .composer:focus-within { border-color: var(--oak); box-shadow: 0 0 0 2px #a4755114; }
+.bank-theme .satin-assistant .composer textarea { background: transparent; border: 0; border-radius: 11px; padding: 10px; }
+.bank-theme .satin-assistant .composer textarea:focus-visible { outline: 2px solid var(--oak); outline-offset: -2px; }
+.bank-theme .satin-assistant .composer .pill { min-height: 42px; border-radius: 12px; }
+.bank-theme .satin-assistant .chat-note { font-size: 10px; margin-top: 7px; }
+.bank-theme .satin-assistant .agent-card:not(.advice-card) { border-radius: 14px; box-shadow: none; background: #fffcf8; }
+.bank-theme .satin-assistant .agent-plan li { position: relative; }
+.bank-theme .satin-assistant .agent-plan li:not(:last-child)::after { content: ''; position: absolute; width: 1px; top: 24px; bottom: -4px; left: 4px; background: #d4dcd0; pointer-events: none; }
+.bank-theme .satin-assistant .agent-plan li > div { min-width: 0; }
+
+/* Life: an asymmetric service spread, then compact service rows on the canvas. */
+.bank-theme .satin-life { gap: 19px; }
+.bank-theme .satin-life > .oak-intro { padding: 7px 2px 2px; }
+.bank-theme .satin-life > .oak-intro h2 { font-size: 31px; line-height: 1.45; font-weight: 500; }
+.bank-theme .satin-life > .oak-intro .oak-eyebrow { font-size: 10px; margin-bottom: 11px; }
+.bank-theme .satin-life .life-editorial { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; padding: 23px 0 0 21px; border-radius: 3px 24px 3px 3px; overflow: hidden; --satin-reflection: .32; color: var(--oak); }
+.bank-theme .satin-life .life-story { position: relative; z-index: 1; padding-bottom: 22px; }
+.bank-theme .satin-life .life-story .oak-eyebrow { font-size: 10px; letter-spacing: .02em; margin-bottom: 13px; }
+.bank-theme .satin-life .life-story h2 { font-size: 27px; line-height: 1.5; letter-spacing: .02em; }
+.bank-theme .satin-life .life-story p { color: #68513f; font-size: 11px; line-height: 1.8; margin: 12px 0 19px; }
+.bank-theme .satin-life .life-story .pill { font-size: 12px; border-radius: 10px; padding: 10px 13px; gap: 10px; min-height: 42px; }
+.bank-theme .satin-life .life-art { align-self: end; min-width: 0; margin-top: 44px; padding-bottom: 15px; }
+.bank-theme .satin-life .life-art .botanical-art { width: 100%; height: auto; transform: scale(1.08); transform-origin: right bottom; }
+.bank-theme .satin-life .life-art figcaption { color: #68513f; font-size: 9px; letter-spacing: .035em; text-align: center; padding: 3px 12px 0 0; line-height: 1.6; }
+.bank-theme .satin-life .life-concierge { display: flex; align-items: center; gap: 12px; padding: 4px 2px 17px; color: var(--oak); text-align: left; border-bottom: 1px solid var(--line); }
+.bank-theme .satin-life .life-concierge > span { flex: 1; min-width: 0; font-size: 13px; }
+.bank-theme .satin-life .life-concierge small { display: block; color: var(--text-2); font-size: 10px; margin-top: 5px; }
+.bank-theme .satin-life :is(.life-payments, .life-recent, .life-services) { padding: 8px 2px; background: none; box-shadow: none; border: 0; border-radius: 0; }
+.bank-theme .satin-life .card-title { font-size: 21px; font-weight: 500; }
+.bank-theme .satin-life .card-theme-icon { display: none; }
+.bank-theme .satin-life .card-head { margin-bottom: 6px; }
+.bank-theme .satin-life .life-bills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
+.bank-theme .satin-life .life-bills .tile { flex-direction: row; min-height: 65px; gap: 10px; border-bottom: 1px solid var(--line); }
+.bank-theme .satin-life .life-bills .tile-flat { width: 34px; height: 34px; border-radius: 10px; background: #f5e7de; --tone-color: #f5e7de; }
+.bank-theme .satin-life .life-bills .tile-flat svg { width: 21px; height: 21px; }
+.bank-theme .satin-life .life-bills .tile-label { font-size: 12px; }
+.bank-theme .satin-life .life-recent .empty { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 16px 0; }
+.bank-theme .satin-life .life-recent .empty-botanical { width: 32px; height: 32px; background: none; }
+.bank-theme .satin-life .life-recent .empty-botanical svg { width: 23px; }
+.bank-theme .satin-life .life-recent .empty strong { font-size: 12px; }
+.bank-theme .satin-life .life-services { border-top: 1px solid var(--line); padding-top: 21px; }
+.bank-theme .satin-life .life-services .circle-icon { background: none; --tone-color: var(--bg); width: 32px !important; height: 32px !important; }
+
+/* Profile: private dossier; visual grouping comes from space and hairlines. */
+.bank-theme .satin-profile { gap: 24px; padding-top: 7px; }
+.bank-theme .satin-profile .profile-card { padding: 15px 0 22px; border-bottom: 1px solid #ded2c3; border-radius: 0; gap: 16px; }
+.bank-theme .satin-profile .profile-identity-art > .avatar { background: #f8ead7; }
+.bank-theme .satin-profile .profile-text strong { font-family: "Noto Serif SC", "Songti SC", SimSun, serif; font-size: 26px; font-weight: 500; letter-spacing: .03em; }
+.bank-theme .satin-profile .profile-text small { font-size: 11px; line-height: 1.8; }
+.bank-theme .satin-profile .profile-kicker { letter-spacing: .12em; font-size: 10px; }
+.bank-theme .satin-profile .profile-identity-art { width: 64px; height: 64px; }
+.bank-theme .satin-profile .profile-identity-art .botanical-art { width: 64px; height: 64px; opacity: .8; }
+.bank-theme .satin-profile .profile-settings { padding: 0 2px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.bank-theme .satin-profile .profile-settings .card-head { margin-bottom: 8px; }
+.bank-theme .satin-profile .profile-settings .card-title { font-size: 11px; letter-spacing: .1em; color: #776957; }
+.bank-theme .satin-profile .profile-settings .row { padding: 14px 0; border-color: #e4dcd0; }
+.bank-theme .satin-profile .profile-settings .row-title { font-size: 14px; font-weight: 500; }
+.bank-theme .satin-profile .profile-settings .row-subtitle { font-size: 11px; }
+.bank-theme .satin-profile .profile-settings .circle-icon { --tone-color: var(--bg); width: 31px !important; height: 31px !important; }
+.bank-theme .satin-profile .cell-button { border-radius: 10px; border: 1px solid #d7cbbb; background: none; font-size: 12px; }
+
+/* Feedback is local and short. Authorization and payment controls get no sheen
+   or transform animation. No information depends on hover. */
+.bank-theme :is(.satin-wealth, .satin-life, .satin-profile) :is(.tile, .row, .card-action, .btn-text),
+.bank-theme .satin-assistant .chat-chips button { transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease; }
+.bank-theme :is(.satin-wealth, .satin-life, .satin-profile) :is(.tile, button.row):active,
+.bank-theme .satin-assistant .chat-chips button:active { background-color: #e9e1d5; }
+.bank-theme .satin-assistant .composer { transition: border-color 180ms ease, box-shadow 180ms ease; }
+@media (max-width: 359px) {
+  .bank-theme .surface-signature::before { background: linear-gradient(120deg, transparent 21%, #ffffff0a 34%, #ffffffcc 55%, #ffffff4d 67%, transparent 85%); }
+  .bank-theme .satin-wealth { gap: 17px; }
+  .bank-theme .satin-wealth .wealth-heading h2 { font-size: 22px; }
+  .bank-theme .satin-wealth .wealth-heading .botanical-art { width: 57px; height: 74px; }
+  .bank-theme .satin-wealth .wealth-overview { padding: 19px 18px 8px; }
+  .bank-theme .satin-wealth .wealth-advisor { padding: 14px 11px; }
+  .bank-theme .satin-wealth .wealth-advisor strong { font-size: 16px; }
+  .bank-theme .satin-wealth .market-strip button:nth-child(3) { border-left: 0; }
+  .bank-theme .satin-life .life-editorial { padding-left: 16px; }
+  .bank-theme .satin-life .life-story h2 { font-size: 23px; }
+  .bank-theme .satin-life .life-art figcaption { font-size: 8px; padding-right: 6px; }
+  .bank-theme .satin-life .life-story .pill { padding: 9px 10px; gap: 6px; }
+  .bank-theme .satin-life .life-bills { column-gap: 14px; }
+  .bank-theme .satin-profile .profile-card { gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bank-theme :is(.surface-satin, .surface-signature),
+  .bank-theme :is(.satin-wealth, .satin-life, .satin-profile, .satin-assistant) * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
