@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { migrateWeChat } from './channels/wechat-schema.mjs';
 import { migrateFeishu } from './channels/feishu-schema.mjs';
+import { migrateReports } from './channels/reports-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
@@ -162,6 +163,7 @@ export function createBank(path) {
   `);
   migrateWeChat(db);
   migrateFeishu(db);
+  migrateReports(db);
   migratePersonalization(db);
   migrateProducts(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');

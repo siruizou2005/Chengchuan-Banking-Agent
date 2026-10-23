@@ -6,8 +6,9 @@ import { redact } from '../agent/guard.mjs';
 import { eventsText } from './router.mjs';
 import { channelText } from './preferences.mjs';
 import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
+import { REPORT_DELIVERY_MS, reportDeliveryNotice } from './reports.mjs';
 
-const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const commandPattern=/^(帮助|help|解绑|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 const pending=['queued','running'];
 const appCards={report:'账单图表',stats:'统计图表',subscriptions:'订阅明细',products:'产品列表与对比',advice:'配置建议（可调整期限与金额、查看产品详情）',anomalies:'异常支出明细'};
 export const feishuResultLink=(origin,requestId)=>`${origin||''}/#feishu-requests/${requestId}`;
@@ -50,7 +51,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
   function enqueue(b,{requestId=null,messageId=null,kind,body,sourceId=null}) {
     const time=Date.now();
     bank.run(`INSERT OR IGNORE INTO feishu_deliveries(id,binding_id,binding_session_id,binding_generation,user_id,request_id,message_id,source_outbox_id,kind,body_cipher,uuid,created_at,next_at,expires_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,id('FSOUT'),b.id,b.binding_session_id,b.binding_generation,b.user_id,requestId,messageId,sourceId,kind,crypto.encrypt(body),randomUUID(),time,time,time+(kind==='progress'?5000:86400000));
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,id('FSOUT'),b.id,b.binding_session_id,b.binding_generation,b.user_id,requestId,messageId,sourceId,kind,crypto.encrypt(body),randomUUID(),time,time,time+(kind==='progress'?5000:kind==='report'?REPORT_DELIVERY_MS:86400000));
   }
   function cancelFeedback(requestId) {bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE request_id=? AND kind='progress' AND status IN ('pending','retry_wait')",requestId);}
   function resultText(result,requestId) {
@@ -108,7 +109,9 @@ export function createFeishuPipeline(services,router,send,options={}) {
   function notice(row) {
     if(row.kind==='progress')return;
     if(!bank.get("SELECT 1 FROM audit WHERE action='feishu.delivery_notice' AND resource_id=?",row.id)){
-      bank.notify(row.user_id,'飞书回复送达未确认',`结果保存在App，无需重复提交业务。查看：${row.request_id?feishuResultLink(origin,row.request_id):`${origin}/#tasks`}`);
+      const report=row.kind==='report'&&reportDeliveryNotice(bank,origin,row.source_outbox_id,'feishu');
+      if(report)bank.notify(row.user_id,report.title,report.body);
+      else bank.notify(row.user_id,'飞书回复送达未确认',`结果保存在App，无需重复提交业务。查看：${row.request_id?feishuResultLink(origin,row.request_id):`${origin}/#tasks`}`);
       bank.audit(row.user_id,'feishu.delivery_notice',row.id,{code:row.safe_error_code||'SEND_UNKNOWN',requestId:row.request_id});
     }
   }
@@ -118,7 +121,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
         const b=bank.get('SELECT * FROM channel_bindings WHERE id=?',out.binding_id);
         try{bindingFor(b);if(out.binding_generation!=null)bindingFor({...out,user_id:b.user_id});}
         catch{bank.run("UPDATE channel_outbox SET status='cancelled' WHERE id=? AND status='pending'",out.id);continue;}
-        enqueue(b,{kind:'action_result',body:out.body,sourceId:out.id});
+        enqueue(b,{kind:out.kind==='report'?'report':'action_result',body:out.body,sourceId:out.id});
         bank.run("UPDATE channel_outbox SET status='forwarded' WHERE id=? AND status='pending'",out.id);
       }
     });

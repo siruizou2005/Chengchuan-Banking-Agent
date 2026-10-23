@@ -4,7 +4,7 @@ import { businessDate } from './policy.mjs';
 // All periods are Beijing calendar dates; created_at stays UTC in the database.
 const DAY = 86400000;
 const bj = iso => new Date(Date.parse(iso) + 8 * 3600000).toISOString();
-const addDays = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
+export const addDays = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const monthEnd = ym => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10);
 const shiftMonth = (ym, n) => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1)).toISOString().slice(0, 7);
 const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().startsWith(d);
@@ -215,16 +215,18 @@ export function compactStats(stats) {
     bucketCount: stats.buckets.filter(b => b.count).length, buckets: top, note: `本结果金额单位为元（不是分），按金额从高到低${stats.skipped ? `；${stats.skipped}笔原对账单只有日期，未计入按小时统计` : ''}` };
 }
 
-export function detectAnomalies(rows, range) {
-  const all = rows.map(enrich), expenses = selectLedger(all, range).filter(r => r.amount < 0 && (r.kind === 'consumption' || r.kind === 'transfer_out'));
-  const amounts = expenses.map(r => -r.amount).sort((a, b) => a - b), median = amounts[Math.floor(amounts.length / 2)] || 0;
-  const counts = new Map(); for (const r of expenses) counts.set(merchantOf(r) || r.title, (counts.get(merchantOf(r) || r.title) || 0) + 1);
+// history widens the baseline (median, first-time merchants, repeats) beyond the range being checked.
+export function detectAnomalies(rows, range, history = range) {
+  const all = rows.map(enrich), outgoing = r => r.amount < 0 && (r.kind === 'consumption' || r.kind === 'transfer_out');
+  const expenses = selectLedger(all, range).filter(outgoing), baseline = history === range ? expenses : selectLedger(all, history).filter(outgoing);
+  const amounts = baseline.map(r => -r.amount).sort((a, b) => a - b), median = amounts[Math.floor(amounts.length / 2)] || 0;
+  const counts = new Map(); for (const r of baseline) counts.set(merchantOf(r) || r.title, (counts.get(merchantOf(r) || r.title) || 0) + 1);
   return expenses.flatMap(r => {
     const reasons = [], name = merchantOf(r), hour = +r.bj_time.slice(11, 13);
     if (-r.amount > Math.max(500000, median * 5)) reasons.push('金额明显高于常见支出');
     if (r.time_precision !== 'day' && hour < 6) reasons.push('深夜交易（北京时间）');
     if (counts.get(name || r.title) === 1 && -r.amount >= 100000) reasons.push('陌生商户或首次大额支出');
-    if (name && -r.amount >= 5000 && expenses.some(x => x.id !== r.id && merchantOf(x) === name && x.amount === r.amount && Math.abs(Date.parse(x.created_at) - Date.parse(r.created_at)) < DAY)) reasons.push('24小时内同额重复扣费');
+    if (name && -r.amount >= 5000 && baseline.some(x => x.id !== r.id && merchantOf(x) === name && x.amount === r.amount && Math.abs(Date.parse(x.created_at) - Date.parse(r.created_at)) < DAY)) reasons.push('24小时内同额重复扣费');
     return reasons.length ? [{ id: r.id, ...brief(r), reasons }] : [];
   }).sort((a, b) => b.reasons.length - a.reasons.length || a.amount - b.amount).slice(0, 10);
 }

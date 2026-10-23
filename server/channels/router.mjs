@@ -5,6 +5,7 @@ import { STATS_LABEL } from '../agent/analytics.mjs';
 import { channelPreferences, setChannelPreference, channelText, maskMoney } from './preferences.mjs';
 import { assertChannelExecution } from '../agent/execution.mjs';
 import { redactIdentity } from '../privacy.mjs';
+import { unsubscribeCommand } from './reports.mjs';
 export function createChannelCrypto(secret=process.env.CHANNEL_SECRET) {
  const key=()=>{requireThat(typeof secret==='string'&&/^[a-f0-9]{64}$/i.test(secret),'请配置64位十六进制CHANNEL_SECRET',503,'CHANNEL_SECRET_REQUIRED');return Buffer.from(secret,'hex');};
  return {encrypt(value){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv),data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(b=>b.toString('base64')).join('.');},decrypt(value){const [iv,tag,data]=value.split('.').map(s=>Buffer.from(s,'base64')),decipher=createDecipheriv('aes-256-gcm',key(),iv);decipher.setAuthTag(tag);return Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8');}};
@@ -48,6 +49,7 @@ export function createChannelRouter(services,agent,options={}) {
   const value=text.trim();
   if(/^(帮助|help)$/i.test(value))return '可以查询余额、分析账单、提议业务。完整结果请在App查看，所有业务确认都需回App完成；这里可回复「取消 操作编号」。';
   if(value==='解绑')return '请回App「消息渠道绑定」输入支付密码解绑。';
+  const unsubscribed=unsubscribeCommand(bank,binding,value);if(unsubscribed)return unsubscribed;
   const command=value.match(/^(确认|取消)(?:\s+([A-Za-z0-9]+))?$/);if(!command)return null;
   return atomic(()=>{
    requireThat(get("SELECT id FROM channel_bindings WHERE id=? AND status='active' AND auth_state='valid' AND binding_generation=?",binding.id,binding.binding_generation),'请回App重新连接微信',403,'CHANNEL_REAUTH_REQUIRED');
@@ -99,6 +101,7 @@ export function createChannelRouter(services,agent,options={}) {
    const user={id:binding.user_id},channel=binding.channel,legacySession=binding.binding_generation===1?binding.id:binding.binding_session_id;
    if(/^(帮助|help)$/i.test(text.trim()))return '可查余额、分析账单、提议转账或规划生日。所有操作都需回澄川银行App确认，在这里可回复「取消 操作编号」放弃。解绑请到App安全中心。';
    if(text.trim()==='解绑')return '请回App安全中心输入支付密码解绑。';
+   const unsubscribed=unsubscribeCommand(bank,binding,text);if(unsubscribed)return unsubscribed;
    const command=text.trim().match(/^(确认|取消)(?:\s+([A-Za-z0-9]+))?$/);
    if(command){
     services.expireActions();const candidates=all("SELECT * FROM agent_actions WHERE user_id=? AND channel=? AND session_id IN (?,?) AND status IN ('proposed','confirmed','awaiting_verification') ORDER BY created_at DESC,rowid DESC",user.id,channel,legacySession,binding.binding_session_id);

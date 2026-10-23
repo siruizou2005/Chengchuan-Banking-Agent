@@ -4,6 +4,7 @@ import { api, ApiError, formValues, date } from '../api';
 import { useBank } from '../bank';
 import { Card, Field, InlineError, Notice, PinField } from '../ui';
 import { ChannelAmountSetting } from './ChannelAmountSetting';
+import { ChannelReportSetting } from './ChannelReportSetting';
 
 type Login = { id: string; image: string; status: string; message: string; expiresAt: string };
 type RequestRow = { id: string; status: string; received_at: number };
@@ -55,6 +56,7 @@ export function WeChatChannel({ enabled, closed = false }: { enabled: boolean; c
   return <Card title="微信助手">
     <p className="body-copy">用微信扫码连接银行助手。收到请求后会先回应，处理较久时会提示进度；查询结果直接回复到微信，业务确认请回 App 完成。</p>
     <ChannelAmountSetting channel="wechat" />
+    <ChannelReportSetting channel="wechat" />
     {connected ? <Notice>微信已绑定。{binding?.last_inbound_at ? '已收到你的微信消息。' : '请在微信给助手发送“你好”验证连接。'}</Notice> : <form className="stack-form form-card" onSubmit={e => { const f = formValues(e); void create(f.pin); }}>
       {binding && <Notice>微信需要重新认证，请重新扫码连接。已有业务结果可在 App 查看。</Notice>}
       {!enabled && <Notice>微信渠道尚未开启。</Notice>}

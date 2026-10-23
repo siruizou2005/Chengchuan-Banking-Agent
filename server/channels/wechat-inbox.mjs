@@ -5,7 +5,7 @@ import { enqueueExecution } from '../agent/execution.mjs';
 import { bindingFor, assertLease, resultLink, wechatResultText } from './wechat-state.mjs';
 import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
 
-const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const commandPattern=/^(帮助|help|解绑|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 export function createWeChatInbox(services,router,delivery,options={}) {
   const {bank}=services,crypto=router.crypto,owner=randomUUID(),active=new Map(),ttl=options.executionLeaseMs||60000;
   const origin=options.publicOrigin??process.env.PUBLIC_ORIGIN??'',maxPending=options.maxPending||Number(process.env.WECHAT_MAX_PENDING_PER_USER)||3;
