@@ -8,15 +8,15 @@ const GOALS = ['备用金随用随取', '稳健增值', '长期增值', '暂不�
 export const ONBOARDING_OPENING = '开通成功！想先花一分钟了解你，方便以后按你的习惯来服务，每个问题都可以说「跳过」。先问一下，我该怎么称呼你？';
 export const ONBOARDING_RESUME = '我们接着设置偏好吧，随时可以说「跳过」。';
 
-// 首次引导的进度与快捷回答：点选项等于发一句话，由助手理解并保存；「全部跳过」直接结束引导。
-export function OnboardingCard({ state, name, busy, configured, onSay, onEnd, onRisk }: { state: OnboardingState; name: string; busy: boolean; configured: boolean; onSay: (text: string) => void; onEnd: () => void; onRisk: () => void }) {
-  const [areas, setAreas] = useState<string[]>([]);
+// 首次引导的进度与快捷回答：点选项等于发一句话，由助手理解并保存；称呼由用户手动填写；「全部跳过」直接结束引导。
+export function OnboardingCard({ state, busy, configured, onSay, onEnd, onRisk }: { state: OnboardingState; busy: boolean; configured: boolean; onSay: (text: string) => void; onEnd: () => void; onRisk: () => void }) {
+  const [areas, setAreas] = useState<string[]>([]), [nickname, setNickname] = useState('');
   const done = state.answered.length + state.skipped.length, next = state.next;
   const available = configured && !busy;
   const options: Record<OnboardingField, string[]> = {
-    preferred_name: [...new Set([`叫我${name}`, name.length >= 3 ? `叫我${name.slice(1)}` : ''])].filter(Boolean),
+    preferred_name: [],
     focus_areas: [],
-    answer_length: ['回复简短一点', '回复详细一点'],
+    answer_length: ['回复简短一点', '回复适中就好', '回复详细一点'],
     mask_amounts: ['飞书微信里隐藏金额', '飞书微信里正常显示金额'],
     investment_goal: GOALS.map(goal => `理财目标：${goal}`),
   };
@@ -26,7 +26,10 @@ export function OnboardingCard({ state, name, busy, configured, onSay, onEnd, on
     {next === 'focus_areas' ? <div className="chat-chips onboarding-chips" role="group" aria-label="关注业务，可多选">
       {FOCUS.map(area => <button key={area} aria-pressed={areas.includes(area)} className={areas.includes(area) ? 'selected' : ''} disabled={!available} onClick={() => setAreas(list => list.includes(area) ? list.filter(a => a !== area) : [...list, area])}>{area}</button>)}
       <button className="primary" disabled={!available || !areas.length} onClick={() => { onSay(`我主要关注${areas.join('、')}`); setAreas([]); }}>就这些</button>
-    </div> : next && <div className="chat-chips onboarding-chips" role="group" aria-label={LABEL[next]}>
+    </div> : next === 'preferred_name' ? <form className="chat-chips onboarding-chips onboarding-name" onSubmit={e => { e.preventDefault(); const value = nickname.trim(); if (!available || !value) return; onSay(`叫我${value}`); setNickname(''); }}>
+      <input value={nickname} onChange={e => setNickname(e.target.value)} maxLength={20} placeholder="输入你希望的称呼" aria-label="称呼" disabled={!available} data-testid="onboarding-name" />
+      <button type="submit" className="primary" disabled={!available || !nickname.trim()}>确定</button>
+    </form> : next && <div className="chat-chips onboarding-chips" role="group" aria-label={LABEL[next]}>
       {options[next].map(text => <button key={text} disabled={!available} onClick={() => onSay(text)}>{text}</button>)}
       {next === 'investment_goal' && state.riskLevel === 0 && <button onClick={onRisk}>先去做风险测评</button>}
     </div>}

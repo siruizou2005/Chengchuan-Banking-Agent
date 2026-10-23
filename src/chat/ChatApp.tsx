@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, LoaderCircle, Plus, RotateCcw, Menu, Mic, Square, X, History } from 'lucide-react';
+import { Check, Copy, LoaderCircle, Plus, RotateCcw, Menu, Mic, Square, X, History, ChevronRight } from 'lucide-react';
 import { ChatError, liveAdapter, initialMessages, type ChatAdapter, type Message } from './adapter';
 import { api, date } from '../api';
 import { useBank } from '../bank';
@@ -43,7 +43,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
   </article>;
 }
 
-const quickQuestions = ['给陈屿转 200 备注午饭', '分析本月账单', '有哪些订阅扣费', '推荐一个理财', '我爱人 10 月 5 日生日，帮我安排'];
+const quickQuestions = ['转账', '分析本月账单', '有哪些订阅扣费', '推荐一个理财'];
 // 每个用户在本浏览器中最后打开的对话；服务端会校验归属，读写失败（隐私模式等）静默忽略。
 const sessionKey = (userId: string) => `bank-chat-session:${userId}`;
 const readStoredSession = (userId: string) => { try { return localStorage.getItem(sessionKey(userId)) || ''; } catch { return ''; } };
@@ -60,6 +60,8 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   // 开通后的首次引导：开场白固定显示，之后由助手对话引导；进度来自服务端。
   const opening = () => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING : undefined;
   const [guide, setGuide] = useState<OnboardingState | null>(null);
+  // 引导聊完且尚未风险测评时，在总结下方给出测评入口；发下一句话或选「晚点再说」后收起。
+  const [riskPrompt, setRiskPrompt] = useState(false);
   const guiding = data.agent?.onboarding === 'pending' && guide?.status === 'pending';
   const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening()));
   const [draft, setDraft] = useState('');
@@ -136,7 +138,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
-      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) setGuide(state); await refresh(); }
+      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) { setGuide(state); setRiskPrompt(state.status === 'completed' && state.riskLevel === 0); } await refresh(); }
     } catch (failure) {
       if (!active.signal.aborted) {
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
@@ -151,7 +153,11 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     const content = text.trim(); if (!content || controller.current || !configured) return;
     started.current = true;
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text: content }];
-    setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
+    setMessages(next); setDraft(''); setRiskPrompt(false); void requestReply(next); input.current?.focus();
+  }
+  function riskLater() {
+    setRiskPrompt(false); shouldScroll.current = true;
+    setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text: '好的，之后想要配置建议时，在「理财 → 风险测评」完成测评再来找我就行。' }]);
   }
   async function endGuide() {
     try {
@@ -165,7 +171,7 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
   function reset() {
     cancelVoice();
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
-    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
+    setBusy(false); setError(''); setNotice(''); setDraft(''); setRiskPrompt(false); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
     storeSession(user.id, '');
     scroller.current?.scrollTo({ top: 0 });
   }
@@ -207,7 +213,8 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
-        {guiding && guide ? <OnboardingCard state={guide} name={user.name} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onRisk={() => navigate('risk')} />
+        {guiding && guide ? <OnboardingCard state={guide} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onRisk={() => navigate('risk')} />
+        : riskPrompt && user.riskLevel === 0 ? <div className="chat-chips risk-followup" role="group" aria-label="风险测评"><button className="primary" onClick={() => { setRiskPrompt(false); navigate('risk'); }} data-testid="risk-followup-go">去做风险测评<ChevronRight size={14} /></button><button onClick={riskLater} data-testid="risk-followup-later">晚点再说</button></div>
         : messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">聊天服务尚未配置，请在服务器 .env 中设置 CHAT_API_KEY 后重启。</div>}
         <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>

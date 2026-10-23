@@ -120,11 +120,11 @@ test('说「以后再说」结束引导记为跳过；App「全部跳过」直�
   assert.ok(f.bank.get("SELECT 1 FROM audit WHERE user_id=? AND action='agent.onboarding.skipped'", f.user.id));
 
   await f.call('/agent/onboarding/reset', {});
-  f.queue.push(llm([save('answer_length', '详细', '详细一点')]), llm([], '已记下。'));
-  await f.say('详细一点');
+  f.queue.push(llm([save('answer_length', '适中', '适中就好')]), llm([], '已记下。'));
+  await f.say('回复适中就好');
   const ended = (await f.call('/agent/onboarding/end', {})).data;
   assert.equal(ended.status, 'completed'); assert.deepEqual(ended.answered, ['answer_length']);
-  assert.equal((await f.profile()).answer_length, '详细');
+  assert.equal((await f.profile()).answer_length, '适中');
   assert.equal((await f.req('/agent/onboarding/end', {}, f.bob.token)).status, 200);
 });
 

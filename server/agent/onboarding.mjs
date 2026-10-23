@@ -11,7 +11,7 @@ export const ONBOARDING_TOOLS = new Set(['save_onboarding_answer','skip_onboardi
 const field={type:'string',enum:ONBOARDING_FIELDS};
 const evidence={type:'string',minLength:1,maxLength:200,description:'本轮用户原文中支持该操作的片段，须逐字摘录'};
 export const onboardingToolDefinitions=[
- {type:'function',function:{name:'save_onboarding_answer',description:`保存用户在首次引导中亲口说出的偏好；一句话说了多项就分别调用。value取值：preferred_name为用户希望的称呼（不超过20字，须原样出现在evidence中）；focus_areas为${FOCUS_AREAS.join('、')}中的一项或多项，用顿号分隔；answer_length为简短或详细；mask_amounts为隐藏或显示（同时作用于飞书和微信）；investment_goal为${GOAL_OPTIONS.join('、')}之一，或用户原话（不超过40字）`,parameters:{type:'object',properties:{field,value:{type:'string',minLength:1,maxLength:60},evidence},required:['field','value','evidence'],additionalProperties:false}}},
+ {type:'function',function:{name:'save_onboarding_answer',description:`保存用户在首次引导中亲口说出的偏好；一句话说了多项就分别调用。value取值：preferred_name为用户希望的称呼（不超过20字，须原样出现在evidence中）；focus_areas为${FOCUS_AREAS.join('、')}中的一项或多项，用顿号分隔；answer_length为简短、适中或详细；mask_amounts为隐藏或显示（同时作用于飞书和微信）；investment_goal为${GOAL_OPTIONS.join('、')}之一，或用户原话（不超过40字）`,parameters:{type:'object',properties:{field,value:{type:'string',minLength:1,maxLength:60},evidence},required:['field','value','evidence'],additionalProperties:false}}},
  {type:'function',function:{name:'skip_onboarding',description:'用户表示某些问题不想回答时传fields；表示不想继续引导、以后再说时传all=true，结束引导',parameters:{type:'object',properties:{fields:{type:'array',items:field,minItems:1,maxItems:5},all:{type:'boolean'},evidence},required:['evidence'],additionalProperties:false}}},
 ];
 export const ONBOARDING_OPENING='开通成功！想先花一分钟了解你，方便以后按你的习惯来服务，每个问题都可以说「跳过」。先问一下，我该怎么称呼你？';
@@ -21,7 +21,7 @@ export const ONBOARDING_INSTRUCTIONS=`当前是用户开通智能助手后的首
 3. 用户如果提出银行业务请求，先按正常规则办理，最后一句再问是否继续设置偏好。
 4. 风险偏好以正式风险测评为准，不要评估或记录用户的风险承受能力；引导状态里riskLevel为0表示尚未测评，问理财目标时可提醒用户在理财页完成风险测评。
 5. 引导期间不使用memory_candidates和remember。保存后说「已记下」，不要说「已完成」。
-6. 全部问完或用户结束引导后，用一两句话总结已记下的偏好，并告诉用户可以在「我的 → 个性化与记忆」中随时修改。`;
+6. 全部问完或用户结束引导后，用一两句话总结已记下的偏好，并告诉用户可以在「我的 → 个性化与记忆」中随时修改。riskLevel为0时，最后一句说完成风险测评后可以按结果给出配置建议；App会在下方显示「去做风险测评」和「晚点再说」按钮，不要写链接或页面路径。`;
 const compact=text=>String(text).normalize('NFKC').replace(/\s+/g,'').toLowerCase();
 
 export function createOnboarding(services) {

@@ -49,7 +49,7 @@ export function Personalization() {
         {!editing && <Field label="偏好类别"><select aria-label="偏好类别" value={key} onChange={e => selectKey(e.target.value)}>{Object.entries(labels).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select></Field>}
         <Field label={labels[currentKey] || currentKey}>
           {['language', 'answer_length'].includes(currentKey)
-            ? <select aria-label="偏好内容" value={value} onChange={e => setValue(e.target.value)}>{(currentKey === 'language' ? ['中文', 'English'] : ['简短', '详细']).map(v => <option key={v}>{v}</option>)}</select>
+            ? <select aria-label="偏好内容" value={value} onChange={e => setValue(e.target.value)}>{(currentKey === 'language' ? ['中文', 'English'] : ['简短', '适中', '详细']).map(v => <option key={v}>{v}</option>)}</select>
             : <input aria-label="偏好内容" name="memoryValue" value={value} onChange={e => setValue(e.target.value)} maxLength={300} required />}
         </Field>
         <button className="btn-primary" disabled={busy}>{busy ? '正在保存…' : '保存并确认'}</button>

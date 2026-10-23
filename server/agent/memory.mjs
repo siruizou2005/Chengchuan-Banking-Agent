@@ -34,7 +34,7 @@ export function createMemoryManager(bank, options={}) {
     key=clean(key);value=clean(value);
     requireThat(!sensitive.test(key+' '+value)&&!authoritative.test(key)&&!injectionFlags(value).length,'此内容不能保存为偏好记忆',400,'UNSAFE_MEMORY');
     if(key==='language')requireThat(['中文','English'].includes(value),'请选择中文或English',400,'INVALID_MEMORY');
-    if(key==='answer_length')requireThat(['简短','详细'].includes(value),'请选择简短或详细',400,'INVALID_MEMORY');
+    if(key==='answer_length')requireThat(['简短','适中','详细'].includes(value),'请选择简短、适中或详细',400,'INVALID_MEMORY');
     if(key==='preferred_name')requireThat(value.length<=20,'称呼不超过20个字',400,'INVALID_MEMORY');
     return {key,value};
   }
@@ -152,8 +152,8 @@ export function createMemoryManager(bank, options={}) {
       return row?'该项记忆已删除，旧对话不会将它自动恢复。':'没有找到该项已保存记忆。';
     }
     const preference=text.match(/^(?:以后|今后)(?:请)?(?:用|使用)(中文|英文|English)(?:回答|回复)(?:我)?$/i);
-    const length=text.match(/^(?:以后|今后)(?:请)?(?:给我|回答|回复|分析|财务分析)*(?:更)?(简短|详细|完整)(?:的)?(?:回答|回复|分析|财务分析)?$/);
-    let change=preference?{key:'language',value:preference[1]==='中文'?'中文':'English'}:length?{key:'answer_length',value:length[1]==='简短'?'简短':'详细'}:null;
+    const length=text.match(/^(?:以后|今后)(?:请)?(?:给我|回答|回复|分析|财务分析)*(?:更)?(简短|适中|详细|完整)(?:的)?(?:回答|回复|分析|财务分析)?$/);
+    let change=preference?{key:'language',value:preference[1]==='中文'?'中文':'English'}:length?{key:'answer_length',value:length[1]==='完整'?'详细':length[1]}:null;
     if(text==='以后分析股票时先展示估值指标')change={key:'analysis_style',value:'先展示估值指标'};
     if(text==='以后比较投资方案时先讲风险')change={key:'analysis_style',value:'先说明下行风险'};
     if(text==='以后不要优先讲风险')change={key:'analysis_style',value:'按问题自然顺序说明'};

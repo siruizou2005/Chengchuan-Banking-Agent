@@ -201,13 +201,23 @@
 .advice-product .btn-text { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; padding: 0; }
 
 /* 开通页：与聊天页共用头部，正文为普通页面卡片。 */
-.assistant-page.enroll-page .chat-scroll { padding-bottom: 8px; }
+.assistant-page.enroll-page .chat-scroll .page { min-height: 100%; padding-bottom: 12px; }
 .assistant-page .enroll-spacer { width: 40px; }
-.assistant-page .enroll-hero { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 16px 18px; text-align: center; }
-.assistant-page .enroll-hero h2 { font-size: 19px; font-weight: 600; margin-top: 4px; }
-.assistant-page .enroll-hero p { font-size: 13px; line-height: 1.6; color: var(--text-2); }
-.assistant-page .enroll-updated { margin-left: 6px; background: #fff3e8; color: var(--orange); vertical-align: 1px; }
-.assistant-page .enroll-agree { display: flex; align-items: flex-start; gap: 8px; padding: 4px 4px 0; font-size: 13px; line-height: 1.6; color: var(--text-2); cursor: pointer; }
+.assistant-page .enroll-hero { display: flex; align-items: center; gap: 14px; padding: 18px 16px; }
+.assistant-page .enroll-hero h2 { font-size: 18px; font-weight: 600; }
+.assistant-page .enroll-hero p { margin-top: 3px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+/* 说明卡撑满剩余高度，五条均匀分布；屏幕矮时退回最小间距。 */
+.assistant-page .enroll-intro { flex: 1; display: flex; flex-direction: column; }
+.assistant-page .enroll-points { flex: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 14px; }
+.assistant-page .enroll-points li { display: flex; align-items: center; gap: 12px; }
+.assistant-page .enroll-points div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.assistant-page .enroll-points b { font-size: 15px; font-weight: 500; }
+.assistant-page .enroll-points span { font-size: 13px; line-height: 1.5; color: var(--text-3); }
+.assistant-page .enroll-footer { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 4px; background: var(--card); border-top: 1px solid var(--line); }
+.assistant-page .enroll-footer .footnote { margin: 0; line-height: 1.5; }
+.assistant-page .enroll-doc { display: inline; padding: 0; background: none; border: 0; font: inherit; color: var(--brand); cursor: pointer; }
+.assistant-page .enroll-updated { margin: 0 2px; background: #fff3e8; color: var(--orange); vertical-align: 1px; }
+.assistant-page .enroll-agree { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.6; color: var(--text-2); cursor: pointer; }
 .assistant-page .enroll-agree input { width: 17px; height: 17px; margin-top: 2px; flex-shrink: 0; accent-color: var(--brand); }
 .agreement-text { max-height: 62vh; overflow-y: auto; font-size: 14px; line-height: 1.75; }
 .agreement-text .chat-markdown h2 { font-size: 15px; margin: 14px 0 6px; }
@@ -223,6 +233,13 @@
 .assistant-page .onboarding-chips button.selected { background: var(--brand-soft); border-color: var(--brand); }
 .assistant-page .onboarding-chips button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
 .assistant-page .onboarding-chips button:disabled { opacity: .5; }
+.assistant-page .risk-followup { margin: 10px 0 0 42px; }
+.assistant-page .risk-followup button { display: inline-flex; align-items: center; gap: 2px; }
+.assistant-page .risk-followup button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+@media (max-width: 360px) { .assistant-page .risk-followup { margin-left: 0; } }
+.assistant-page .onboarding-name { flex-wrap: nowrap; }
+.assistant-page .onboarding-name input { flex: 1; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 13px; }
+.assistant-page .onboarding-name input:focus { outline: none; border-color: var(--brand); background: #fff; }
 .assistant-page .onboarding-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 8px; }
 .assistant-page .onboarding-actions button { font-size: 12px; color: var(--text-3); padding: 4px 6px; }
 .assistant-page .onboarding-actions button:hover:not(:disabled) { color: var(--brand); }
