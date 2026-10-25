@@ -44,7 +44,7 @@ export const IcoTerminal = ({ size = 22, className }: P) => <svg {...base(size, 
 /* 全局渐变定义：平面宫格图标通过 CSS fill:url(#ico-*) 取用，呈现微众式上浅下深的渐变。 */
 export function GradientDefs() {
   const g = (id: string, from: string, to: string) => <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} /></linearGradient>;
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>{g('ico-blue', '#7a9bff', '#4c6ef5')}{g('ico-orange', '#ffb35c', '#ff7f1f')}{g('ico-red', '#ff8577', '#f4443a')}{g('ico-gold', '#ffd860', '#f2ae00')}{g('ico-cyan', '#62cff7', '#1e9fe8')}</defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>{g('cc-icon-blue', '#62cdff', '#0072d8')}{g('ico-blue', '#7a9bff', '#4c6ef5')}{g('ico-orange', '#ffb35c', '#ff7f1f')}{g('ico-red', '#ff8577', '#f4443a')}{g('ico-gold', '#ffd860', '#f2ae00')}{g('ico-cyan', '#62cff7', '#1e9fe8')}</defs></svg>;
 }
 
 /* 品牌标：圆角方形底，三道“川”形水纹。watermark 变体用于卡面淡色水印。 */
@@ -56,8 +56,8 @@ export function Logo({ size = 28, light = false, watermark = false }: { size?: n
 /* 底部导航线性图标：1.6 描边，激活态带红色点缀。 */
 type N = { active: boolean };
 const nav = { width: 26, height: 26, viewBox: '0 0 24 24', 'aria-hidden': true as const };
-export const NavAccount = ({ active }: N) => <svg {...nav}><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="M12 3a9 9 0 019 9h-9z" fill={active ? 'var(--red)' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>;
-export const NavWealth = ({ active }: N) => <svg {...nav} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V9M12 12C6 13 3 9 4 5c5 0 8 3 8 7ZM12 9c0-4 4-7 8-6 0 4-3 7-8 6Z" fill={active ? 'currentColor' : 'none'} /><path d="M5 17h14l-1 4H6l-1-4Z" /><path d="M8 17v-2m8 2v-2" /></svg>;
+export const NavAccount = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3Z" /></svg>;
+export const NavWealth = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="13" width="3" height="8" rx="1" /><rect x="10.5" y="8" width="3" height="13" rx="1" /><rect x="17" y="3" width="3" height="18" rx="1" /></svg>;
 export const NavAssistant = ({ active }: N) => <AgentMark active={active} />;
-export const NavLife = ({ active }: N) => <svg {...nav} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m3 10 9-7 9 7M5 9v11h14V9" /><path d="M12 20v-7m0 4c-4 0-6-2-6-5 4 0 6 2 6 5Zm0-3c0-3 2-5 5-5 0 3-2 5-5 5Z" fill={active ? 'currentColor' : 'none'} /></svg>;
+export const NavLife = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="7" width="14" height="15" rx="2" /><path d="M9 9V6a3 3 0 016 0v3" /></svg>;
 export const NavProfile = ({ active }: N) => <svg {...nav}><circle cx="12" cy="8.5" r="4" stroke="currentColor" strokeWidth="1.6" fill={active ? 'currentColor' : 'none'} /><path d="M4.5 20.5c.5-4 3.5-6.5 7.5-6.5s7 2.5 7.5 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />{active && <circle cx="17.5" cy="5" r="2.2" fill="var(--red)" />}</svg>;

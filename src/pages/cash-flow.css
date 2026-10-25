@@ -1,0 +1,32 @@
+/* Existing cash-flow chart, now accessed from account analysis. */
+.flow-card { padding: 12px; background: var(--card); border-radius: 12px; }
+.flow-card .home-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.flow-card h2 { font-size: 15px; }
+.flow-card .home-section-head p { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+.home-periods { display: flex; flex-shrink: 0; padding: 3px; border-radius: 24px; background: var(--pill); }
+.home-periods button { min-height: 44px; min-width: 44px; padding: 0 8px; font-size: 11px; border-radius: 20px; color: var(--text-2); }
+.home-periods button[aria-pressed="true"] { color: var(--oak); background: var(--card); box-shadow: 0 1px 4px #1689ec17; }
+.flow-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 19px; }
+.flow-summary > div { min-width: 0; }
+.flow-summary span { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); margin-bottom: 7px; }
+.flow-summary strong { font-size: clamp(15px, 4.6vw, 20px); font-weight: 500; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.flow-dot { width: 7px; height: 7px; border-radius: 50%; }
+.flow-dot.in { background: #608669; }
+.flow-dot.out { background: #8ca8b8; }
+.flow-selection { font-size: 10px; color: var(--text-2); margin: 12px 0 3px; min-height: 16px; }
+.home-flow-chart { width: 100%; height: auto; display: block; overflow: visible; touch-action: pan-y; border-radius: 4px; }
+.home-flow-chart text { fill: var(--text-3); font-size: 10px; }
+.home-flow-chart .flow-grid { stroke: var(--line); stroke-width: .6; }
+.home-flow-chart .flow-line { fill: none; stroke-width: 2.3; stroke-linecap: round; }
+.home-flow-chart .income { stroke: var(--green); }
+.home-flow-chart .expense { stroke: var(--brand); }
+.home-flow-chart .flow-crosshair { stroke: var(--text-3); stroke-dasharray: 4 4; stroke-width: 1; }
+.home-flow-chart .flow-point { stroke: var(--card); stroke-width: 2; }
+.home-flow-chart .flow-point.income { fill: var(--green); }
+.home-flow-chart .flow-point.expense { fill: var(--brand); }
+.flow-footer { display: flex; align-items: center; gap: 6px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 11px; }
+.flow-footer p { flex: 1; font-size: 10px; line-height: 1.7; color: var(--text-2); }
+.flow-footer button { display: grid; place-items: center; width: 44px; height: 44px; color: var(--oak); }
+.home-chart-state { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text-2); font-size: 12px; text-align: center; line-height: 1.7; }
+.privacy-chart { min-height: 140px; background: var(--surface-soft); border-radius: 12px; margin-top: 12px; }
+.home-text-button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; color: var(--oak); font-size: 11px; min-height: 44px; flex-shrink: 0; }

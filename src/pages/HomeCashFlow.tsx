@@ -1,3 +1,4 @@
+import './cash-flow.css';
 import { useEffect, useId, useState } from 'react';
 import { ArrowUpRight, ChevronRight, RefreshCw } from 'lucide-react';
 import { api, yuan } from '../api';

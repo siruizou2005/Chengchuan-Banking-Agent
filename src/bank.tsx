@@ -5,6 +5,7 @@ export type BankContextValue = {
   data: Snapshot; busy: boolean; route: string; hidden: boolean;
   formError: { message: string; code: string } | null; clearFormError: () => void;
   navigate: (route: string) => void; refresh: () => Promise<void>; toggleHidden: () => void;
+  askAgent: (text: string) => void;
   begin: (body: Record<string, unknown>) => Promise<void>;
   mutate: (path: string, body: unknown, success: string, method?: string) => Promise<boolean>;
   openModal: (title: string, content: ReactNode) => void; closeModal: () => void;
@@ -13,3 +14,8 @@ export type BankContextValue = {
 };
 export const BankContext = createContext<BankContextValue | null>(null);
 export const useBank = () => useContext(BankContext)!;
+
+export function WorkspaceBank({ route, children }: { route: string; children: ReactNode }) {
+  const bank = useBank();
+  return <BankContext.Provider value={{ ...bank, route }}>{children}</BankContext.Provider>;
+}
