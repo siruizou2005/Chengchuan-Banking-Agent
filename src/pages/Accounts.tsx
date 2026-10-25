@@ -34,11 +34,15 @@ export function Accounts() {
 }
 
 export function Transfer() {
-  const { data, begin, navigate } = useBank();
-  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const { data, begin, navigate, route } = useBank();
+  const params = new URLSearchParams(route.split('?')[1] || '');
   const [name, setName] = useState(params.get('name') || '');
   const [number, setNumber] = useState(params.get('account') || '');
   const [bank, setBank] = useState(params.get('bank') || data.payees.find(p => p.number === params.get('account'))?.bank || '澄川银行');
+  const actionId = params.get('action'), action = data.agentActions.find(a => a.id === actionId);
+  // The Agent already created an authoritative proposal. Present that exact
+  // action rather than creating a second transaction/reservation from its text.
+  if (actionId) return <div className="page"><Notice>这是 Agent 生成的转账提议。请核对服务端记录中的收款人和金额，确认与验证后才会执行。</Notice>{action && action.tool === 'propose_transfer' ? <ActionCard action={action} /> : <Empty title="未找到该转账提议，请在操作与计划中检查状态" />}<button className="pill" onClick={() => navigate('tasks')}>查看全部操作与计划</button></div>;
   return <div className="page">
     {data.payees.length > 0 && <Card title="常用收款人" action="管理" onAction={() => navigate('payees')}><div className="payee-scroll">{data.payees.map(p => <button key={p.id} className={`payee${number === p.number ? ' selected' : ''}`} onClick={() => { setName(p.name); setNumber(p.number); setBank(p.bank); }}><Avatar size={40} /><strong>{p.name}</strong><small>尾号 {tail(p.number)}</small></button>)}</div></Card>}
     <form className="card form-card stack-form" data-testid="transfer-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'transfer' }); }}>
@@ -61,9 +65,9 @@ export const KIND_LABEL: Record<string, string> = { consumption: '消费', refun
 const bjToday = (offset = 0) => new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 
 export function LedgerPage() {
-  const { data, openModal } = useBank();
+  const { data, openModal, route } = useBank();
   // Agent cards link here with their filters, e.g. #ledger?from=…&to=…&category=…&kind=spend.
-  const [initial] = useState(() => new URLSearchParams(location.hash.split('?')[1] || ''));
+  const [initial] = useState(() => new URLSearchParams(route.split('?')[1] || ''));
   const [mode, setMode] = useState(initial.get('from') && initial.get('to') ? 'custom' : 'last_30_days'), [month, setMonth] = useState(bjToday().slice(0, 7)), [from, setFrom] = useState(initial.get('from') || bjToday(-29)), [to, setTo] = useState(initial.get('to') || bjToday());
   const [direction, setDirection] = useState('all'), [category, setCategory] = useState(initial.get('category') || ''), [q, setQ] = useState(initial.get('q') || ''), [keyword, setKeyword] = useState(initial.get('q') || '');
   const [extra, setExtra] = useState(() => Object.fromEntries(['kind', 'platform'].flatMap(k => initial.get(k) ? [[k, initial.get(k)!]] : [])) as Record<string, string>);

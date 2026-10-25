@@ -3,6 +3,7 @@ import { ChevronRight, X, LoaderCircle, CircleAlert } from 'lucide-react';
 import { BankContext, useBank } from './bank';
 import { Logo } from './icons';
 import { ThemeGlyph } from './Botanical';
+import { InlineSurface, useInlinePresentation } from './InlineSurface';
 
 export type Icon = ComponentType<{ size?: number; className?: string }>;
 export type Tone = 'blue' | 'cyan' | 'coral' | 'red' | 'orange' | 'green' | 'purple' | 'gold' | 'gray';
@@ -95,8 +96,10 @@ export function Submit({ children, id }: { children: ReactNode; id?: string }) {
 export function Notice({ children }: { children: ReactNode }) { return <div className="notice">{children}</div>; }
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const inline = useInlinePresentation(), titleId = useId();
   const bank = useContext(BankContext);
   const error = bank?.formError && !isPinError(bank.formError.code) ? bank.formError.message : '';
-  useEffect(() => { ref.current?.showModal(); const dialog = ref.current; return () => dialog?.close(); }, []);
-  return <dialog ref={ref} className="modal" aria-labelledby="modal-title" onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === ref.current) onClose(); }}><div className="modal-heading"><h2 id="modal-title">{title}</h2><button aria-label="关闭" className="icon-button modal-close" onClick={onClose}><X size={22} /></button></div><div className="modal-body">{children}<InlineError message={error} testId="modal-error" /></div></dialog>;
+  useEffect(() => { if (!inline) ref.current?.showModal(); const dialog = ref.current; return () => dialog?.close(); }, [inline]);
+  if (inline) return <InlineSurface title={title} onClose={onClose}>{children}<InlineError message={error} testId="modal-error" /></InlineSurface>;
+  return <dialog ref={ref} className="modal" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === ref.current) onClose(); }}><div className="modal-heading"><h2 id={titleId}>{title}</h2><button aria-label="关闭" className="icon-button modal-close" onClick={onClose}><X size={22} /></button></div><div className="modal-body">{children}<InlineError message={error} testId="modal-error" /></div></dialog>;
 }

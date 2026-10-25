@@ -8,15 +8,19 @@ import { InlineError, Modal, Notice, PinField } from '../ui';
 import type { AgentAction, AgentEvent, AgentPlan, AgentTrace, Ledger, Product, ProductMeta, Subscription } from '../types';
 import { pct as signedPct, sourceLine, statusText } from '../products';
 import { AdviceCard } from './AdviceCard';
+import { useInlinePresentation } from '../InlineSurface';
 const status: Record<string, string> = { proposed: '待确认', confirmed: '已授权 · 待执行', awaiting_verification: '已暂停 · 待补充验证', executing: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消', expired: '已过期', active: '进行中', pending: '待执行' };
 export function DecisionTrace({ trace }: { trace: AgentTrace[] }) { return <details className="decision-trace"><summary>决策链路 · {trace.length} 步</summary><ol>{trace.map((t, i) => <li key={i}><strong>{t.tool}</strong><span>{t.ok ? '成功' : '未完成'}{t.level ? ` · ${t.level}` : ''}{t.durationMs !== undefined ? ` · ${t.durationMs}ms` : ''}</span><pre>{JSON.stringify(t.args, null, 2)}</pre>{t.result && <pre>{t.result}</pre>}</li>)}</ol></details>; }
 export function ActionCard({ action: initial }: { action: AgentAction }) {
-  const { data, refresh, navigate, showTransaction } = useBank();
+  const { data, refresh, navigate, showTransaction, route } = useBank();
+  const inline = useInlinePresentation();
   const action = data.agentActions.find(a => a.id === initial.id) || initial;
   const [verify, setVerify] = useState(false), [pinOpen, setPinOpen] = useState(false), [token, setToken] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const args = action.args;
   async function cancel() { setBusy(true); try { await api(`/agent/actions/${action.id}/cancel`, 'POST', {}); await refresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  function start() { setError(''); if (action.tool === 'direct_operation') { const tx = data.transactions.find(t => t.id === args.resource); if (tx) showTransaction(tx); else navigate(args.path === '/settings' ? 'security' : 'accounts'); return; } action.level === 'red' ? setVerify(true) : setPinOpen(true); }
+  function start() { setError(''); if (action.tool === 'direct_operation') { const tx = data.transactions.find(t => t.id === args.resource); if (tx) showTransaction(tx); else navigate(args.path === '/settings' ? 'security' : 'accounts'); return; }
+    if (!inline && route === 'assistant') { navigate(`${action.tool === 'propose_transfer' ? 'transfer' : 'tasks'}?action=${encodeURIComponent(action.id)}`); return; }
+    action.level === 'red' ? setVerify(true) : setPinOpen(true); }
   return <section className="agent-card" aria-label={action.title} data-testid="agent-action">
     <header><span className={`agent-level ${action.level}`}><AgentMark size={17} />{action.level === 'red' ? '需加强验证' : '需授权确认'}</span><span>{status[action.status] || action.status}</span></header>
     <h3>{action.title}</h3>

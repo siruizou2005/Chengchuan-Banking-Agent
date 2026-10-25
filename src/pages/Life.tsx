@@ -1,3 +1,4 @@
+import { ServiceArtwork } from '../DesignAssets';
 import { useBank } from '../bank';
 import { AgentMark } from '../AgentMark';
 import { BotanicalArt, ThemeGlyph } from '../Botanical';
@@ -17,8 +18,8 @@ export function Life() {
     <Card title="便民缴费" className="life-payments"><div className="life-bills">{bills.map(b => <Tile key={b.id} icon={b.icon} label={b.title} tone={b.tone} onClick={() => openModal(b.title, <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'payment', billType: b.id }); }}><Field label={b.id === 'mobile' ? '充值手机号' : '缴费户号'}><input name="billNumber" inputMode="numeric" placeholder={b.id === 'mobile' ? '请输入11位手机号' : '请输入6至30位户号'} pattern={b.id === 'mobile' ? '1[0-9]{10}' : '[0-9A-Za-z-]{6,30}'} required /></Field><AccountSelect /><Amount label="缴费金额（元）" /><Notice>确认后从付款账户实时扣款并生成缴费记录。</Notice><Submit>下一步</Submit></form>)} />)}</div></Card>
     <Card title="最近缴费" className="life-recent" action={recent.length ? '全部' : undefined} onAction={() => navigate('transactions')}>{recent.slice(0, 5).map(t => <Row key={t.id} icon={IcoTicket} tone="gold" title={t.title} subtitle={date(t.created_at)} trailing={<b className="amount">-{yuan(t.amount)}</b>} />)}{!recent.length && <Empty title="暂无缴费记录" />}</Card>
     <Card title="更多服务" className="life-services">
-      <Row icon={IcoCalendar} tone="blue" title="网点预约" subtitle="预约后凭手机号到店办理" onClick={() => navigate('appointments')} />
-      <Row icon={IcoHeadset} tone="orange" title="帮助与客服" subtitle="常见问题、问题反馈" onClick={() => navigate('support')} />
+      <Row icon={({ size }) => <ServiceArtwork name="appointments" size={size} />} tone="blue" title="网点预约" subtitle="预约后凭手机号到店办理" onClick={() => navigate('appointments')} />
+      <Row icon={({ size }) => <ServiceArtwork name="support" size={size} />} tone="blue" title="帮助与客服" subtitle="常见问题、问题反馈" onClick={() => navigate('support')} />
       <Row icon={IcoBell} tone="coral" title="消息中心" subtitle="账户变动与业务通知" onClick={() => navigate('messages')} />
       <Row icon={IcoShield} tone="gold" title="安全中心" subtitle="密码、限额与银行卡管理" onClick={() => navigate('security')} />
     </Card>

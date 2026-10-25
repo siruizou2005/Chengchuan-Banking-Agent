@@ -1,4 +1,5 @@
-import { Children, isValidElement, type ReactNode } from 'react';
+import { Children, isValidElement, useContext, type ReactNode } from 'react';
+import { BankContext } from '../bank';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -26,8 +27,12 @@ const sameOrigin = (href: string) => /^(#|\/#)/.test(href);
 const cellText = (children: ReactNode): string => Children.toArray(children).map(c => typeof c === 'string' || typeof c === 'number' ? String(c) : isValidElement<{ children?: ReactNode }>(c) ? cellText(c.props.children) : '').join('');
 
 export function Markdown({ text }: { text: string }) {
+  const bank = useContext(BankContext);
   return <div className="chat-markdown"><ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} skipHtml components={{
-    a: ({ href, children }) => !href ? <span>{children}</span> : sameOrigin(href) ? <a href={href}>{children}</a> : /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
+    a: ({ href, children }) => !href ? <span>{children}</span> : sameOrigin(href) ? <a href={href} onClick={event => {
+      if (!bank || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); bank.navigate(href.replace(/^\/?#/, ''));
+    }}>{children}</a> : /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
     img: ({ alt }) => <span>{alt ? `[图片：${alt}]` : '[图片]'}</span>,
     table: ({ children }) => <div className="markdown-table-scroll"><table>{children}</table></div>,
     // 日期、金额、编号等短值不折行；长说明按标点折行，超出部分由外层横向滚动承接。

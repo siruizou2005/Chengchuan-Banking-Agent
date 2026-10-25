@@ -14,5 +14,9 @@ venv/
 *.pem
 *.key
 api.*.txt
+<<<<<<< Updated upstream
 银行流水/
 techdocs/
+=======
+techdocs/
+>>>>>>> Stashed changes

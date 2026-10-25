@@ -96,7 +96,7 @@ function previewPicks(products: Product[], level: number) {
 }
 
 export function Wealth({ deposits = false }: { deposits?: boolean }) {
-  const { data, navigate } = useBank();
+  const { data, navigate, route } = useBank();
   const productModal = useProductModal();
   const [display, setDisplay] = useDisplay();
   const level = data.user.riskLevel;
@@ -106,8 +106,8 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
   // Advice cards link here as #wealth?product=<id>&amount=<元> to open that product with the amount filled in.
   useEffect(() => {
     if (deposits) return;
-    const q = new URLSearchParams(location.hash.split('?')[1] || ''), p = data.products.find(x => x.id === q.get('product'));
-    if (p) { productModal(p, q.get('amount') || undefined); history.replaceState(null, '', '#wealth'); }
+    const q = new URLSearchParams(route.split('?')[1] || ''), p = data.products.find(x => x.id === q.get('product'));
+    if (p) { productModal(p, q.get('amount') || undefined); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   const meta = data.productMeta;
@@ -148,15 +148,18 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
 const SORTS = [{ id: 'default', label: '默认' }, { id: 'return', label: '收益从高到低' }, { id: 'risk', label: '风险从低到高' }];
 // Full fund list with category, suitability and sort filters.
 export function Funds() {
-  const { data } = useBank();
+  const { data, route } = useBank();
   const productModal = useProductModal();
-  const [category, setCategory] = useState('all'), [suitable, setSuitable] = useState(false), [sort, setSort] = useState('default');
+  const params = new URLSearchParams(route.split('?')[1] || '');
+  const [category, setCategory] = useState(CATEGORIES.some(c => c.id === params.get('category')) ? params.get('category')! : 'all'), [suitable, setSuitable] = useState(false), [sort, setSort] = useState('default');
+  const [lowRisk, setLowRisk] = useState(params.get('maxRisk') === '2');
   const [display, setDisplay] = useDisplay();
   const level = data.user.riskLevel, meta = data.productMeta;
-  const filtered = data.products.filter(p => p.type === 'wealth' && (category === 'all' || p.category === category) && (!suitable || (p.riskLevel ?? 0) <= level));
+  const filtered = data.products.filter(p => p.type === 'wealth' && (category === 'all' || p.category === category) && (!suitable || (p.riskLevel ?? 0) <= level) && (!lowRisk || (p.riskLevel != null && p.riskLevel <= 2)));
   const list = sort === 'return' ? [...filtered].sort((a, b) => (b.rate ?? -Infinity) - (a.rate ?? -Infinity)) : sort === 'risk' ? [...filtered].sort((a, b) => (a.riskLevel ?? 0) - (b.riskLevel ?? 0)) : filtered;
   return <div className="page">
     <section className="card funds-filter">
+      {lowRisk && <button className="chip active" aria-pressed="true" onClick={() => setLowRisk(false)}>稳健优选 · R1–R2 · 清除筛选</button>}
       <div className="chip-row product-filter">{CATEGORIES.map(c => <button key={c.id} className={`chip${category === c.id ? ' active' : ''}`} onClick={() => setCategory(c.id)}>{c.label}</button>)}</div>
       <div className="chip-row product-filter">{SORTS.map(s => <button key={s.id} className={`chip${sort === s.id ? ' active' : ''}`} onClick={() => setSort(s.id)}>{s.label}</button>)}{level > 0 && <button className={`chip${suitable ? ' active' : ''}`} onClick={() => setSuitable(!suitable)}>适合我（≤R{level}）</button>}</div>
     </section>

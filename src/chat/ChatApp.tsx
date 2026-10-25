@@ -51,12 +51,13 @@ const storeSession = (userId: string, id: string) => { try { if (id) localStorag
 const currentSessionId = (messages: readonly Message[]) => [...messages].reverse().find(m => m.sessionId)?.sessionId || '';
 
 // 智能助手页面：嵌入银行应用，使用当前登录用户。App 在切换标签时保持挂载，对话不会丢失。
-export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapter }) {
+export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: ChatAdapter; request?: { id: number; text: string } | null }) {
   const { data, refresh, logout, navigate } = useBank();
   const user = data.user;
   const [voiceEnabled, setVoiceEnabled] = useState(false), [recording, setRecording] = useState(false), [voiceBusy, setVoiceBusy] = useState(false), [transcribing, setTranscribing] = useState(false), [seconds, setSeconds] = useState(0), [level, setLevel] = useState(0);
   const recorder = useRef<Recording | null>(null), voiceAbort = useRef<AbortController | null>(null), voiceGeneration = useRef(0);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const receivedRequest = useRef(0);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -135,6 +136,13 @@ export default function ChatApp({ adapter = liveAdapter }: { adapter?: ChatAdapt
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text: content }];
     setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
   }
+  useEffect(() => {
+    if (!request || request.id === receivedRequest.current || configured === null || busy) return;
+    receivedRequest.current = request.id;
+    started.current = true; // Do not let a late session restoration overwrite this request.
+    if (configured) send(request.text);
+    else { setDraft(request.text); setError('智能助手暂未配置，已保留你的问题。请稍后重试。'); }
+  }, [request, configured, busy]);
   function stop() { controller.current?.abort(); controller.current = null; setBusy(false); setNotice('已停止回复'); }
   function reset() {
     cancelVoice();
