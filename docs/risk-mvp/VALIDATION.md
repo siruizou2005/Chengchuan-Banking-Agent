@@ -1,12 +1,13 @@
 # Validation record — 2026-10-28
 
-Local environment: Windows, Node v22.19.0 with `node:sqlite` (repository/CI target: Node 24); all databases used by these checks
+Local environment: Windows, Node v22.19.0 and Node v24.22.1 with `node:sqlite` (repository/CI target: Node 24); all databases used by these checks
 were isolated test databases. No deployment, real identity verification or live payment
 was performed.
 
 | Command | Result |
 | --- | --- |
-| `node --test --test-concurrency=2 tests/*.test.mjs` | 217 passed, 0 failed, 0 cancelled (284.5 s) |
+| `node --test --test-concurrency=2 tests/*.test.mjs` | After integrating latest main: **237 passed**, 0 failed, 0 cancelled (276.2 s); initial base was 217/217 |
+| Node v24.22.1: `node --test tests/risk-mvp.test.mjs` | **16 passed**, 0 failed (12.5 s), on the merged branch |
 | `node --test --test-concurrency=2 tests/risk-mvp.test.mjs tests/permissions.test.mjs tests/bank.test.mjs` | After final risk-policy/ownership validation: 59 passed, 0 failed (109.9 s) |
 | `node --test tests/risk-mvp.test.mjs` | After final atomic draft-state guard: 16 passed, 0 failed (42.5 s) |
 | `npm run build` | TypeScript and Vite passed; existing large-chunk warning remains |
@@ -14,6 +15,14 @@ was performed.
 | `npm run demo:risk` | RISK_CHECKED → USER_APPROVED → PENDING → SETTLED; 64/65/80 age examples |
 | `git diff --check` | Passed |
 | `npm audit --json` | 7 existing dependency findings: 6 high, 1 moderate; **not a passing release gate** |
+
+The original `interface-nb-v2` branch was already merged/deleted on GitHub. This branch
+integrates current `main` (`38d927c`), retaining enrollment, onboarding and report push;
+its PR diff contains only the risk MVP additions and small integration changes. The
+merged branch was rebuilt and browser-tested again. Node 24 was downloaded from the
+official Node distribution and verified against its SHA-256 manifest, only under ignored
+test-results. GitHub's Linux/Node 24 checks are linked from
+[PR #30](https://github.com/siruizou2005/AI-Banking/pull/30).
 
 The dependency findings affect `@larksuiteoapi/node-sdk`, `axios`, `body-parser`,
 `express`, `follow-redirects`, `qs`, and `vite`. This PR adds no runtime dependency and

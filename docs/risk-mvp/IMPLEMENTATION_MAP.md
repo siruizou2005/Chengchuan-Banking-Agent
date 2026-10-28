@@ -55,5 +55,6 @@ Human review uses a protected API and existing support entry, with no invented S
 The legacy simulator API remains compatible; new editable drafts use a separate,
 strict version-bound protocol. The final common settlement gate also checks risk.
 
-Rollout/rollback and actual test results will be recorded in `OPERATIONS.md` after
-implementation. No deployment or production configuration change is part of this PR.
+Rollout/rollback are recorded in `OPERATIONS.md`; actual results are in `VALIDATION.md`.
+No deployment or production configuration change is part of this PR. The final branch
+integrates latest main while preserving its enrollment, onboarding and report-push flows.
