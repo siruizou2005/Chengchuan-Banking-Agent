@@ -10,3 +10,11 @@ export const statusText = (p: Product) => p.purchaseStatus?.replace(/\(.*\)$/, '
 export const sourceLine = (meta?: ProductMeta) => meta ? `数据来源：${meta.source} · 更新于 ${new Date(meta.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}` : '';
 // Featured slots favour R1–R2 products people can actually buy, not the volatile top performer.
 export const featuredFund = (products: Product[]) => products.filter(p => p.type === 'wealth' && p.purchasable && (p.riskLevel ?? 0) <= 2 && p.rate !== null).sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0))[0];
+// Home slots summarise a whole fund group by its median, so a single outlier never sets the headline figure.
+export function categoryMedian(products: Product[], match: (p: Product) => boolean, metric: (p: Product) => number | null | undefined) {
+  const group = products.filter(p => p.type === 'wealth' && match(p));
+  const values = group.map(metric).filter((v): v is number => v != null).sort((a, b) => a - b);
+  if (!values.length) return null;
+  const mid = values.length >> 1, levels = group.map(p => p.riskLevel ?? 0).filter(Boolean);
+  return { value: values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2, count: values.length, minRisk: Math.min(...levels), maxRisk: Math.max(...levels) };
+}

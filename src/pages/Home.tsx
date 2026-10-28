@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, Bell, Bot, ChartNoAxesColumnIncreasing, ChevronRight, Eye, EyeOff, LayoutGrid, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Bell, Bot, ChartNoAxesColumnIncreasing, ChevronRight, Eye, EyeOff, Search, Send, ShieldCheck, X } from 'lucide-react';
 import { useBank } from '../bank';
 import { yuan } from '../api';
+import { categoryMedian } from '../products';
 import { Card, Tile, Empty, InlineError, type Icon, type Tone } from '../ui';
-import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode } from '../icons';
-import { BlueOrb } from '../BlueOrb';
-import { FeatureArtwork, ServiceArtwork, hasServiceArtwork } from '../DesignAssets';
+import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, IcoSwap, IcoGrid, BrandTexture } from '../icons';
+import { AgentMark } from '../AgentMark';
+import { ServiceArtwork, hasServiceArtwork } from '../DesignAssets';
 import type { Feature } from '../workspace';
 import { Accounts } from './Accounts';
 import { HomeCashFlow } from './HomeCashFlow';
@@ -24,13 +25,13 @@ export const services: { id: string; label: string; icon: Icon; tone: Tone }[] =
 
 const features: { id: Feature; label: string; icon: Icon; tone?: string }[] = [
   { id: 'accounts', label: '账户', icon: IcoWallet },
-  { id: 'wealth', label: '理财', icon: ChartNoAxesColumnIncreasing, tone: 'gold' },
-  { id: 'transfer', label: '转账', icon: IcoTransfer },
+  { id: 'wealth', label: '理财', icon: IcoWealth },
+  { id: 'transfer', label: '转账', icon: IcoSwap },
   { id: 'credit', label: '信用卡', icon: IcoCard },
   { id: 'loan', label: '贷款', icon: IcoLoan },
-  { id: 'life', label: '生活', icon: IcoHouse, tone: 'mint' },
-  { id: 'channels', label: 'Bot', icon: Bot },
-  { id: 'services', label: '更多', icon: LayoutGrid },
+  { id: 'life', label: '生活', icon: IcoHouse },
+  { id: 'ledger', label: '账单', icon: IcoRecord },
+  { id: 'services', label: '更多', icon: IcoGrid },
 ];
 const help: Record<Feature, [string, string]> = {
   accounts: ['让 Agent 帮我查询账户明细', '请查询我的账户、可用余额和最近交易，说明数据来源。'],
@@ -39,12 +40,12 @@ const help: Record<Feature, [string, string]> = {
   credit: ['让 Agent 帮我分析账单', '请分析我的信用卡账单和待还金额。'],
   loan: ['让 Agent 帮我解释贷款条款', '请解释澄心贷的现有条款、费用和模拟环境限制。'],
   life: ['需要帮你查找附近的网点，或解答其他问题吗？', '请介绍现有网点预约服务和办理步骤，不要假设我的位置。'],
-  channels: ['需要帮助完成 Bot 绑定，或了解更多使用场景吗？', '请说明飞书和微信 Bot 的绑定步骤、权限与当前渠道状态。'],
+  ledger: ['让 Agent 帮我分析账单', '请分析我最近的收支账单，指出主要支出类别和异常交易，说明数据来源。'],
   services: ['需要了解某个功能的使用方法吗？', '请介绍当前银行实际支持的服务和使用方法。'],
 };
 export function AgentEntry({ feature }: { feature: Feature }) {
   const { askAgent } = useBank();
-  return <button className="cc-agent-entry" onClick={() => askAgent(help[feature][1])}><BlueOrb size={40} /><span>{help[feature][0]}</span><ChevronRight size={18} /></button>;
+  return <button className="cc-agent-entry" onClick={() => askAgent(help[feature][1])}><AgentMark size={36} /><span>{help[feature][0]}</span><ChevronRight size={18} /></button>;
 }
 
 type HomeProps = { feature?: Feature; workspaceRoute?: string; title: string; onSelect: (feature: Feature) => void; onClose: () => void; onBack: () => void; canBack: boolean; children: ReactNode; operations: ReactNode; hasOperation: boolean };
@@ -83,31 +84,35 @@ export function Home({ feature, workspaceRoute, title, onSelect, onClose, onBack
   if (content) lastContent.current = content;
   const unread = data.notifications.filter(n => !n.is_read).length;
   return <main className="cc-home">
-    <header className="cc-brand-header"><div className="cc-brand-top"><h1>澄川</h1><div><button className="icon-button" aria-label="搜索" onClick={() => navigate('search')}><Search size={22} /></button><button className="icon-button" aria-label={unread ? `消息中心，${unread}条未读` : '消息中心'} onClick={() => navigate('messages')}><Bell size={21} />{unread > 0 && <i className="dot" />}</button></div></div></header>
-    <form className="cc-agent-input" onSubmit={e => { e.preventDefault(); if (draft.trim()) { askAgent(draft.trim()); setDraft(''); } }}><BlueOrb size={33} /><input aria-label="向 Agent 提问" placeholder="和我聊聊你的任何金融需求…" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} /><button type="submit" aria-label="发送给智能助手" disabled={!draft.trim() || busy}><Send size={19} /></button></form>
-    <div className="cc-feature-grid" aria-label="常用服务">{features.map(f => <button key={f.id} data-feature={f.id} data-testid={`feature-${f.id}`} aria-expanded={feature === f.id} aria-controls="home-workspace" className={`cc-feature ${feature === f.id ? 'selected' : ''}`} disabled={busy} onClick={() => onSelect(f.id)}><span className={`cc-feature-icon ${f.tone || 'blue'}`}><FeatureArtwork name={f.id} size={34} /></span><span>{f.label}</span></button>)}</div>
+    <div className="cc-brand-zone"><BrandTexture className="cc-brand-texture" /><header className="cc-brand-header"><div className="cc-brand-top"><h1>澄川</h1><div><button className="icon-button" aria-label="搜索" onClick={() => navigate('search')}><Search size={22} /></button><button className="icon-button" aria-label={unread ? `消息中心，${unread}条未读` : '消息中心'} onClick={() => navigate('messages')}><Bell size={21} />{unread > 0 && <i className="dot" />}</button></div></div></header>
+    <form className="cc-agent-input" onSubmit={e => { e.preventDefault(); if (draft.trim()) { askAgent(draft.trim()); setDraft(''); } }}><AgentMark size={30} /><input aria-label="向 Agent 提问" placeholder="和我聊聊你的任何金融需求…" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} /><button type="submit" aria-label="发送给智能助手" disabled={!draft.trim() || busy}><Send size={19} /></button></form>
+    <div className="cc-feature-grid" aria-label="常用服务">{features.map(f => <button key={f.id} data-feature={f.id} data-testid={`feature-${f.id}`} aria-expanded={feature === f.id} aria-controls="home-workspace" className={`cc-feature ${feature === f.id ? 'selected' : ''}`} disabled={busy} onClick={() => onSelect(f.id)}><span className={`cc-feature-icon ${f.tone || 'blue'}`}><f.icon size={26} className="cc-feature-art" /></span><span>{f.label}</span></button>)}</div>
+    </div>
     <div id="home-workspace" className={`cc-expansion${expanded ? ' expanded' : ''}`} inert={!feature} aria-hidden={!feature}><div>{rendered && (content || lastContent.current)}</div></div>
-    <section className="cc-home-card"><header><h2><Sparkles size={17} />为你推荐</h2><button className="icon-button" aria-label="查看智能助手操作与计划" onClick={() => navigate('tasks')}><ChevronRight size={17} /></button></header>
+    <section className="cc-home-card"><header><h2>为你推荐</h2><button className="icon-button" aria-label="查看智能助手操作与计划" onClick={() => navigate('tasks')}><ChevronRight size={17} /></button></header>
       <Recommendation icon={ChartNoAxesColumnIncreasing} tone="gold" title="优化本月支出结构" detail="智能分析，帮你更好规划" onClick={() => askAgent('请分析本月支出结构，给出基于实际账单的建议。')} />
       <Recommendation icon={IcoWealth} tone="mint" title="查看我的理财机会" detail="根据你的风险偏好推荐" onClick={() => navigate('advice')} />
       <Recommendation icon={IcoCard} title="管理我的信用卡" detail="账单、还款、额度一站式管理" onClick={() => onSelect('credit')} />
     </section>
-    <section className="cc-home-card"><header><h2><Sparkles size={17} />财富机会</h2><button className="icon-button" aria-label="查看理财服务" onClick={() => onSelect('wealth')}><ChevronRight size={17} /></button></header>
+    <section className="cc-home-card"><header><h2>财富机会</h2><button className="icon-button" aria-label="查看理财服务" onClick={() => onSelect('wealth')}><ChevronRight size={17} /></button></header>
       <div className="cc-opportunities">{[
-        { name: '稳健优选', sub: '中低风险', detail: '稳健配置', route: 'funds?maxRisk=2', image: 'card1.png' },
-        { name: '全球视野', sub: '多元资产', detail: '把握全球机会', route: 'funds?category=qdii', image: 'card2.png' },
-        { name: '流动性管理', sub: '灵活配置', detail: '高效管理', route: 'funds?category=money', image: 'card3.png' },
-      ].map(x => <button className="cc-opportunity" key={x.route} onClick={() => navigate(x.route)}>
-        <img className="cc-opportunity-art" src={`/chengchuan/${x.image}`} alt="" width={1122} height={1402} />
-        <span className="cc-opportunity-copy"><span className="cc-opportunity-heading"><strong>{x.name}</strong><span className="cc-opportunity-arrow" aria-hidden="true"><ChevronRight /></span></span><small><span>{x.sub}</span><span className="cc-opportunity-separator"> · </span><span>{x.detail}</span></small></span>
+        { name: '稳健优选', route: 'funds?maxRisk=2', caption: '近一年中位数', stat: categoryMedian(data.products, p => p.riskLevel != null && p.riskLevel <= 2, p => p.returns?.y1) },
+        { name: '全球视野', route: 'funds?category=qdii', caption: '近一年中位数', stat: categoryMedian(data.products, p => p.category === 'qdii', p => p.returns?.y1) },
+        { name: '流动性管理', route: 'funds?category=money', caption: '7日年化中位数', stat: categoryMedian(data.products, p => p.category === 'money', p => p.rate) },
+      ].map(({ name, route, caption, stat }) => <button className="cc-opportunity" key={route} onClick={() => navigate(route)}>
+        <strong>{name}</strong>
+        <b className={(stat?.value ?? 0) < 0 ? 'down' : undefined}>{stat ? `${stat.value.toFixed(2)}%` : '--'}</b>
+        <small>{caption}</small>
+        {stat && <span className="cc-opportunity-tag">{stat.minRisk === stat.maxRisk ? `R${stat.minRisk}` : `R${stat.minRisk}–R${stat.maxRisk}`} · {stat.count}只</span>}
       </button>)}</div>
+      <p className="cc-opportunity-note">基金过往业绩不预示未来表现，市场有风险，投资需谨慎</p>
     </section>
-    <button className="cc-agent-entry cc-following" onClick={() => navigate('tasks')}><BlueOrb size={38} /><span>你的专属助手正在关注{data.agentActions.filter(a => ['proposed', 'awaiting_verification'].includes(a.status)).length > 0 && <small>有待确认的操作，请核对后授权</small>}</span><ChevronRight size={18} /></button>
+    <button className="cc-agent-entry cc-following" onClick={() => navigate('tasks')}><AgentMark size={34} /><span>你的专属助手正在关注{data.agentActions.filter(a => ['proposed', 'awaiting_verification'].includes(a.status)).length > 0 && <small>有待确认的操作，请核对后授权</small>}</span><ChevronRight size={18} /></button>
     <footer className="cc-footnote"><ShieldCheck size={12} />澄川银行 · 模拟演示环境</footer>
   </main>;
 }
 function Recommendation({ icon: Icon, title, detail, onClick, tone = 'blue' }: { icon: Icon; title: string; detail: string; onClick: () => void; tone?: string }) {
-  return <button className="cc-recommendation" onClick={onClick}><span className={`cc-mini-icon ${tone}`}><Icon size={23} /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={15} /></button>;
+  return <button className="cc-recommendation" onClick={onClick}><span className={`cc-mini-icon ${tone}`}><Icon size={20} /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={15} /></button>;
 }
 export function AccountWorkspace() {
   const { data, hidden, toggleHidden, navigate } = useBank();

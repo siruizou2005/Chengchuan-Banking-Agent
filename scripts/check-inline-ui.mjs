@@ -62,7 +62,7 @@ try {
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: 'test-results/chengchuan/home.png', fullPage: true });
   await page.screenshot({ path: 'test-results/chengchuan/home-first-screen.png' });
-  for (const id of ['accounts', 'wealth', 'transfer', 'credit', 'loan', 'life', 'channels', 'services']) {
+  for (const id of ['accounts', 'wealth', 'transfer', 'credit', 'loan', 'life', 'ledger', 'services']) {
     await feature(id); await noOverlay();
     assert.equal(await page.locator('.cc-feature[aria-expanded="true"]').count(), 1);
     const position = await page.evaluate(() => ({ grid: document.querySelector('.cc-feature-grid').getBoundingClientRect().bottom, workspace: document.querySelector('.cc-workspace').getBoundingClientRect().top }));
@@ -166,7 +166,8 @@ try {
   await page.getByRole('button', { name: '确认预约', exact: true }).click();
   await page.getByText('已预约', { exact: true }).waitFor();
   findings.push('Life appointment reaches existing API and renders server status inline');
-  await feature('channels');
+  await feature('services');
+  await page.getByTestId('inline-workspace').getByRole('button', { name: /消息渠道绑定/ }).click();
   await page.getByRole('button', { name: /飞书 Bot 绑定/ }).click();
   await page.getByText('飞书专属机器人尚未开启。', { exact: true }).waitFor(); await noOverlay();
   assert.equal(await page.getByRole('button', { name: '一键创建我的飞书机器人' }).isDisabled(), true);

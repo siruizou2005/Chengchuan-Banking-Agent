@@ -23,7 +23,6 @@ import { BankTheme, themeForPage } from './Theme';
 import { ThemeGlyph } from './Botanical';
 import { InlinePresentation } from './InlineSurface';
 import { featureForRoute, routePage, type Feature } from './workspace';
-import { BlueOrb } from './BlueOrb';
 
 const titles: Record<string, string> = { personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '首页', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
 const tabs = [{ id: 'home', title: '首页', icon: NavAccount }, { id: 'wealth', title: '理财', icon: NavWealth }, { id: 'assistant', title: '智能助手', icon: NavAssistant }, { id: 'life', title: '生活', icon: NavLife }, { id: 'profile', title: '我的', icon: NavProfile }];
@@ -57,10 +56,11 @@ export default function App() {
       if (page !== 'home') location.hash = 'home';
     } else navigatePage(r);
   }, [page, navigatePage]);
+  // Home entries open their feature as a full page; the inline workspace remains for Agent-driven flows.
   function selectFeature(feature: Feature) {
     if (busyRef.current) return;
-    setModal(null); setTx(null); setFormError(null);
-    setWorkspace(current => current?.feature === feature ? null : { route: feature, feature, back: [] });
+    setModal(null); setTx(null); setFormError(null); setWorkspace(null);
+    navigatePage(tabPages.includes(feature) ? `${feature}?from=home` : feature);
   }
   function closeWorkspace() {
     if (busyRef.current) return;
@@ -153,8 +153,10 @@ export default function App() {
   </>;
   const activeTab = themeForPage(page);
   const isTabPage = tabPages.includes(page);
+  // 理财、生活 opened from a home entry carry ?from=home and get a back arrow; opened from the tab bar they have no left control.
+  const openedFromHome = new URLSearchParams(route.split('?')[1] || '').get('from') === 'home';
   return <BankContext.Provider value={{ data, busy, route: effectiveRoute, hidden, askAgent, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); if (page === 'assistant') { setWorkspace({ route: 'transactions', feature: 'transfer', back: [] }); location.hash = 'home'; } setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><BankTheme theme={activeTab}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : page === 'home' ? ' home-mode' : ''}${page !== 'home' ? ' oak-mode' : ''}${!['home', 'wealth', 'assistant', 'life', 'profile'].includes(page) ? ' oak-secondary' : ''}`}>
-    {page !== 'home' && page !== 'assistant' && <header className="page-header">{isTabPage ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button>}<h1><ThemeGlyph size={21} />{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
+    {page !== 'home' && page !== 'assistant' && <header className="page-header">{!isTabPage || openedFromHome ? <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button> : page === 'profile' ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <span className="icon-button" aria-hidden="true" />}<h1><ThemeGlyph size={21} />{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
     {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}><ChatApp key={data.user.id} request={agentRequest} /></div>}
     <div hidden={page !== 'home'}><InlinePresentation.Provider value={true}><WorkspaceBank route={workspace?.route || 'home'}><Home
       feature={workspace?.feature} workspaceRoute={workspace?.route} title={titles[routePage(workspace?.route || '')] || '服务'}
@@ -163,7 +165,7 @@ export default function App() {
       {workspace && (workspace.route === 'accounts' ? <AccountWorkspace /> : pages(workspace.route)[routePage(workspace.route)] || <Notice>未找到该服务。</Notice>)}
     </Home></WorkspaceBank></InlinePresentation.Provider></div>
     {page !== 'assistant' && page !== 'home' && (page.startsWith('pay-request/') ? <PayRequest path={page} /> : pages(route)[page] || <div className="page"><Notice>未找到该页面。</Notice><button className="btn-primary" onClick={() => navigatePage('home')}>返回首页</button></div>)}
-    <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} disabled={busy} onClick={() => navigatePage(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon">{t.id === 'assistant' ? <BlueOrb size={34} /> : <t.icon active={activeTab === t.id} />}</span><span>{t.title}</span></button>)}</nav>
+    <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} disabled={busy} onClick={() => navigatePage(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon"><t.icon active={activeTab === t.id} /></span><span>{t.title}</span></button>)}</nav>
   </div>
     {page !== 'home' && operations}
     {toastElement}

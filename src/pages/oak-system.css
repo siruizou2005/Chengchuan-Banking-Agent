@@ -18,22 +18,16 @@ body { background: #eeeae3; }
 .bank-theme .row-title { font-size: 14px; }
 .bank-theme .row-subtitle { line-height: 1.7; }
 .bank-theme .chevron { color: #998a79; }
-.bank-theme .circle-icon { background: var(--accent-soft); color: var(--accent); --tone-color: var(--accent-soft); border-radius: 14px; }
-.bank-theme .circle-icon.gray { color: #776e62; background: #ede9e1; --tone-color: #ede9e1; }
-.bank-theme .circle-icon.red { color: #995448; background: #f2e2da; --tone-color: #f2e2da; }
-.bank-theme .tile-flat { color: var(--accent); background: var(--accent-soft); --tone-color: var(--accent-soft); border-radius: 15px; }
 .bank-theme .tile-flat svg { width: 28px; height: 28px; filter: none; }
-.bank-theme .tile-flat svg [fill="currentColor"] { fill: currentColor; }
-.bank-theme .tile-flat svg [stroke="currentColor"] { stroke: currentColor; }
 .bank-theme .tile-label { font-size: 12px; }
 .bank-theme .tile-badge { background: #eee7db; color: var(--oak); left: auto; right: 0; margin: 0; }
 .bank-theme .avatar { background: #e9dfd0; color: var(--oak); }
-.bank-theme :is(.btn-primary, .pill) { border-radius: 12px; min-height: 44px; }
+.bank-theme :is(.btn-primary, .pill) { min-height: 44px; }
 .bank-theme .pill { height: auto; padding: 9px 16px; }
 .bank-theme .pill.small { min-height: 36px; padding: 7px 12px; }
 .bank-theme .btn-primary { height: auto; padding: 12px 16px; }
 .bank-theme .btn-text { min-height: 40px; line-height: 1.5; }
-.bank-theme :is(.chip, .segmented button) { min-height: 36px; border-radius: 10px; }
+.bank-theme :is(.chip, .segmented button) { min-height: 36px; }
 .bank-theme .chip { background: var(--card); border: 1px solid var(--line); }
 .bank-theme .chip.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
 .bank-theme .segmented { border-radius: 12px; }
@@ -52,7 +46,6 @@ body { background: #eeeae3; }
 .bank-theme :is(.notice, .product-note, .drill, .decision-trace pre, .binding-code, .chat-markdown pre, .chat-markdown code) { background: var(--surface-soft); border-radius: 12px; }
 .bank-theme .notice { border-left: 2px solid var(--accent-line); }
 .bank-theme :is(.data-note, .footnote, .muted, .chat-note) { color: var(--muted); }
-.bank-theme .tag.orange { background: #f2e6d6; color: #85592f; }
 .bank-theme .status.completed { background: #e6eddf; color: #416c53; }
 .bank-theme .status.pending { background: #f3e8d4; color: #865d2e; }
 .bank-theme .status.failed { background: #f5e3dd; color: #a3483c; }
@@ -115,8 +108,8 @@ body { background: #eeeae3; }
 .bank-theme .nav-chart .wash { fill: var(--accent-soft); }
 .bank-theme .nav-chart .dot { fill: var(--accent); }
 .bank-theme .nav-chart-tip { background: var(--card); border-color: var(--line); box-shadow: 0 4px 18px #60452c16; }
-.bank-theme .login-hero { background: linear-gradient(135deg, #a58b6d, #77533c); }
-.bank-theme .login-slogan { color: #f3e9db; }
+.bank-theme .login-hero { background: #3e60cc; }
+.bank-theme .login-slogan { color: #dfe6ff; }
 .bank-theme .login-card { padding: 14px 18px 24px; }
 .bank-theme .login-promo-note { color: var(--text-2); }
 
@@ -131,17 +124,6 @@ body { background: #eeeae3; }
 .botanical-intro > .botanical-art { width: 142px; height: 166px; justify-self: end; margin-right: -5px; }
 .bank-theme .wealth-overview { background: linear-gradient(115deg, #e8edde, #f5f6ef); border-color: #d4dfc9; border-top: 3px solid #a2b590; }
 .bank-theme .oak-agent-entry { background: #f0ebe2; border-color: var(--line); }
-.bank-theme .life-service-hero { background: linear-gradient(118deg, #eee2d2, #faf3e8 60%, #e9daca); border-color: #e5d4c0; padding-bottom: 24px; }
-.life-service-hero > .botanical-art { width: 158px; height: 168px; right: -1px; bottom: 14px; opacity: 1; }
-.life-service-hero > p { max-width: 14em; }
-.life-service-hero > .pill { z-index: 2; }
-.oak-mode .agent-welcome { padding: 0 8px 18px; }
-.agent-botanical-core { position: relative; width: 220px; height: 140px; margin: 0 auto 5px; }
-.agent-botanical-core > .botanical-art { width: 220px; height: 140px; }
-.agent-botanical-core > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--oak); display: grid; place-items: center; }
-.agent-welcome > .oak-eyebrow { justify-content: center; }
-.agent-welcome .agent-path { margin-top: 16px; }
-.agent-welcome .agent-path i { background: #b6c4bc; }
 .profile-identity-art { position: relative; width: 72px; height: 72px; flex-shrink: 0; display: grid; place-items: center; }
 .profile-identity-art > .botanical-art { position: absolute; width: 72px; height: 72px; }
 .profile-identity-art > .avatar { position: relative; background: #e7d9c7; color: #77533c; }
@@ -150,7 +132,6 @@ body { background: #eeeae3; }
 .bank-theme .profile-page .profile-card { background: none; box-shadow: none; border: 0; padding: 10px 0 14px; }
 .bank-theme .profile-page .card-title { font-family: inherit; font-size: 12px; color: var(--text-2); font-weight: 500; }
 .bank-theme .profile-page .card-theme-icon { display: none; }
-.bank-theme .profile-page .circle-icon { background: transparent; --tone-color: var(--card); }
 .home-dashboard .home-landscape { opacity: .9; width: 162px; height: 148px; right: -4px; bottom: 50px; }
 .home-dashboard .home-assistant > .botanical-art { position: absolute; z-index: 0; }
 .home-dashboard .home-assistant-heading .agent-mark { color: var(--oak); }
@@ -166,8 +147,6 @@ body { background: #eeeae3; }
   .botanical-intro { grid-template-columns: minmax(0, 1fr) 100px; }
   .botanical-intro h2 { font-size: 25px; }
   .botanical-intro > .botanical-art { width: 112px; height: 150px; }
-  .life-service-hero > .botanical-art { width: 122px; height: 143px; right: -4px; bottom: 20px; }
-  .life-service-hero > p { max-width: 12em; }
   .bank-theme .modal-body { padding: 8px 14px 18px; }
   .bank-theme .agent-card { padding: 12px; }
   .bank-theme .advice-steps { font-size: 11px; gap: 5px; }

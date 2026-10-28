@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { AgentMark } from '../AgentMark';
 import { BotanicalArt } from '../Botanical';
 import { ChevronRight } from 'lucide-react';
 import { useBank } from '../bank';
@@ -17,7 +16,7 @@ export function Profile() {
     <section className="card profile-card"><span className="profile-identity-art"><BotanicalArt theme="profile" /><Avatar size={34} /></span><div className="profile-text"><span className="profile-kicker">树心 · 个人空间</span><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}{data.user.email ? ` · ${data.user.email}` : ''}</small></div></section>
     <Card title="安全与授权" className="profile-settings" material="matte">
       <Row icon={IcoShield} tone="green" title="安全中心" subtitle="密码、验证与转账限额" onClick={() => navigate('security')} />
-      <Row icon={AgentMark} tone="orange" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
+      <Row icon={IcoSliders} tone="orange" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
       <Row icon={IcoBell} tone="gray" title="消息渠道绑定" subtitle="管理飞书、微信绑定与渠道设置" onClick={() => navigate('channels')} />
       <Row icon={IcoClock} tone="gray" title="智能助手操作与计划" subtitle="查看操作、确认请求与执行状态" onClick={() => navigate('tasks')} />
     </Card>

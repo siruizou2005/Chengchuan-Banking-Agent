@@ -6,7 +6,6 @@ import { useBank } from '../bank';
 import { Avatar, Empty, InlineError, Modal } from '../ui';
 import type { AgentSession, AgentSessionDetail } from '../types';
 import { AgentMark } from '../AgentMark';
-import { BotanicalArt } from '../Botanical';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
 import { startRecording, transcribe, type Recording } from './voice';
@@ -27,7 +26,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
   }
   if (message.role === 'user') return <article className="msg user"><div className="bubble">{message.text}</div><Avatar size={34} /></article>;
   return <article className="msg assistant" id={`msg-${message.id}`}>
-    <span className="chat-avatar" aria-hidden="true"><AgentMark size={25} /></span>
+    <span className="chat-avatar" aria-hidden="true"><AgentMark size={32} /></span>
     <div className="msg-body">
       <span className="msg-name">澄川智能助手</span>
       <div className="bubble">
@@ -185,7 +184,6 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     </Modal>}
     <div ref={scroller} className="chat-scroll" role="log" aria-label="对话记录">
       <div className="chat-inner">
-        {messages.length === 1 && <section className="agent-welcome"><div className="agent-botanical-core"><BotanicalArt theme="assistant" /><span className="surface-satin finish-mist agent-core-metal"><AgentMark size={32} /></span></div><span className="oak-eyebrow">脉络 · 你的银行智能助手</span><h2>理解需求，理清每一步</h2><p>从账户查询到业务办理<br />让信息有条理，让操作有依据。</p><div className="agent-path" aria-label="服务流程"><span>理解</span><i /><span>规划</span><i /><span>协助办理</span></div></section>}
         {data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() && <LockedCard message={`锁定至 ${new Date(data.agentLockedUntil).toLocaleTimeString('zh-CN')}`} />}
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
@@ -209,7 +207,6 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
           : voiceEnabled && !draft.trim() ? <button type="button" className="pill primary small voice-button" disabled={voiceBusy || transcribing || !configured} onClick={() => void beginVoice()} aria-label="开始语音输入">{voiceBusy || transcribing ? <LoaderCircle size={20} className="spin" /> : <Mic size={20} />}</button>
           : <button type="submit" className="pill primary small" disabled={!draft.trim() || !configured || voiceBusy || transcribing} aria-label="发送消息">发送</button>}
       </form>
-      <p className="chat-note">语音识别后可修改再发送 · 金额与执行状态以确认卡片为准</p>
     </div>
   </section>;
 }
