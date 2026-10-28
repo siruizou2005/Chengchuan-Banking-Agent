@@ -90,15 +90,34 @@ body { background: #f5f5f5; }
 .bank-theme .cc-workspace .receipt { padding: 10px 0 0; }
 .bank-theme .cc-workspace :is(.row-title, .agent-details dd, .body-copy, .kv dd, .receipt dd) { overflow-wrap: anywhere; }
 .bank-theme .cc-workspace :is(img, video, canvas) { max-width: 100%; height: auto; }
-.cc-channel-list { display: grid; gap: 8px; }
-.cc-channel-row { display: flex; text-align: left; align-items: center; gap: 11px; min-height: 79px; padding: 12px; border: 1px solid #e7f3ff; border-radius: 13px; background: linear-gradient(110deg, #fff, #eef7ff); }
-.cc-channel-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #e5f3ff; color: #0b89e9; }
-.cc-channel-icon.wechat { background: #e5f8ef; color: #11ad72; }
-.cc-channel-row > span:nth-child(2) { flex: 1; }
-.cc-channel-row strong { display: block; font-size: 14px; }
-.cc-channel-row small { display: block; margin-top: 5px; color: #7790ad; font-size: 11px; }
-.cc-channel-state { color: #1b76bc; background: #e3f2ff; padding: 5px 8px; border-radius: 15px; font-size: 11px; }
-.cc-channel-state.connected { color: #279878; background: #e1f6ed; }
+/* Channel binding: list rows like main's design, then a three-step bind wizard. */
+.cc-channel-list { display: grid; gap: 10px; }
+.cc-channel-row { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px; border: 0; border-radius: 12px; background: #fff; text-align: left; color: var(--text); }
+.cc-channel-row > span:nth-child(2) { flex: 1; min-width: 0; }
+.cc-channel-row > svg { flex-shrink: 0; color: #c0c4cc; }
+.cc-channel-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #f5f6fa; }
+.cc-channel-row strong { display: block; font-size: 16px; font-weight: 500; }
+.cc-channel-row small { display: block; margin-top: 4px; color: var(--text-3); font-size: 12px; }
+.cc-channel-state { flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 12px; }
+.cc-channel-state.connected { background: #e8f7f0; color: var(--green); }
+.channels-back { align-self: flex-start; padding-left: 0; }
+.channel-steps { display: flex; gap: 6px; margin: 2px 0 14px; padding: 0; list-style: none; counter-reset: step; }
+.channel-steps li { flex: 1; padding-top: 8px; border-top: 3px solid var(--line); color: var(--text-3); font-size: 12px; counter-increment: step; }
+.channel-steps li::before { content: counter(step) ' · '; }
+.channel-steps li.done { border-color: #b4c3f5; color: var(--text-2); }
+.channel-steps li.current { border-color: var(--brand); color: var(--brand); font-weight: 500; }
+.channel-choices { display: grid; gap: 10px; }
+.channel-choice { display: block; width: 100%; padding: 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; text-align: left; color: var(--text); }
+.channel-choice strong { display: block; font-size: 15px; font-weight: 500; }
+.channel-choice small { display: block; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.channel-choice.active { border-color: var(--brand); background: var(--brand-soft); }
+.channel-choice.active strong { color: var(--brand); }
+.channel-summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--pill); font-size: 14px; }
+.channel-summary span { color: var(--text-3); }
+.channel-summary strong { flex: 1; font-weight: 500; }
+.channel-summary .btn-text { padding: 0; }
+.channel-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.channel-qr img { border-radius: 8px; border: 1px solid var(--line); }
 @media (prefers-reduced-motion: reduce) { .bank-theme *, .bank-theme *::before, .bank-theme *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
 /* Compact transfer cells follow the reference while keeping every required field. */
