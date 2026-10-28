@@ -1,47 +1,58 @@
-/* Final theme layer. Shared tokens cover existing pages and embedded workflows. */
+/* Final theme layer. Shared tokens cover existing pages and embedded workflows.
+   Palette sampled from WeBank: brand #3e60cc band / #456be6 actions, gray page, white cards, #364266 ink. */
 :root, .bank-theme {
-  --brand: #1186ee; --brand-deep: #0865cd; --brand-soft: #eaf5ff;
-  --bg: #eff8ff; --card: #fff; --line: #e1edf8; --pill: #edf6ff;
-  --text: #173665; --text-2: #506e95; --text-3: #738bab;
-  --red: #db4d48; --green: #1c9772; --orange: #d28a37;
-  --radius: 14px; --oak: #2565a4; --moss: #188ba4;
-  --accent: #1689ec; --accent-soft: #e6f4ff; --accent-line: #bcdeff;
-  --surface: #fff; --surface-soft: #eff7ff; --muted: #7089aa;
-  --cc-radius: 15px; --cc-shadow: 0 3px 16px #348ad408; --cc-motion: 220ms ease;
+  --brand: #456be6; --brand-deep: #3e60cc; --brand-soft: #eef2fd;
+  --bg: #f5f5f5; --card: #fff; --line: #f0f1f4; --pill: #f5f6fa;
+  --text: #364266; --text-2: #6b7084; --text-3: #9c9ca8;
+  --red: #e44e42; --green: #1fa774; --orange: #ff8a3d;
+  --radius: 12px; --oak: #456be6; --moss: #22b2e8;
+  --accent: #456be6; --accent-soft: #eef2fd; --accent-line: #c9d4f7;
+  --surface: #fff; --surface-soft: #f5f6fa; --muted: #9c9ca8;
+  --cc-radius: 12px; --cc-shadow: none; --cc-motion: 220ms ease;
   --nav-height: 66px;
 }
-body { background: #e5f2fc; }
+body { background: #f5f5f5; }
 .bank-theme { background: transparent; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
-.bank-theme .app-shell { background: linear-gradient(180deg, #dcf0ff 0, #f3faff 560px, #eff8ff 100%); }
+.bank-theme .app-shell { background: #f5f5f5; }
 [hidden] { display: none !important; }
-.bank-theme .bottom-nav { border-top: 1px solid #dceeff; border-radius: 16px 16px 0 0; background: #ffffffed; backdrop-filter: blur(16px); padding-top: 7px; box-shadow: 0 -4px 18px #5b9dca09; }
-.bank-theme .bottom-nav button { font-size: 11px; gap: 3px; color: #6684ae; min-height: 51px; }
-.bank-theme .bottom-nav button.active { color: #1384ed; }
+.bank-theme .bottom-nav { border-top: 1px solid #eeeff2; border-radius: 0; background: #fff; padding-top: 7px; box-shadow: none; }
+.bank-theme .bottom-nav button { font-size: 11px; gap: 3px; color: #8e93a3; min-height: 51px; }
+.bank-theme .bottom-nav button.active { color: var(--brand); }
 .bank-theme .bottom-nav button.active .nav-icon { background: transparent; }
 .bank-theme .bottom-nav .nav-icon { height: 32px; }
 .bank-theme .bottom-nav .nav-icon svg { color: inherit; }
-.bank-theme .page-header { background: #f5fbffed; }
-.bank-theme :is(.card, .surface-matte) { background: #ffffffd9; border-color: #e6f1fb; border-radius: var(--cc-radius); box-shadow: var(--cc-shadow); }
-.bank-theme :is(.surface-satin, .surface-signature) { --satin-ink: #174a80; color: #174a80; background: linear-gradient(135deg, #f6fcff, #dcedff); border-color: #fff; box-shadow: var(--cc-shadow); }
+.bank-theme .page-header { background: var(--brand-deep); color: #fff; }
+.bank-theme .page-header .icon-button { color: #fff; }
+.bank-theme :is(.card, .surface-matte) { background: #fff; border-color: transparent; border-radius: 12px; box-shadow: none; }
+.bank-theme :is(.surface-satin, .surface-signature) { --satin-ink: var(--text); color: var(--text); background: #fff; border-color: transparent; box-shadow: none; }
 .bank-theme :is(.surface-satin, .surface-signature)::before, .bank-theme :is(.surface-satin, .surface-signature)::after { display: none; }
-.bank-theme :is(.card-title, .oak-page .card-title, .oak-intro h2, .agent-welcome h2, .life-service-hero h2) { font-family: inherit; }
 .bank-theme .card-title { font-size: 16px; }
 .bank-theme :is(.botanical-art, .card-theme-icon, .empty-botanical, .oak-intro, .life-art, .agent-landscape) { display: none; }
 .bank-theme .page-header h1 > svg { display: none; }
 .bank-theme .card-head { margin-bottom: 10px; }
-.bank-theme :is(.btn-primary, .pill.primary) { background: linear-gradient(110deg, #2ba6ff, #0878ef); color: #fff; border: 0; box-shadow: 0 3px 8px #1789ec17; }
-.bank-theme .pill:not(.primary) { background: #f4faff; border-color: #dbeafa; color: #326caa; }
-.bank-theme .btn-primary { border-radius: 13px; min-height: 44px; }
-.bank-theme :is(.circle-icon, .tile-flat, .avatar) { background: #e5f3ff; color: #168be5; --tone-color: #eff9ff; }
-.bank-theme .circle-icon.gray { color: #7c93a9; background: #edf3f8; }
-.bank-theme .circle-icon.red { color: #df665c; background: #fff0ec; }
+/* Buttons: WeBank pills. Primary is solid brand; secondary is a pale fill with brand text; disabled keeps a pale brand fill instead of fading. */
+.bank-theme :is(.btn-primary, .pill.primary) { background: var(--brand); color: #fff; border: 0; box-shadow: none; }
+.bank-theme :is(.btn-primary, .pill.primary):hover:not(:disabled) { background: var(--brand-deep); }
+.bank-theme :is(.btn-primary, .pill.primary):disabled { background: #b4c3f5; opacity: 1; }
+.bank-theme .btn-primary.danger { background: var(--red); }
+.bank-theme .btn-primary.danger:hover:not(:disabled) { background: #d13f33; }
+.bank-theme .pill:not(.primary) { background: var(--pill); border-color: transparent; color: var(--brand); }
+.bank-theme .btn-primary { min-height: 44px; }
+.bank-theme :is(.btn-primary, .pill) { border-radius: 999px; }
+/* Chips and tags: gray at rest, pale brand when chosen; tags are small square-cornered labels. */
+.bank-theme .chip { background: var(--pill); border-color: transparent; color: var(--text-2); border-radius: 999px; }
+.bank-theme .chip.active { background: var(--brand-soft); border-color: transparent; color: var(--brand); font-weight: 500; }
+.bank-theme .tag { background: var(--pill); color: #848aa2; border-radius: 3px; }
+.bank-theme .tag.orange { background: #fff0ed; color: var(--red); }
+/* List icons keep the base WeBank gradient discs with white glyphs (styles.css .circle-icon tones). */
+.bank-theme .avatar { background: #e5f3ff; color: #168be5; }
 .bank-theme .tile-badge { background: #e2f2ff; color: #2368a7; }
-.bank-theme .tile-label { color: #385e8a; }
-.bank-theme .chevron { color: #88a7c5; }
-.bank-theme .field input:not([type=checkbox]):not([type=radio]), .bank-theme .field select, .bank-theme .field textarea, .bank-theme .field .amount-input { background: #fbfdff; border-color: #dbeafb; border-radius: 9px; }
-.bank-theme input::placeholder, .bank-theme textarea::placeholder { color: #899fbd; }
-.bank-theme :is(input, textarea, select):focus-visible { outline: 2px solid #2899f5; }
-.bank-theme :is(.notice, .product-note, .drill, .decision-trace pre, .binding-code, .chat-markdown pre, .chat-markdown code) { background: #eff7ff; }
+.bank-theme .tile-label { color: var(--text); }
+.bank-theme .chevron { color: #c0c4cc; }
+.bank-theme .field input:not([type=checkbox]):not([type=radio]), .bank-theme .field select, .bank-theme .field textarea, .bank-theme .field .amount-input { background: #fff; border-color: #e6e8ee; border-radius: 8px; }
+.bank-theme input::placeholder, .bank-theme textarea::placeholder { color: #b5b9c2; }
+.bank-theme :is(input, textarea, select):focus-visible { outline: 2px solid var(--brand); }
+.bank-theme :is(.notice, .product-note, .drill, .decision-trace pre, .binding-code, .chat-markdown pre, .chat-markdown code) { background: #f7f8fa; }
 .bank-theme .status.completed, .bank-theme .receipt-icon.completed { background: #e6f7ef; color: #258365; }
 .bank-theme .status.pending, .bank-theme .receipt-icon.pending { background: #fff3e4; color: #a16c21; }
 .bank-theme .debit-card, .bank-theme .debit-card.credit { background: linear-gradient(120deg, #259ff5, #0763d0); color: #fff; border-radius: 13px; }
@@ -49,14 +60,8 @@ body { background: #e5f2fc; }
 .bank-theme .debit-card :is(.debit-head, .debit-caption, .debit-balance, .debit-brand) { color: #fff; }
 .bank-theme .debit-head em { background: #ffffff20; }
 .bank-theme .promo { background: linear-gradient(125deg, #eaf7ff, #d6edff); color: #174a80; }
-.bank-theme .oak-agent-entry { background: #f0f8ff; color: #315e8d; }
-.bank-theme .life-service-hero { background: #e8f5ff; color: #315e8d; }
-.bank-theme .life-concierge { background: #f4faff; color: #315e8d; }
-.bank-theme .assistant-page { background: #f5faff; }
-.bank-theme .chat-avatar, .bank-theme .oak-agent-icon { background: #e2f2ff; color: #1985da; }
-.bank-theme .msg.user .bubble { background: #e0f0ff; color: #214d7a; border-color: #bde0ff; }
-.bank-theme .composer { background: #fff; border-color: #d7eafa; }
-.bank-theme .composer .send-button { background: #1989eb; }
+.bank-theme .oak-agent-entry { background: #fff; color: var(--text); }
+.bank-theme .life-concierge { background: #fff; color: var(--text); }
 .bank-theme .cc-workspace .page { padding: 0; gap: 9px; }
 .bank-theme .cc-workspace .card { padding: 12px; border-radius: 12px; box-shadow: none; }
 .bank-theme .cc-workspace .card-head { min-height: 28px; }
@@ -74,9 +79,6 @@ body { background: #e5f2fc; }
 .bank-theme .cc-workspace :is(.market-strip, .preview-note) { flex-wrap: wrap; }
 .bank-theme .cc-workspace .wealth-overview { padding: 16px; }
 .bank-theme .cc-workspace .wealth-overview > strong { font-size: 29px; }
-.bank-theme .cc-workspace .life-service-hero { min-height: 0; padding: 14px; }
-.bank-theme .cc-workspace .life-story h2 { font-size: 18px; }
-.bank-theme .cc-workspace .life-story p { margin: 7px 0; }
 .bank-theme .cc-workspace .life-services { order: -1; }
 .bank-theme .cc-workspace .life-editorial, .bank-theme .cc-workspace .life-concierge { display: none; }
 .bank-theme .cc-workspace .life-services .row { border-radius: 11px; background: #f0f8ff; padding: 12px 8px; }
@@ -88,15 +90,34 @@ body { background: #e5f2fc; }
 .bank-theme .cc-workspace .receipt { padding: 10px 0 0; }
 .bank-theme .cc-workspace :is(.row-title, .agent-details dd, .body-copy, .kv dd, .receipt dd) { overflow-wrap: anywhere; }
 .bank-theme .cc-workspace :is(img, video, canvas) { max-width: 100%; height: auto; }
-.cc-channel-list { display: grid; gap: 8px; }
-.cc-channel-row { display: flex; text-align: left; align-items: center; gap: 11px; min-height: 79px; padding: 12px; border: 1px solid #e7f3ff; border-radius: 13px; background: linear-gradient(110deg, #fff, #eef7ff); }
-.cc-channel-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #e5f3ff; color: #0b89e9; }
-.cc-channel-icon.wechat { background: #e5f8ef; color: #11ad72; }
-.cc-channel-row > span:nth-child(2) { flex: 1; }
-.cc-channel-row strong { display: block; font-size: 14px; }
-.cc-channel-row small { display: block; margin-top: 5px; color: #7790ad; font-size: 11px; }
-.cc-channel-state { color: #1b76bc; background: #e3f2ff; padding: 5px 8px; border-radius: 15px; font-size: 11px; }
-.cc-channel-state.connected { color: #279878; background: #e1f6ed; }
+/* Channel binding: list rows like main's design, then a three-step bind wizard. */
+.cc-channel-list { display: grid; gap: 10px; }
+.cc-channel-row { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px; border: 0; border-radius: 12px; background: #fff; text-align: left; color: var(--text); }
+.cc-channel-row > span:nth-child(2) { flex: 1; min-width: 0; }
+.cc-channel-row > svg { flex-shrink: 0; color: #c0c4cc; }
+.cc-channel-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #f5f6fa; }
+.cc-channel-row strong { display: block; font-size: 16px; font-weight: 500; }
+.cc-channel-row small { display: block; margin-top: 4px; color: var(--text-3); font-size: 12px; }
+.cc-channel-state { flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 12px; }
+.cc-channel-state.connected { background: #e8f7f0; color: var(--green); }
+.channels-back { align-self: flex-start; padding-left: 0; }
+.channel-steps { display: flex; gap: 6px; margin: 2px 0 14px; padding: 0; list-style: none; counter-reset: step; }
+.channel-steps li { flex: 1; padding-top: 8px; border-top: 3px solid var(--line); color: var(--text-3); font-size: 12px; counter-increment: step; }
+.channel-steps li::before { content: counter(step) ' · '; }
+.channel-steps li.done { border-color: #b4c3f5; color: var(--text-2); }
+.channel-steps li.current { border-color: var(--brand); color: var(--brand); font-weight: 500; }
+.channel-choices { display: grid; gap: 10px; }
+.channel-choice { display: block; width: 100%; padding: 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; text-align: left; color: var(--text); }
+.channel-choice strong { display: block; font-size: 15px; font-weight: 500; }
+.channel-choice small { display: block; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.channel-choice.active { border-color: var(--brand); background: var(--brand-soft); }
+.channel-choice.active strong { color: var(--brand); }
+.channel-summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--pill); font-size: 14px; }
+.channel-summary span { color: var(--text-3); }
+.channel-summary strong { flex: 1; font-weight: 500; }
+.channel-summary .btn-text { padding: 0; }
+.channel-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.channel-qr img { border-radius: 8px; border: 1px solid var(--line); }
 @media (prefers-reduced-motion: reduce) { .bank-theme *, .bank-theme *::before, .bank-theme *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
 /* Compact transfer cells follow the reference while keeping every required field. */
@@ -114,14 +135,9 @@ body { background: #e5f2fc; }
 
 /* Match the specificity of legacy page finishes without changing their layout. */
 .bank-theme .app-shell .oak-intro { display: none; }
-.bank-theme .app-shell .page .circle-icon, .bank-theme .app-shell .page .tile-flat { background: #e5f3ff; --tone-color: #e5f3ff; }
-.bank-theme .app-shell .page .product-note { background: #edf7ff; }
-.bank-theme .app-shell .page .tag.orange { background: #fff2e2; color: #ad742c; }
-.bank-theme .app-shell .assistant .bubble { background: #fff; }
-.bank-theme .app-shell .user .bubble { background: #e0f0ff; color: #214d7a; }
-.bank-theme .app-shell .composer { background: #fff; border-color: #d7eafa; }
+.bank-theme .app-shell .page .product-note { background: #f7f8fa; }
+.bank-theme .app-shell .page .tag.orange { background: #fff0ed; color: var(--red); }
 .bank-theme .app-shell .agent-card:not(.advice-card) { background: #fff; }
-.bank-theme .app-shell .chat-chips button { border-color: #d6e9fa; }
 .bank-theme .app-shell .agent-botanical-core { display: none; }
 .bank-theme .app-shell .profile-kicker { display: none; }
 
@@ -130,7 +146,3 @@ body { background: #e5f2fc; }
 .bank-theme .cc-workspace .cc-directory .tile-flat .cc-service-art { width: 36px; height: 36px; }
 .bank-theme .cc-workspace .life-services .circle-icon:has(.cc-service-art) { background: #e4f3ff; width: 52px !important; height: 52px !important; }
 .bank-theme .cc-workspace .life-services .circle-icon .cc-service-art { width: 42px; height: 42px; }
-.bank-theme .cc-workspace .cc-agent-entry .blue-orb { max-width: 40px; }
-.bank-theme .cc-workspace .cc-following .blue-orb { max-width: 38px; }
-.bank-theme .app-shell { background: linear-gradient(180deg, #d8eeff 0, #edf8ff 420px, #f4faff 100%); }
-.bank-theme .bottom-nav .nav-icon .blue-orb { border: 2px solid #fff; box-shadow: 0 0 0 2px #d7efff; }

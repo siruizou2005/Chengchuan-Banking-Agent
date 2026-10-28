@@ -32,6 +32,7 @@ export type Snapshot = {
   scheduledTasks: { id: string; kind: string; run_at: string; status: string; error?: string }[];
   bindings: { id: string; channel: string; status: string; created_at: string; personal?: boolean; live?: boolean; auth_state?: string; connection_state?: string; last_inbound_at?: number; last_api_accepted_at?: number; last_error_code?: string }[];
   agentLockedUntil: string | null;
+  agent?: { status: AgentEnrollmentStatus; onboarding: OnboardingStatus; enabledAt: string | null };
   user: User; accounts: Account[]; holdings: Holding[]; loans: Loan[]; products: Product[]; productMeta: ProductMeta; market: MarketIndex[];
   ledger: Ledger[]; transactions: Transaction[];
   creditCard: { id: string; number: string; credit_limit: number; used: number; status: string };
@@ -50,3 +51,12 @@ export type Subscription = { id: string; merchant: string; amount: number; next_
 export type AgentSession = { id: string; title: string; turns: number; updated_at: string; handover: number };
 export type AgentSessionDetail = { id: string; handover: boolean; updatedAt: string; messages: { role: 'user' | 'assistant'; text: string; events?: AgentEvent[]; trace?: AgentTrace[]; runId?: string; at: string }[] };
 export type AgentRun = { id: string; channel: string; input: string; output: string; trace: AgentTrace[]; injection: string[]; duration_ms: number; tokens: number; created_at: string };
+export type AgentEnrollmentStatus = 'not_enabled' | 'enabled' | 'reconsent_required';
+export type OnboardingStatus = 'pending' | 'completed' | 'skipped';
+export type OnboardingField = 'preferred_name' | 'focus_areas' | 'answer_length' | 'investment_goal' | 'channels' | 'mask_amounts' | 'reports' | 'risk';
+export type ChannelName = 'feishu' | 'wechat';
+// feishu: 'personal' 一键创建专属机器人，'shared' 银行机器人绑定码，null 未开放。
+export type OnboardingChannels = { available: ChannelName[]; bound: ChannelName[]; choice: ChannelName[]; feishu: 'personal' | 'shared' | null };
+export type OnboardingState = { status: OnboardingStatus; answered: OnboardingField[]; skipped: OnboardingField[]; remaining: OnboardingField[]; unavailable: OnboardingField[]; total: number; next: OnboardingField | null; riskLevel: number; personalization: boolean; channels: OnboardingChannels };
+export type Agreement = { id: string; title: string; version: string; effectiveDate: string; summary: string; body?: string };
+export type Enrollment = { status: AgentEnrollmentStatus; enabledAt: string | null; onboarding: OnboardingStatus; documents: Agreement[]; accepted: { id: string; version: string; acceptedAt: string }[]; onboardingState: OnboardingState };

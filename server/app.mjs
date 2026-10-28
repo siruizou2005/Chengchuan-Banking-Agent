@@ -22,10 +22,13 @@ import { createContextAssembler } from './agent/context-assembler.mjs';
 import { createRiskService } from './risk/service.mjs';
 import { createRiskTransfers } from './risk/transfers.mjs';
 import { registerRiskRoutes } from './risk/routes.mjs';
+import { createEnrollment, registerEnrollmentRoutes } from './agent/enrollment.mjs';
+import { createOnboarding } from './agent/onboarding.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
-import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL } from './agent/analytics.mjs';
+import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport } from './agent/analytics.mjs';
+import { reportAnomalies } from './channels/reports.mjs';
 import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
@@ -277,6 +280,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       transactions: all('SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 100', user.id).map(transactionView),
       payees: all('SELECT * FROM payees WHERE user_id=? ORDER BY name', user.id),
       notifications: all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100', user.id),
+      ...(services?.enrollment ? { agent: (({ status, onboarding, enabledAt }) => ({ status, onboarding, enabledAt }))(services.enrollment.status(user.id)) } : {}),
       tickets: all('SELECT * FROM tickets WHERE user_id=? ORDER BY created_at DESC', user.id),
       appointments: all('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC', user.id),
     };
@@ -291,6 +295,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   const riskTransfers = createRiskTransfers(bank, services, services.risk, options.risk);
   services.riskDrafts = riskTransfers.drafts;
   registerRiskRoutes(route, bank, services, services.risk, riskTransfers);
+  services.enrollment = createEnrollment(services, { agreements: options.agreements });
+  services.onboarding = createOnboarding(services);
   const agent = createAgent(services, options.chat);
   const scheduler = createScheduler(services);
   registerChat(route, state, options.chat);
@@ -300,6 +306,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   registerVoice(route, services, options.voice);
   const channels = createChannels(services, agent, options.channels);
   channels.register(route);
+  services.enrollment.attachChannels(channels);
+  registerEnrollmentRoutes(route, services);
   route('get', '/health', '服务健康状态', (_req, res) => res.json({ status: 'ok', simulation: true }), false);
   route('post', '/auth/login', '登录，返回会话 Cookie 与 Bearer Token', (req, res) => {
     const key = `login:${req.ip}`; checkRate(key);
@@ -397,6 +405,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
     return selectLedger(rows.map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), keyword: q('q') });
   }
   route('get', '/ledger', '收支流水，支持时段（preset/period/from/to，北京时间）、方向、类型、分类与关键字过滤', (req, res) => res.json(ledgerQuery(req.user, req.query).slice(0, 2000)));
+  // Same statistics as the assistant's bill card and the scheduled Feishu/WeChat reports, so their numbers agree.
+  route('get', '/ledger/report', '账单报告与异常支出（preset/period/from/to，北京时间）', (req, res) => {
+    const q = key => req.query[key] === undefined ? undefined : String(req.query[key]);
+    const range = resolveRange({ preset: q('preset'), period: q('period'), from: q('from'), to: q('to') }, businessDate()), rows = ledgerFor(bank, req.user.id);
+    res.json({ report: billReport(rows, range), anomalies: reportAnomalies(rows, range) });
+  });
   route('get', '/ledger/export', '按相同筛选条件导出流水 CSV', (req, res) => {
     const rows = ledgerQuery(req.user, req.query);
     const escape = v => { let s = String(v ?? ''); if (/^[=+@\t\r]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
@@ -512,5 +526,5 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
     res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
   });
-  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); services.risk.expire(); riskTransfers.executor.reconcile(); } };
+  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); services.risk.expire(); riskTransfers.executor.reconcile(); } };
 }

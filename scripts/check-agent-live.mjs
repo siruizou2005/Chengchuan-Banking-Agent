@@ -38,6 +38,8 @@ try {
   assert.equal(login.status, 200);
   token = login.data.token;
   const user = f.bank.get('SELECT * FROM users WHERE id=?', login.data.user.id);
+  // A fresh in-memory bank starts with the assistant closed; this check runs as an already enrolled user.
+  f.services.enrollment.enable(user, f.services.enrollment.status(user.id).documents); f.services.onboarding.end(user);
   const balance = () => f.bank.get("SELECT balance FROM accounts WHERE user_id=? AND type='debit'", user.id).balance;
   console.log(JSON.stringify({ model: config.model, endpoint: new URL(config.baseUrl).host, database: ':memory:' }));
   const reportMonth = businessDate().slice(0, 7);

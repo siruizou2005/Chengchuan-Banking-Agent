@@ -15,18 +15,19 @@ import { AgentCenter, Messages, Profile, Security } from './pages/Profile';
 import { Channels } from './pages/Channels';
 import { Personalization } from './pages/Personalization';
 import { ChannelRequest } from './pages/ChannelRequest';
+import { BillReport } from './pages/BillReport';
 import { AgentTasks, PayRequest } from './pages/AgentTasks';
 import { Approval, type ApprovalProof } from './Approval';
 import { FaceReturn } from './pages/FaceReturn';
 import ChatApp from './chat/ChatApp';
+import { Enroll } from './chat/Enroll';
 import type { Snapshot, Transaction } from './types';
 import { BankTheme, themeForPage } from './Theme';
 import { ThemeGlyph } from './Botanical';
 import { InlinePresentation } from './InlineSurface';
 import { featureForRoute, routePage, type Feature } from './workspace';
-import { BlueOrb } from './BlueOrb';
 
-const titles: Record<string, string> = { 'risk-transfer': '核对模拟转账', personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '首页', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
+const titles: Record<string, string> = { 'risk-transfer': '核对模拟转账', personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', 'bill-report': '账单报告', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '首页', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
 const tabs = [{ id: 'home', title: '首页', icon: NavAccount }, { id: 'wealth', title: '理财', icon: NavWealth }, { id: 'assistant', title: '智能助手', icon: NavAssistant }, { id: 'life', title: '生活', icon: NavLife }, { id: 'profile', title: '我的', icon: NavProfile }];
 const tabPages = ['wealth', 'life', 'profile'];
 
@@ -58,10 +59,11 @@ export default function App() {
       if (page !== 'home') location.hash = 'home';
     } else navigatePage(r);
   }, [page, navigatePage]);
+  // Home entries open their feature as a full page; the inline workspace remains for Agent-driven flows.
   function selectFeature(feature: Feature) {
     if (busyRef.current) return;
-    setModal(null); setTx(null); setFormError(null);
-    setWorkspace(current => current?.feature === feature ? null : { route: feature, feature, back: [] });
+    setModal(null); setTx(null); setFormError(null); setWorkspace(null);
+    navigatePage(tabPages.includes(feature) ? `${feature}?from=home` : feature);
   }
   function closeWorkspace() {
     if (busyRef.current) return;
@@ -146,7 +148,7 @@ export default function App() {
   const toastElement = toastState && <div className={`toast ${toastState.error ? 'error' : ''}`} role={toastState.error ? 'alert' : 'status'}>{toastState.error ? <CircleX size={18} /> : <Check size={18} />}<span>{toastState.message}</span></div>;
   if (loading) return <div className="app-shell bank-theme theme-home loading-screen"><Brand /><LoaderCircle size={26} className="spin" /><p>正在加载…</p></div>;
   if (!data) return <><Login initialError={initialError} onLogin={async () => { await refresh(); if (!location.hash.slice(1)) navigate('home'); }} />{toastElement}</>;
-  const pages = (pageRoute: string): Record<string, ReactNode> => ({ 'risk-transfer': <RiskTransfer />, personalization: <Personalization key={data.user.id} />, 'face-return': <FaceReturn />, 'feishu-requests': <ChannelRequest />, 'wechat-requests': <ChannelRequest />, channels: <Channels />, tasks: <AgentTasks />, accounts: <Accounts />, transfer: <Transfer key={pageRoute} />, ledger: <LedgerPage key={pageRoute} />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth key={pageRoute} />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, advice: <Advice />, funds: <Funds key={pageRoute} />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> });
+  const pages = (pageRoute: string): Record<string, ReactNode> => ({ 'risk-transfer': <RiskTransfer />, personalization: <Personalization key={data.user.id} />, 'face-return': <FaceReturn />, 'feishu-requests': <ChannelRequest />, 'wechat-requests': <ChannelRequest />, 'bill-report': <BillReport />, channels: <Channels />, tasks: <AgentTasks />, accounts: <Accounts />, transfer: <Transfer key={pageRoute} />, ledger: <LedgerPage key={pageRoute} />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth key={pageRoute} />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, advice: <Advice />, funds: <Funds key={pageRoute} />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> });
   const operations = <>
     {modal && !tx && !approval && <Modal title={modal.title} onClose={() => { if (!busy) setModal(null); }}>{modal.content}</Modal>}
     {tx && !approval && <Modal title={tx.status === 'pending' ? '确认交易' : '交易详情'} onClose={() => { if (!busy) setTx(null); }}><div className="receipt"><span className={`receipt-icon ${tx.status}`} aria-hidden="true">{tx.status === 'completed' ? <Check size={30} /> : tx.status === 'pending' ? <Clock3 size={28} /> : <CircleX size={28} />}</span><h3>{tx.title}</h3><div className="receipt-amount">¥{yuan(tx.amount)}</div><span className={`status ${tx.status}`} data-testid="transaction-status">{statusLabel[tx.status]}</span><dl><dt>付款账户</dt><dd>储蓄卡（{tail(data.accounts.find(a => a.id === tx.account_id)?.number || '')}）</dd>{tx.payload.recipientName && <><dt>收款人</dt><dd>{tx.payload.recipientName}</dd><dt>收款账号</dt><dd className="mono">{tx.payload.recipientAccount}</dd><dt>收款银行</dt><dd>{tx.payload.bank}</dd></>}{tx.payload.billNumber && <><dt>缴费户号</dt><dd>{tx.payload.billNumber}</dd></>}{tx.payload.note && <><dt>附言</dt><dd>{tx.payload.note}</dd></>}{tx.payload.months && <><dt>借款期限</dt><dd>{tx.payload.months}个月</dd></>}<dt>交易编号</dt><dd className="mono" data-testid="transaction-id">{tx.id}</dd><dt>创建时间</dt><dd>{date(tx.created_at)}</dd>{tx.status !== 'pending' && <><dt>更新时间</dt><dd>{date(tx.updated_at)}</dd></>}</dl>{tx.error && <div className="inline-error">{tx.error}</div>}{tx.status === 'pending' ? <form className="stack-form" onSubmit={e => { e.preventDefault(); void confirm(); }}><Notice>请核对交易信息并输入支付密码，本次交易有效期至 {date(tx.expires_at)}。</Notice><button className="btn-primary" disabled={busy} data-testid="confirm-transaction">{busy && <LoaderCircle size={18} className="spin" />}确认{tx.type === 'loan_draw' ? '借款' : tx.type === 'redeem' ? '赎回' : '支付'}</button><button className="btn-text" type="button" disabled={busy} onClick={cancel} data-testid="cancel-transaction">取消交易</button></form> : <button className="btn-primary" onClick={() => { setTx(null); navigate('transactions'); }}>完成</button>}</div></Modal>}
@@ -154,9 +156,11 @@ export default function App() {
   </>;
   const activeTab = themeForPage(page);
   const isTabPage = tabPages.includes(page);
+  // 理财、生活 opened from a home entry carry ?from=home and get a back arrow; opened from the tab bar they have no left control.
+  const openedFromHome = new URLSearchParams(route.split('?')[1] || '').get('from') === 'home';
   return <BankContext.Provider value={{ data, busy, route: effectiveRoute, hidden, askAgent, formError, clearFormError: () => setFormError(null), navigate, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); if (page === 'assistant') { setWorkspace({ route: 'transactions', feature: 'transfer', back: [] }); location.hash = 'home'; } setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><BankTheme theme={activeTab}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : page === 'home' ? ' home-mode' : ''}${page !== 'home' ? ' oak-mode' : ''}${!['home', 'wealth', 'assistant', 'life', 'profile'].includes(page) ? ' oak-secondary' : ''}`}>
-    {page !== 'home' && page !== 'assistant' && <header className="page-header">{isTabPage ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button>}<h1><ThemeGlyph size={21} />{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
-    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}><ChatApp key={data.user.id} request={agentRequest} /></div>}
+    {page !== 'home' && page !== 'assistant' && <header className="page-header">{!isTabPage || openedFromHome ? <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button> : page === 'profile' ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <span className="icon-button" aria-hidden="true" />}<h1><ThemeGlyph size={21} />{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
+    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}>{data.agent && data.agent.status !== 'enabled' ? <Enroll key={data.user.id} /> : <ChatApp key={data.user.id} request={agentRequest} />}</div>}
     <div hidden={page !== 'home'}><InlinePresentation.Provider value={true}><WorkspaceBank route={workspace?.route || 'home'}><Home
       feature={workspace?.feature} workspaceRoute={workspace?.route} title={titles[routePage(workspace?.route || '')] || '服务'}
       onSelect={selectFeature} onClose={closeWorkspace} onBack={backWorkspace} canBack={Boolean(workspace?.back.length)}
@@ -164,7 +168,7 @@ export default function App() {
       {workspace && (workspace.route === 'accounts' ? <AccountWorkspace /> : pages(workspace.route)[routePage(workspace.route)] || <Notice>未找到该服务。</Notice>)}
     </Home></WorkspaceBank></InlinePresentation.Provider></div>
     {page !== 'assistant' && page !== 'home' && (page.startsWith('pay-request/') ? <PayRequest path={page} /> : pages(route)[page] || <div className="page"><Notice>未找到该页面。</Notice><button className="btn-primary" onClick={() => navigatePage('home')}>返回首页</button></div>)}
-    <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} disabled={busy} onClick={() => navigatePage(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon">{t.id === 'assistant' ? <BlueOrb size={34} /> : <t.icon active={activeTab === t.id} />}</span><span>{t.title}</span></button>)}</nav>
+    <nav className="bottom-nav" aria-label="主导航">{tabs.map(t => <button key={t.id} className={activeTab === t.id ? 'active' : ''} disabled={busy} onClick={() => navigatePage(t.id)} aria-current={activeTab === t.id ? 'page' : undefined} data-testid={`nav-${t.id}`}><span className="nav-icon"><t.icon active={activeTab === t.id} /></span><span>{t.title}</span></button>)}</nav>
   </div>
     {page !== 'home' && operations}
     {toastElement}

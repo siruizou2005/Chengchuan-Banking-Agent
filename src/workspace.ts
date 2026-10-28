@@ -1,14 +1,14 @@
 // Route ownership is shared by the home grid and embedded navigation. Deep links
 // still resolve through App's original page registry.
 export const featureGroups = {
-  accounts: ['accounts', 'ledger', 'receive', 'scan', 'payees'],
+  accounts: ['accounts', 'receive', 'scan', 'payees'],
   wealth: ['wealth', 'deposit', 'funds', 'risk', 'advice'],
   transfer: ['transfer', 'transactions', 'risk-transfer'],
   credit: ['credit'],
   loan: ['loan'],
   life: ['life', 'appointments', 'support'],
-  channels: ['channels', 'feishu-requests', 'wechat-requests'],
-  services: ['services', 'search', 'security', 'messages', 'agent', 'personalization', 'tasks'],
+  ledger: ['ledger'],
+  services: ['services', 'search', 'security', 'messages', 'agent', 'personalization', 'tasks', 'channels', 'feishu-requests', 'wechat-requests'],
 } as const;
 export type Feature = keyof typeof featureGroups;
 export function routePage(route: string) { return route.split(/[?/]/)[0]; }

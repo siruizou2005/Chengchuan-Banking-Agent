@@ -9,9 +9,9 @@ export const MODULES = Object.freeze({
 });
 export const INTENTS = Object.freeze(['explain','analyze','compare','plan','review','decide','update_preference','recall']);
 export const MEMORY_TYPES = Object.freeze(['explicit','semantic','episodic','behavioral','interaction']);
-export const CORE_KEYS = Object.freeze(['language','answer_length','analysis_style','investment_goal','important_constraints']);
+export const CORE_KEYS = Object.freeze(['preferred_name','focus_areas','language','answer_length','analysis_style','investment_goal','important_constraints']);
 export const TOOL_MODULES = Object.freeze({bill_report:'spending',spending_stats:'spending',detect_anomalies:'spending',get_ledger:'spending',get_transactions:'spending',wealth_advice:'investment',get_products_and_holdings:'investment',compare_products:'investment',get_risk_profile:'investment',get_loans:'debt_credit',get_credit_card:'debt_credit',get_scheduled_tasks:'budgeting',create_plan:'financial_planning'});
 export function classifyMemory(key,category='preference') {
   const module=/^(markets|sectors|watchlist|investment_horizon)$/.test(key)?'investment':/investment_goal|emergency|retirement/.test(key)?'financial_planning':/budget|saving/.test(key)?'budgeting':/spend|cash_flow/.test(key)?'spending':/debt|loan|credit/.test(key)?'debt_credit':'general';
-  return {module,memory_type:['language','answer_length','analysis_style'].includes(key)?'interaction':category==='research'?'episodic':'explicit',intent:'any'};
+  return {module,memory_type:['preferred_name','focus_areas','language','answer_length','analysis_style'].includes(key)?'interaction':category==='research'?'episodic':'explicit',intent:'any'};
 }

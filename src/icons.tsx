@@ -1,4 +1,3 @@
-import { AgentMark } from './AgentMark';
 /* 自绘面性图标：主体用 currentColor 填充，细节线用容器提供的 --tone-color
    （渐变圆底为该色系主色，白色方块底为白色），呈现国内银行 App 常见的双色面性风格。 */
 type P = { size?: number; className?: string };
@@ -39,25 +38,36 @@ export const IcoClock = ({ size = 22, className }: P) => <svg {...base(size, cla
 export const IcoSnow = ({ size = 22, className }: P) => <svg {...base(size, className)}><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" fill="none" /><circle cx="12" cy="12" r="2.4" fill="currentColor" /></svg>;
 export const IcoBag = ({ size = 22, className }: P) => <svg {...base(size, className)}><path d="M5 8h14l1 12a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 20z" fill="currentColor" /><path d="M9 9.5V6.5a3 3 0 016 0v3" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" fill="none" /></svg>;
 export const IcoDoc = ({ size = 22, className }: P) => <svg {...base(size, className)}><path d="M5.5 2.5h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11.5A1.5 1.5 0 014 20.5v-16.5a1.5 1.5 0 011.5-1.5z" fill="currentColor" /><path d="M13.5 2.5v5h5" fill={D} opacity=".55" /><path d="M8 12h8M8 16h5" stroke={D} strokeWidth="1.8" strokeLinecap="round" /></svg>;
+export const IcoSwap = ({ size = 22, className }: P) => <svg {...base(size, className)}><rect x="3" y="3" width="18" height="18" rx="3.5" fill="currentColor" /><path d="M7.5 9.5h9L14 7M16.5 14.5h-9l2.5 2.5" stroke={D} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>;
 export const IcoTerminal = ({ size = 22, className }: P) => <svg {...base(size, className)}><rect x="3" y="3.5" width="18" height="17" rx="3" fill="currentColor" /><path d="M7 9l3 3-3 3M12.5 15H17" stroke={D} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>;
 
 /* 全局渐变定义：平面宫格图标通过 CSS fill:url(#ico-*) 取用，呈现微众式上浅下深的渐变。 */
 export function GradientDefs() {
   const g = (id: string, from: string, to: string) => <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} /></linearGradient>;
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>{g('cc-icon-blue', '#62cdff', '#0072d8')}{g('ico-blue', '#7a9bff', '#4c6ef5')}{g('ico-orange', '#ffb35c', '#ff7f1f')}{g('ico-red', '#ff8577', '#f4443a')}{g('ico-gold', '#ffd860', '#f2ae00')}{g('ico-cyan', '#62cff7', '#1e9fe8')}</defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>{g('cc-icon-blue', '#62cdff', '#0072d8')}{g('ico-blue', '#7a9bff', '#4c6ef5')}{g('ico-orange', '#ffb35c', '#ff7f1f')}{g('ico-red', '#ff8577', '#f4443a')}{g('ico-gold', '#ffd860', '#f2ae00')}{g('ico-cyan', '#62cff7', '#1e9fe8')}{g('cc-agent', '#6f8dff', '#3e60cc')}</defs></svg>;
 }
 
 /* 品牌标：圆角方形底，三道“川”形水纹。watermark 变体用于卡面淡色水印。 */
+export const MARK = ['M9.5 10c-2 3.6-2 8.4 0 12', 'M16 7v18', 'M22.5 10c2 3.6 2 8.4 0 12'];
 export function Logo({ size = 28, light = false, watermark = false }: { size?: number; light?: boolean; watermark?: boolean }) {
   const stroke = watermark ? '#fff' : light ? 'var(--brand)' : '#fff';
-  return <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" style={watermark ? { opacity: .13 } : undefined}>{!watermark && <rect width="32" height="32" rx="9" fill={light ? '#fff' : 'var(--brand)'} />}<g stroke={stroke} strokeWidth="3.2" strokeLinecap="round" fill="none"><path d="M9.5 10c-2 3.6-2 8.4 0 12" /><path d="M16 7v18" /><path d="M22.5 10c2 3.6 2 8.4 0 12" /></g></svg>;
+  return <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" style={watermark ? { opacity: .13 } : undefined}>{!watermark && <rect width="32" height="32" rx="9" fill={light ? '#fff' : 'var(--brand)'} />}<g stroke={stroke} strokeWidth="3.2" strokeLinecap="round" fill="none">{MARK.map(d => <path key={d} d={d} />)}</g></svg>;
 }
+
+/* 头部底纹：放大的品牌标倾斜后靠右裁切，白色自右上向左下渐隐，对应微众头部的大号标志底纹。 */
+export function BrandTexture({ className = '' }: { className?: string }) {
+  return <svg className={className} viewBox="0 0 390 290" preserveAspectRatio="xMaxYMin slice" aria-hidden="true">
+    <defs><linearGradient id="cc-brand-fade" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" /><stop offset=".9" stopColor="#000" /></linearGradient><mask id="cc-brand-mask"><rect width="390" height="290" fill="url(#cc-brand-fade)" /></mask></defs>
+    <g mask="url(#cc-brand-mask)"><g transform="translate(229 -36) rotate(18) scale(10)" stroke="#fff" strokeOpacity=".1" strokeWidth="3.2" strokeLinecap="round" fill="none">{MARK.map(d => <path key={d} d={d} />)}</g></g>
+  </svg>;
+}
+
 
 /* 底部导航线性图标：1.6 描边，激活态带红色点缀。 */
 type N = { active: boolean };
 const nav = { width: 26, height: 26, viewBox: '0 0 24 24', 'aria-hidden': true as const };
 export const NavAccount = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3Z" /></svg>;
 export const NavWealth = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="13" width="3" height="8" rx="1" /><rect x="10.5" y="8" width="3" height="13" rx="1" /><rect x="17" y="3" width="3" height="18" rx="1" /></svg>;
-export const NavAssistant = ({ active }: N) => <AgentMark active={active} />;
+export const NavAssistant = ({ active }: N) => <svg {...nav} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 3.5h11a2.5 2.5 0 012.5 2.5v8.5a2.5 2.5 0 01-2.5 2.5H11l-4 3.5V17h-.5A2.5 2.5 0 014 14.5V6a2.5 2.5 0 012.5-2.5z" fill={active ? 'currentColor' : 'none'} /><g stroke={active ? '#fff' : 'currentColor'}><path d="M9.5 8.3v1.4M14.5 8.3v1.4" strokeWidth="1.9" /><path d="M9.3 12.2c1.5 1.3 3.9 1.3 5.4 0" /></g></svg>;
 export const NavLife = ({ active }: N) => <svg {...nav} fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="7" width="14" height="15" rx="2" /><path d="M9 9V6a3 3 0 016 0v3" /></svg>;
 export const NavProfile = ({ active }: N) => <svg {...nav}><circle cx="12" cy="8.5" r="4" stroke="currentColor" strokeWidth="1.6" fill={active ? 'currentColor' : 'none'} /><path d="M4.5 20.5c.5-4 3.5-6.5 7.5-6.5s7 2.5 7.5 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />{active && <circle cx="17.5" cy="5" r="2.2" fill="var(--red)" />}</svg>;

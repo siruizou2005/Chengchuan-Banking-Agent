@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { migrateWeChat } from './channels/wechat-schema.mjs';
 import { migrateFeishu } from './channels/feishu-schema.mjs';
+import { migrateReports } from './channels/reports-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
@@ -163,10 +164,16 @@ export function createBank(path) {
   `);
   migrateWeChat(db);
   migrateFeishu(db);
+  migrateReports(db);
   migratePersonalization(db);
   migrateProducts(db);
   migrateRisk(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  // Assistant enrollment: every user starts disabled until they accept the current agreements themselves.
+  for (const [column, ddl] of [['agent_enabled_at', 'TEXT'], ['agent_onboarding', "TEXT NOT NULL DEFAULT 'pending'"], ['agent_onboarding_state', "TEXT NOT NULL DEFAULT '{}'"]])
+    if (!all('PRAGMA table_info(users)').some(c => c.name === column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} ${ddl}`);
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_consents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), document TEXT NOT NULL, version TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT);
+    CREATE INDEX IF NOT EXISTS agent_consents_user ON agent_consents(user_id,revoked_at);`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
     CREATE TABLE IF NOT EXISTS email_codes (id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);`);
   for (const [phone, email] of Object.entries(DEMO_EMAILS)) run('UPDATE users SET email=? WHERE phone=? AND email IS NULL', email, phone);

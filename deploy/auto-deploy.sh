@@ -8,6 +8,7 @@ work=$HOME/chengchuan-bank-deploy
 src=$work/src
 keep_releases=8
 keep_backups=5
+branch=${DEPLOY_BRANCH:-main}
 
 deploy() {
   local sha=$1 release upload backups
@@ -45,12 +46,12 @@ deploy() {
 main() {
   mkdir -p "$work"
   exec 9>"$work/lock"
-  flock -n 9 || { echo "已有部署在进行，结束后会再次比对 main"; exit 0; }
+  flock -n 9 || { echo "已有部署在进行，结束后会再次比对 $branch"; exit 0; }
   trap 'rm -rf "$work"/upload-*' EXIT
   for _ in 1 2 3; do
-    git -C "$src" fetch --quiet origin main
+    git -C "$src" fetch --quiet origin "$branch"
     local target current
-    target=$(git -C "$src" rev-parse origin/main)
+    target=$(git -C "$src" rev-parse "origin/$branch")
     current=$(cat "$base/current/REVISION" 2>/dev/null || true)
     if [ "$target" = "$current" ]; then echo "线上已是最新 ${target:0:7}"; return 0; fi
     deploy "$target"

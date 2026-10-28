@@ -199,3 +199,56 @@
 .advice-metric { display: block; margin-top: 4px; font-size: 12px; color: var(--text-2, #555); font-variant-numeric: tabular-nums; }
 .advice-product p { margin: 4px 0 6px; font-size: 13px; line-height: 1.6; color: var(--text-2, #555); }
 .advice-product .btn-text { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; padding: 0; }
+
+/* 开通页：与聊天页共用头部，正文为普通页面卡片。 */
+.assistant-page.enroll-page .chat-scroll .page { min-height: 100%; padding-bottom: 12px; }
+.assistant-page .enroll-spacer { width: 40px; }
+.assistant-page .enroll-hero { display: flex; align-items: center; gap: 14px; padding: 18px 16px; }
+.assistant-page .enroll-hero h2 { font-size: 18px; font-weight: 600; }
+.assistant-page .enroll-hero p { margin-top: 3px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+/* 说明卡撑满剩余高度，五条均匀分布；屏幕矮时退回最小间距。 */
+.assistant-page .enroll-intro { flex: 1; display: flex; flex-direction: column; }
+.assistant-page .enroll-points { flex: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 14px; }
+.assistant-page .enroll-points li { display: flex; align-items: center; gap: 12px; }
+.assistant-page .enroll-points div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.assistant-page .enroll-points b { font-size: 15px; font-weight: 500; }
+.assistant-page .enroll-points span { font-size: 13px; line-height: 1.5; color: var(--text-3); }
+.assistant-page .enroll-footer { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 4px; background: var(--card); border-top: 1px solid var(--line); }
+.assistant-page .enroll-footer .footnote { margin: 0; line-height: 1.5; }
+.assistant-page .enroll-doc { display: inline; padding: 0; background: none; border: 0; font: inherit; color: var(--brand); cursor: pointer; }
+.assistant-page .enroll-updated { margin: 0 2px; background: #fff3e8; color: var(--orange); vertical-align: 1px; }
+.assistant-page .enroll-agree { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.6; color: var(--text-2); cursor: pointer; }
+.assistant-page .enroll-agree input { width: 17px; height: 17px; margin-top: 2px; flex-shrink: 0; accent-color: var(--brand); }
+.agreement-text { max-height: 62vh; overflow-y: auto; font-size: 14px; line-height: 1.75; }
+.agreement-text .chat-markdown h2 { font-size: 15px; margin: 14px 0 6px; }
+.agreement-text .chat-markdown table { font-size: 13px; }
+
+/* 首次引导：进度条、当前问题与快捷回答，位于最新一条助手消息下方。 */
+.assistant-page .onboarding-card { margin: 12px 0 0 42px; padding: 12px 14px; background: #fff; border-radius: 12px; }
+.assistant-page .onboarding-progress { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-3); }
+.assistant-page .onboarding-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--pill); overflow: hidden; }
+.assistant-page .onboarding-bar i { display: block; height: 100%; background: var(--brand); border-radius: 2px; transition: width .2s; }
+.assistant-page .onboarding-question { margin-top: 8px; font-size: 13px; color: var(--text-2); }
+.assistant-page .onboarding-chips { margin: 8px 0 0; }
+.assistant-page .onboarding-chips button.selected { background: var(--brand-soft); border-color: var(--brand); }
+.assistant-page .onboarding-chips button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+.assistant-page .onboarding-chips button:disabled { opacity: .5; }
+.assistant-page .onboarding-card .data-note { margin: 6px 0 0; font-size: 12px; color: var(--text-3); line-height: 1.6; }
+.assistant-page .onboarding-pin { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.assistant-page .onboarding-pin .field { flex: 1; min-width: 0; margin: 0; }
+.assistant-page .onboarding-pin .pill { flex-shrink: 0; height: 40px; }
+.assistant-page .onboarding-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--bg); text-align: center; font-size: 13px; color: var(--text-2); }
+.assistant-page .onboarding-qr img { display: block; width: 180px; height: 180px; border-radius: 8px; background: #fff; }
+.assistant-page .onboarding-qr form { width: 100%; }
+.assistant-page .onboarding-bound { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--brand); }
+.assistant-page .onboarding-options { flex-direction: column; align-items: stretch; }
+.assistant-page .onboarding-options button { text-align: left; }
+.assistant-page .onboarding-back { margin-top: 6px; font-size: 12px; }
+.assistant-page .onboarding-card .binding-code { margin-top: 10px; }
+.assistant-page .onboarding-name { flex-wrap: nowrap; }
+.assistant-page .onboarding-name input { flex: 1; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 13px; }
+.assistant-page .onboarding-name input:focus { outline: none; border-color: var(--brand); background: #fff; }
+.assistant-page .onboarding-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 8px; }
+.assistant-page .onboarding-actions button { font-size: 12px; color: var(--text-3); padding: 4px 6px; }
+.assistant-page .onboarding-actions button:hover:not(:disabled) { color: var(--brand); }
+@media (max-width: 360px) { .assistant-page .onboarding-card { margin-left: 0; } }
