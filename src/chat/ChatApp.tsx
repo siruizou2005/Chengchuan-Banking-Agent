@@ -214,7 +214,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   return <section className="assistant-page satin-assistant" aria-label="智能助手">
     <header className="chat-header">
       <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button>
-      <div className="chat-title"><h1><AgentMark size={22} />智能助手</h1><span className={`chat-state${configured ? ' on' : ''}`}>{configured === null ? '连接中…' : configured ? '已连接' : '服务暂不可用'}</span></div>
+      <div className="chat-title"><h1><AgentMark size={22} />智能助手</h1><span className={`chat-state${configured ? ' on' : ''}`}>{configured === null ? '连接中…' : configured ? '在线，7×24小时服务' : '服务暂不可用'}</span></div>
       <div className="chat-header-actions"><button className="icon-button" aria-label="对话历史" onClick={() => void openHistory()}><History size={21} strokeWidth={1.8} /></button><button className="btn-text" onClick={reset}><Plus size={15} />新对话</button></div>
     </header>
     {historyOpen && <Modal title="对话历史" onClose={() => setHistoryOpen(false)}>
