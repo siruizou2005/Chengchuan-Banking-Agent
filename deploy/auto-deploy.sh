@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 由 chengchuan-bank-deploy.service 执行（GitHub push → webhook → path unit）：拉取 master，构建后调用 update-release.sh。
-# 部署期间又有新推送时，结束后再比对一次 origin/master 并补上。
+# 由 chengchuan-bank-deploy.service 执行（GitHub push → webhook → path unit）：拉取 main，构建后调用 update-release.sh。
+# 部署期间又有新推送时，结束后再比对一次 origin/main 并补上。
 set -euo pipefail
 
 base=/opt/chengchuan-bank
@@ -8,7 +8,7 @@ work=$HOME/chengchuan-bank-deploy
 src=$work/src
 keep_releases=8
 keep_backups=5
-branch=${DEPLOY_BRANCH:-master}
+branch=${DEPLOY_BRANCH:-main}
 
 deploy() {
   local sha=$1 release upload backups
