@@ -1,5 +1,5 @@
 [Unit]
-Description=Build and deploy Chengchuan Bank from GitHub main
+Description=Build and deploy Chengchuan Bank from GitHub master
 
 [Service]
 Type=oneshot

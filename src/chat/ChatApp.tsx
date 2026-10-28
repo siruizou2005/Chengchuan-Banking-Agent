@@ -4,11 +4,14 @@ import { ChatError, liveAdapter, initialMessages, type ChatAdapter, type Message
 import { api, date } from '../api';
 import { useBank } from '../bank';
 import { Avatar, Empty, InlineError, Modal } from '../ui';
-import type { AgentSession, AgentSessionDetail } from '../types';
+import type { AgentSession, AgentSessionDetail, ChannelName, Enrollment, OnboardingState } from '../types';
 import { AgentMark } from '../AgentMark';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
 import { startRecording, transcribe, type Recording } from './voice';
+import { OnboardingCard, ONBOARDING_LABEL, ONBOARDING_OPENING, ONBOARDING_RESUME } from './OnboardingCard';
+import { CHANNEL_NAME } from './OnboardingSteps';
+import { riskTag } from '../products';
 import './chat.css';
 
 const money = (cents: number) => (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -42,7 +45,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
   </article>;
 }
 
-const quickQuestions = ['给陈屿转 200 备注午饭', '分析本月账单', '有哪些订阅扣费', '推荐一个理财', '我爱人 10 月 5 日生日，帮我安排'];
+const quickQuestions = ['转账', '分析本月账单', '有哪些订阅扣费', '推荐一个理财'];
 // 每个用户在本浏览器中最后打开的对话；服务端会校验归属，读写失败（隐私模式等）静默忽略。
 const sessionKey = (userId: string) => `bank-chat-session:${userId}`;
 const readStoredSession = (userId: string) => { try { return localStorage.getItem(sessionKey(userId)) || ''; } catch { return ''; } };
@@ -57,7 +60,11 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   const recorder = useRef<Recording | null>(null), voiceAbort = useRef<AbortController | null>(null), voiceGeneration = useRef(0);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const receivedRequest = useRef(0);
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // 开通后的首次引导：开场白固定显示，之后由助手对话引导；进度来自服务端。
+  const opening = () => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING : undefined;
+  const [guide, setGuide] = useState<OnboardingState | null>(null);
+  const guiding = data.agent?.onboarding === 'pending' && guide?.status === 'pending';
+  const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening()));
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -88,7 +95,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     const restored: Message[] = detail.messages.map(m => ({ id: crypto.randomUUID(), role: m.role, text: m.text, sessionId: id, ...(m.role === 'assistant' ? { events: m.events, trace: m.trace, runId: m.runId, asOf: m.at, sources: ['澄川银行服务端工具结果'] } : {}) }));
     shouldScroll.current = scroll;
     setBusy(false); setError(''); setNotice(detail.handover ? '本对话已转人工客服，如需继续办理请开始新对话' : ''); setDraft('');
-    setMessages([...initialMessages(), ...restored]); setStartedAt(new Date(detail.messages[0]?.at || Date.now()));
+    setMessages([...initialMessages(opening()), ...restored]); setStartedAt(new Date(detail.messages[0]?.at || Date.now()));
     storeSession(user.id, id); setHistoryOpen(false);
   }
   async function openHistory() {
@@ -101,6 +108,20 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     try { await api(`/agent/sessions/${id}`, 'DELETE', {}); setSessions(list => (list || []).filter(s => s.id !== id)); setPendingDelete(''); if (id === sessionId) reset(); }
     catch (e) { setHistoryError((e as Error).message); } finally { setHistoryBusy(false); }
   }
+  // 引导状态随账户快照变化：开通后或在「个性化与记忆」重新开始时进入引导，完成后收起进度卡片。
+  const onboardingStatus = data.agent?.onboarding, lastOnboarding = useRef(onboardingStatus);
+  useEffect(() => {
+    const restarted = lastOnboarding.current !== 'pending' && onboardingStatus === 'pending';
+    lastOnboarding.current = onboardingStatus;
+    if (onboardingStatus !== 'pending') { setGuide(null); return; }
+    let alive = true;
+    api<Enrollment>('/agent/enrollment').then(e => {
+      if (!alive) return; setGuide(e.onboardingState);
+      if (restarted) { reset(); setMessages(initialMessages(ONBOARDING_OPENING)); }
+      else if (e.onboardingState.answered.length + e.onboardingState.skipped.length) setMessages(list => list.length === 1 && list[0].welcome ? initialMessages(ONBOARDING_RESUME) : list);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [onboardingStatus]);
   useEffect(() => () => { controller.current?.abort(); recorder.current?.cancel(); voiceAbort.current?.abort(); voiceGeneration.current++; }, []);
   // A new reply is read from its first line, so stop at its top instead of the bottom of the cards.
   // Jump instantly: smooth scrolling never runs while the tab is in the background.
@@ -118,7 +139,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
-      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); await refresh(); }
+      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) setGuide(state); await refresh(); }
     } catch (failure) {
       if (!active.signal.aborted) {
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
@@ -135,18 +156,44 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     const next: Message[] = [...messages, { id: crypto.randomUUID(), role: 'user', text: content }];
     setMessages(next); setDraft(''); void requestReply(next); input.current?.focus();
   }
+  // 卡片里完成的步骤（扫码绑定、风险测评）由服务端核实后推进，这里只补一句确认并引出下一项，不调用模型。
+  function say(text: string) { shouldScroll.current = true; setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text }]); }
+  async function advanceGuide(field: 'channels' | 'risk', text: string) {
+    try {
+      const state = await api<OnboardingState>('/agent/onboarding/advance', 'POST', { field });
+      setGuide(state);
+      say(text + (state.status === 'pending' && state.next ? `接下来是${ONBOARDING_LABEL[state.next]}，可以在下方选择，也可以直接告诉我。` : '首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？'));
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
+  function channelBound(channel: ChannelName) {
+    const hint = channel === 'wechat' ? '请在微信里给助手发一句“你好”，之后就能在微信查询和接收推送。' : '';
+    const waiting = guide?.channels.choice.filter(c => c !== channel && !guide.channels.bound.includes(c)) || [];
+    if (!waiting.length) { void advanceGuide('channels', `${CHANNEL_NAME[channel]}已绑定。${hint}`); return; }
+    setGuide(current => current && { ...current, channels: { ...current.channels, bound: [...current.channels.bound, channel] } });
+    say(`${CHANNEL_NAME[channel]}已绑定。${hint}再扫一下${waiting.map(c => CHANNEL_NAME[c]).join('、')}的二维码就好。`);
+  }
+  async function endGuide() {
+    try {
+      setGuide(await api<OnboardingState>('/agent/onboarding/end', 'POST', {}));
+      shouldScroll.current = true;
+      setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text: '好的，偏好设置先到这里，已记下的都保留。以后可以在「我的 → 个性化与记忆」中修改，或从那里重新开始引导。有什么可以帮你？' }]);
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
   useEffect(() => {
     if (!request || request.id === receivedRequest.current || configured === null || busy) return;
     receivedRequest.current = request.id;
     started.current = true; // Do not let a late session restoration overwrite this request.
-    if (configured) send(request.text);
+    if (configured && data.agent?.onboarding !== 'pending') send(request.text);
+    else if (configured) setDraft(request.text);
     else { setDraft(request.text); setError('智能助手暂未配置，已保留你的问题。请稍后重试。'); }
   }, [request, configured, busy]);
   function stop() { controller.current?.abort(); controller.current = null; setBusy(false); setNotice('已停止回复'); }
   function reset() {
     cancelVoice();
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
-    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages()); setStartedAt(new Date());
+    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
     storeSession(user.id, '');
     scroller.current?.scrollTo({ top: 0 });
   }
@@ -188,7 +235,8 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
-        {messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
+        {guiding && guide ? <OnboardingCard state={guide} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onBound={channelBound} onContinue={() => void advanceGuide('channels', '')} onRiskDone={level => advanceGuide('risk', `风险测评完成：${riskTag(level)}。`)} />
+        : messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">智能助手暂不可用，请稍后再试。你仍可通过底部导航办理业务。</div>}
         <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>
         {error && <div className="chat-error" role="alert">{error}{configured && <button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重试</button>}</div>}

@@ -49,7 +49,7 @@ export function createWeChat(services,router,options={}) {
   function view(e){return {id:e.id,status:e.status,expiresAt:new Date(e.until).toISOString(),retryAfterMs:1000,message:e.error||labels[e.status],...(e.bindingId?{bindingId:e.bindingId}:{})};}
   function own(user,qrId){const e=pending.get(qrId);requireThat(e?.userId===user.id,'二维码会话已失效，请重新生成',404,'QR_EXPIRED');if(Date.now()>e.until&&!['confirmed','cancelled','failed'].includes(e.status)){e.status='expired';e.controller.abort();}return e;}
   async function qr(user,pin){
-    requireThat(enabled()&&accepting(),'微信渠道暂不接受新连接',503,'WECHAT_DISABLED');services.pin(user,pin);sweep();crypto.encrypt('configuration-check');
+    requireThat(enabled()&&accepting(),'微信渠道暂不接受新连接',503,'WECHAT_DISABLED');services.enrollment.assertEnabled(user.id);services.pin(user,pin);sweep();crypto.encrypt('configuration-check');
     requireThat(!bank.get("SELECT user_id FROM channel_bindings WHERE channel='wechat' AND status='active' GROUP BY user_id HAVING count(*)>1"),'微信绑定存在历史冲突，请联系管理员核对',503,'WECHAT_BINDING_CONFLICT');
     requireThat(!bank.get("SELECT id FROM channel_bindings WHERE user_id=? AND channel='wechat' AND status='active' AND auth_state='valid'",user.id),'已连接微信助手，请先解绑',409,'WECHAT_BOT_EXISTS');
     const times=(rate.get(user.id)||[]).filter(t=>Date.now()-t<60000);requireThat(times.length<3,'二维码请求过于频繁，请稍后重试',429,'QR_RATE_LIMIT');times.push(Date.now());rate.set(user.id,times);

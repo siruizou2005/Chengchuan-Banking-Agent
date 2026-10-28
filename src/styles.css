@@ -496,6 +496,10 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .channel-amount-switch[aria-checked="true"] span { transform: translateX(18px); }
 .channel-amount-switch:focus-visible { outline: 2px solid #526dff; outline-offset: 3px; }
 .channel-amount-switch:disabled { opacity: .5; cursor: wait; }
+.channel-amount-setting + .channel-report-setting { margin-top: -14px; border-top: 0; }
+.channel-report-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.channel-report-head span { font-size: 13px; color: var(--text-3); }
+.channel-report-setting .channel-amount-row + .channel-amount-row { margin-top: 12px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print { .bottom-nav, .page-header, .hero, .toast { display: none; } .app-shell { max-width: none; box-shadow: none; background: #fff; } .modal { position: static; max-height: none; width: 100%; } .modal-body { max-height: none; overflow: visible; } }
 /* Personalization uses the existing profile cards and form controls. */
@@ -537,3 +541,13 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; back
 .nav-value strong { color: var(--red); }
 .nav-value.down strong { color: var(--green); }
 .nav-change { margin-left: 6px; font-size: 13px; font-style: normal; font-weight: 600; }
+
+/* 关闭智能助手、开通协议等勾选项：复选框在左，标题与说明在右。 */
+.check-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 10px; background: var(--pill); cursor: pointer; }
+.check-option input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; accent-color: var(--brand); }
+.check-option span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-option strong { font-size: 15px; font-weight: 500; }
+.check-option small { font-size: 12px; line-height: 1.6; color: var(--text-3); }
+.btn-primary.danger { background: var(--red); }
+.channel-closed { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.channel-closed .pill { flex-shrink: 0; }

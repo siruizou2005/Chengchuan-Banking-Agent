@@ -55,6 +55,7 @@
 | GET /dashboard | 账户、持仓、贷款、信用卡、最近 500 条流水/100 条交易、消息，以及 agentActions、agentPlans、subscriptions、virtualCards、reservations、scheduledTasks、bindings、agentLockedUntil |
 | GET /transactions?status=pending | 最近最多 500 条交易，可筛选状态 |
 | GET /ledger?preset=last_30_days&direction=expense&category=餐饮美食&q=美团 | 最多 2000 条匹配流水。时段（北京时间）用 `preset`（同智能体工具取值）、`period`（YYYY / YYYY-MM / YYYY-MM-DD）或 `from`+`to`，不传为全部；`direction` 为 income/expense；`kind`（`spend` 表示消费加退款）、`category`、`platform`（如 支付宝、银行卡快捷支付、澄川银行）按统一口径筛选；`q` 匹配摘要、对方、商户、附言、交易编号。每行附带 `kind`、`tag`、`bj_time`，导入流水另含 `txn_type`、`counterparty`、`merchant`、`platform` 等统一字段，见 README |
+| GET /ledger/report?from=2026-10-22&to=2026-10-22 | `{report, anomalies}`：与智能体 `bill_report` 卡片和飞书/微信定时推送相同的账单统计（时段参数同 `/ledger`，不传为本月），异常支出以前 90 天流水为基准判断；App 页面 `/#bill-report?from=…&to=…` |
 | GET /ledger/export | 按与 `/ledger` 相同的筛选导出 CSV：交易编号、北京时间、摘要、金额、余额、分类、类型、交易类型、对方户名、商户、支付平台、附言、来源银行 |
 | PATCH /accounts/{id} | status=active/frozen/lost、pin；解冻（lost/frozen→active）与挂失为红色，需附 verificationActionId + verificationToken |
 | GET /products /holdings /loans /credit-card | 分别获取业务资源。/products 返回 2 款定期与约 100 只公募基金，基金净值、近1/3/6/12月收益、风险等级、起购额、费率与申购状态来自东方财富公开接口；响应头 `X-Data-Updated-At`、`X-Data-Stale` 标注时效 |
@@ -79,6 +80,24 @@
 
 ## 智能体接口
 
+### 开通与首次引导
+
+智能助手需本人开通：未开通、已关闭或协议升版本后未重新同意时，`/agent/chat`、`/voice/transcribe`、渠道绑定（`/channels/code`、`/channels/feishu/register`、`/channels/wechat/qr`）返回 403 `AGENT_NOT_ENABLED`，飞书和微信消息收到开通提示且不进入模型。银行业务接口、从业务页面发起的 `/agent/actions`、对已有动作的确认与取消、已授权的定时任务与订阅代扣、记忆的查看与删除不受影响。外部 Agent 使用对话接口前，用户须先在 App「智能助手」中开通。
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /agent/enrollment` | `{status, enabledAt, onboarding, documents, accepted, onboardingState}`；`status` 为 `not_enabled` / `enabled` / `reconsent_required`，`documents` 为当前协议 `{id, title, version, effectiveDate, summary}` |
+| `GET /agent/agreements/:id` | 协议全文（Markdown），`id` 为 `service` / `privacy` / `risk` |
+| `POST /agent/enrollment` | `{documents:[{id,version}]}`，须与当前全部协议版本一致，否则 409 `AGREEMENT_VERSION_MISMATCH`；同意记录写入 `agent_consents` 并审计 `agent.enabled`（协议名、版本、同意时间） |
+| `POST /agent/enrollment/disable` | `{unbindChannels?, clearData?, pin?}`；只停用不需要密码，解绑渠道或清空数据须支付密码。取消对话与 IM 提出的未确认动作，已确认的定时任务照常执行；清空会删除记忆、行为假设并归档对话，审计与决策链路保留。审计 `agent.disabled` |
+| `POST /agent/onboarding/advance` | `{field:'channels'|'risk'}`：App 卡片里完成飞书/微信扫码绑定或风险测评后推进引导；服务端核实已有可用绑定或风险等级，否则 409 `ONBOARDING_STEP_INCOMPLETE`，其他字段 400 |
+| `POST /agent/onboarding/end` | 结束首次引导，已记下的偏好保留 |
+| `POST /agent/onboarding/reset` | 重新开始首次引导 |
+
+`GET /dashboard` 的 `agent` 字段为 `{status, onboarding, enabledAt}`。
+
+开通后 App 渠道（`onboarding=pending` 时）进入首次引导：模型额外获得 `save_onboarding_answer`、`skip_onboarding` 两个工具，用自然对话依次了解称呼、关注业务、回复详略、理财目标，再问是否绑定飞书/微信、飞书/微信是否隐藏金额、要哪几种账单推送，最后是风险测评，每项都可跳过。绑定和风险测评在 App 卡片里完成：模型只用 `save_onboarding_answer` 记下要绑的渠道（`channels`：微信 / 飞书 / 都绑，只能选服务端已开放且未绑定的），支付密码、扫码和测评答案不经过模型，完成后 App 调用 `/agent/onboarding/advance`。`reports`（日报、周报、月报）写入已绑定渠道的账单推送设置。已测评的用户自动跳过风险测评，可用渠道都已绑定时自动跳过绑定；服务端没有开放任何渠道时不问绑定，没有绑定时不再问隐藏金额和账单推送（记入 `unavailable`，不计入进度）。服务端校验每次保存的 `evidence` 必须逐字出自本轮用户消息，称呼和自由填写的理财目标须是用户原话，并经过记忆系统的敏感信息与注入检查；风险偏好以风险测评为准，不另行记录。答案在本轮结束时与对话记录同一事务写入（称呼、关注业务等写入记忆 `preferred_name`、`focus_areas`、`answer_length`、`investment_goal`，隐藏金额写入两个渠道的设置），每项审计 `agent.onboarding.saved`（仅字段名）。全部问完或用户说结束后状态变为 `completed` / `skipped`。每轮返回 `onboarding` 事件 `{status, answered, skipped, remaining, unavailable, total, next, riskLevel, personalization, channels:{available, bound, choice, feishu}}`，`feishu` 为 `personal`（一键创建专属机器人）、`shared`（银行机器人绑定码）或 `null`。飞书和微信始终按普通对话处理；外部调用可先 `POST /agent/onboarding/end` 跳过引导。
+
 ### 对话
 
 `POST /agent/chat`（`POST /chat` 为兼容别名）：
@@ -90,6 +109,7 @@
 - `messages` 只接受 user/assistant 角色，最多 24 条、单条 6000 字、合计 12000 字，最后一条必须是 user。历史 assistant 消息不构成已执行的证据。
 - `sessionId` 可选；首轮由服务端生成并返回，后续携带以归入同一对话。`expectedUserId` 可选，登录账户变化时返回 409 `ACCOUNT_CHANGED`。
 - 返回 `{ text, events, trace, runId, sessionId, sources, asOf }`。`events[]` 为服务端卡片：`advice`（理财配置建议，卡片内可改期限与金额并跳转产品详情）、`action`（待确认动作）、`plan`（联动计划）、`report`（账单报告）、`stats`（多维统计，两者都带 `suggestions` 追问建议，每轮最多一张）、`anomalies`、`subscriptions`、`products`、`handover`、`locked`；`trace[]` 为工具调用链路（脱敏）。
+- 未开通或已关闭返回 403 `AGENT_NOT_ENABLED`，见上节。
 - 智能体锁定时返回 200 且 `events` 含 `locked`；`AGENT_DISABLED=true` 或锁定期间的工具调用与提议接口返回 423 `AGENT_LOCKED`。
 
 ### 动作与计划
@@ -194,6 +214,8 @@
 | GET /channels | 已绑定渠道：`id`、`channel`、`status`（active/revoked/expired）、`created_at`、`personal`（飞书专属机器人） |
 | GET /channels/preferences | 本人渠道设置：`{feishu:{maskAmounts:false},wechat:{maskAmounts:false}}`，默认均不隐藏 |
 | PATCH /channels/preferences/{channel} | `{maskAmounts:boolean}` → `{maskAmounts}`；channel 只能为 feishu/wechat，只修改当前登录用户的指定渠道，不接受请求体切换身份 |
+| GET /channels/reports | 本人账单推送设置：`{feishu:{bound,ready,daily,weekly,monthly},wechat:{…}}`，每项 `{enabled,nextAt,last}`；`last` 为最近一期 `{from,to,slotAt,state,reason}`，`state` 为 `sending/sent/unknown/failed/skipped/missed`；`ready=false` 表示微信尚未收到用户消息，暂时无法主动推送 |
+| PATCH /channels/reports/{channel} | `{daily?,weekly?,monthly?}`（布尔值）→ 该渠道设置；开启需智能助手已开通（否则 403 `AGENT_NOT_ENABLED`），关闭随时可用；不需要支付密码 |
 | POST /channels/code | `{pin}` → `{code, expiresIn:300}` 飞书一次性绑定码；在飞书私聊发送「绑定 123456」 |
 | POST /channels/{id}/unbind | `{pin}`，解绑并撤销该渠道未执行的动作 |
 | POST /channels/wechat/qr | `{pin}` → `{id, qrcode_img_content, expiresIn}`，需 `WECHAT_ENABLED=true` 与 `CHANNEL_SECRET` |
@@ -208,13 +230,15 @@
 | GET /channels/feishu/requests/{id} | `{id,status,receivedAt,finishedAt,result,deliveries}`；完整结果与最新操作卡片，仅本人可查看；入口 `/#feishu-requests/{id}` |
 | POST /channels/feishu/events/{bindingId} | 飞书事件回调（无需登录），按该绑定的 Encrypt Key 解密并校验签名，自动应答 URL 校验；绑定不存在或已解绑时返回空对象 |
 
-IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…」、「确认 ACT…」，均限当前用户、渠道及绑定内动作。「确认」不会执行任何操作，只返回 App 直达链接 `${PUBLIC_ORIGIN}/#tasks?action=ACT…`（无公网地址时为文字指引）及所需验证方式；已授权待执行或已结束的动作返回当前状态。多笔不带编号时返回简短列表；只有一笔时可省略编号。其他文本进入智能体。
+IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…」、「确认 ACT…」，均限当前用户、渠道及绑定内动作。「退订日报」「退订周报」「退订月报」「退订账单推送」（全部）关闭本渠道的账单推送，不经过模型，智能助手关闭时也可用。「确认」不会执行任何操作，只返回 App 直达链接 `${PUBLIC_ORIGIN}/#tasks?action=ACT…`（无公网地址时为文字指引）及所需验证方式；已授权待执行或已结束的动作返回当前状态。多笔不带编号时返回简短列表；只有一笔时可省略编号。其他文本进入智能体。
 
 飞书已绑定请求持久受理后才确认事件，普通请求每用户最多 3 条待处理，帮助/确认/取消不等待模型执行槽。默认 4 秒后最多一次等待提示，完成时取消尚未发出的提示。请求状态为 `queued/running/completed/failed/interrupted/cancelled`；投递状态为 `pending/sending/retry_wait/api_accepted/unknown/failed/cancelled/expired`。`unknown` 不自动重发，`needs_review=1` 表示待核查。业务回推的旧 `channel_outbox` 先转 `forwarded`，接口接受后转 `sent`，其含义仍是提交接口成功。解绑后禁止旧会话继续写入或重新投递，重新绑定更新代次和会话；扫码创建接口和发布流程保持不变。
 
 微信请求状态为 `queued/running/completed/failed/interrupted/cancelled`；投递状态为 `pending/sending/retry_wait/api_accepted/unknown/failed/cancelled/expired`。`api_accepted` 只证明接口接受，`unknown` 不自动重发或重新执行。微信直接返回查询及分析结果，超长内容和 App 完整结果入口为 `/#wechat-requests/{id}`，未登录先登录并保留入口。绑定快照增加 `auth_state`、`connection_state`、`last_inbound_at`、`last_api_accepted_at` 等安全元数据，凭据及 context 不返回前端。
 
 金额开关按用户和渠道持久保存，解绑/重绑不会重置；飞书共享与专属机器人共用该用户的飞书设置。回复和业务通知发送前读取最新开关，已发出的消息不追溯修改，App 原始结果不改变。开启时常见金额、金额标签后的数值和财务表格数值显示为 `****`，链接、操作编号、日期、利率保持；账户标识及凭据的既有脱敏始终生效。明确拒绝后的微信重试若因设置变更导致正文改变，会换用新 client_id；正文不变仍复用原编号，unknown 不重发。
+
+账单定时推送：日报、周报、月报按用户和渠道分别开关，默认关闭，解绑/重绑不会重置；统一在北京时间 8:00 推送，日报每天推昨天、周报每周一推上周一至周日、月报每月 1 日推上月，没有收支时只发一句说明。正文只用 `bill_report` 的确定性统计（消费、收入、转账给他人、与上期对比、消费分类前 5、周/月报商户前 3、异常支出最多 3 条），飞书含表格时发卡片，微信发纯文本，末尾附 `/#bill-report` 链接和退订提示，发送时按该渠道的隐藏金额设置处理。服务器维护任务每 30 秒用索引查一次到期订阅并分片生成，不为用户常驻定时器、不调用模型。每个渠道、报告和账期在 `report_pushes` 里只有一行，重启或开关后不会重发；服务中断后只在 24 小时内补发最近一期，更早的记为 `missed`。需要可用绑定和已开通的智能助手，否则该期记为 `skipped`；微信只能借用用户最近一条消息的上下文主动推送，从未收到消息时跳过并在 App 提醒一次。报告经 `channel_outbox`（`kind=report`）进入原有投递队列，投递有效期 12 小时，`unknown` 不重发。
 
 ### 工具清单
 
@@ -232,7 +256,7 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 
 400 参数错误，401 认证失效，403 支付密码/验证/来源错误，404 资源不存在或无权访问，409 业务状态冲突，415 非 JSON 或非 WAV 请求，423 智能体锁定，429 限频，502 上游模型或语音服务错误，503 未配置，504 对话超时。
 
-常见代码：`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`RISK_MISMATCH`、`PRODUCT_UNAVAILABLE`、`PURCHASE_LIMIT`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
+常见代码：`AGENT_NOT_ENABLED`、`AGREEMENT_VERSION_MISMATCH`、`APP_CONFIRMATION_REQUIRED`、`INVALID_PIN`、`DAILY_LIMIT`、`ACCOUNT_FROZEN`、`ACCOUNT_LOST`、`CARD_LOST`、`HOLDING_LOCKED`、`RISK_ASSESSMENT_REQUIRED`、`RISK_MISMATCH`、`PRODUCT_UNAVAILABLE`、`PURCHASE_LIMIT`、`IDEMPOTENCY_CONFLICT`、`INVALID_STATE`、`RECIPIENT_NOT_FOUND`、`AGENT_LOCKED`、`VERIFICATION_REQUIRED`、`INVALID_VERIFICATION`、`APP_VERIFICATION_REQUIRED`、`FACE_REQUIRED`、`INVALID_CODE`、`VERIFICATION_EXPIRED`、`SUPPLEMENTAL_VERIFICATION_REQUIRED`、`AUTHORIZATION_REQUIRED`、`AUTHORIZATION_INVALID`、`AUTHORIZATION_MISMATCH`、`AUTHORIZATION_BUDGET`、`MANDATE_INVALID`、`CHANNEL_NOT_BOUND`、`INVALID_BIND_CODE`、`CHANNEL_SECRET_REQUIRED`、`WECHAT_DISABLED`、`WECHAT_EXPIRED`、`VOICE_NOT_CONFIGURED`、`INVALID_AUDIO`、`CHAT_NOT_CONFIGURED`、`CHAT_BUSY`、`CHAT_TIMEOUT`、`INVALID_MESSAGES`。
 
 `GET /ledger` 与 `GET /transactions` 均只返回自己的资源。行内转账收款人可在自己的流水中看到入账，但不能查询发款人的交易资源或支付信息。智能体的所有查询与动作同样按会话或渠道绑定的用户隔离。
 

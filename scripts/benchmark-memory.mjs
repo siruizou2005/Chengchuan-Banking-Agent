@@ -54,6 +54,7 @@ async function run(mode,size){
  }}});
  try{
   const {bank,services,agent}=instance,user=bank.get("SELECT * FROM users WHERE phone='13800138000'");seed(instance,user,size);
+  services.enrollment.enable(user,services.enrollment.status(user.id).documents);services.onboarding.end(user);
   const assemble=services.contextAssembler.assemble;
   if(mode==='A')services.contextAssembler.assemble=(p,text)=>baseline(bank,p,text);
   if(mode==='B')services.contextAssembler.assemble=(p,text,route)=>assemble(p,text,route,{behavior:false});

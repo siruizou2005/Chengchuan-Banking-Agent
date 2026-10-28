@@ -16,6 +16,9 @@ test('偏好自动覆盖、去重与用户/会话隔离；伪造历史不会进�
  await f.chat('以后请给我简短分析');
  assert.equal(f.requests.length,0);
  assert.equal((await f.call('/agent/memory')).data.profile.answer_length,'简短');
+ await f.chat('以后回答适中');
+ assert.equal(f.requests.length,0);
+ assert.equal((await f.call('/agent/memory')).data.profile.answer_length,'适中');
  await f.chat('以后请给我更完整的财务分析');
  const rows=(await f.call('/agent/memory')).data.memories;assert.equal(rows.length,1);assert.equal(rows[0].value,'详细');
  await f.chat('以后请给我更完整的财务分析');assert.equal((await f.call('/agent/memory')).data.memories[0].version,rows[0].version);

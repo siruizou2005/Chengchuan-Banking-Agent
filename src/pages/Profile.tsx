@@ -7,7 +7,7 @@ import { Markdown } from '../chat/Markdown';
 import { DecisionTrace } from '../chat/cards';
 import type { AgentRun } from '../types';
 import { api, date, formValues, yuan } from '../api';
-import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelect, Avatar, CircleIcon } from '../ui';
+import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelect, Avatar, CircleIcon, InlineError } from '../ui';
 
 export function Profile() {
   const { data, navigate, logout, openModal, closeModal } = useBank();
@@ -47,6 +47,7 @@ export function Security() {
       <Row icon={IcoKeypad} tone="coral" title="支付密码" subtitle="资金操作前验证6位数字密码" onClick={() => edit('pin')} />
     </Card>
     <Card title="智能助手安全">
+      <Row icon={IcoActivity} tone="blue" title="智能助手服务" subtitle={data.agent?.status === 'enabled' ? `已开通${data.agent.enabledAt ? ` · ${date(data.agent.enabledAt)}` : ''}` : data.agent?.status === 'reconsent_required' ? '协议已更新，待重新同意' : '未开通'} trailing={data.agent?.status === 'enabled' ? <span className="muted">关闭</span> : <span className="muted">去开通</span>} onClick={() => data.agent?.status === 'enabled' ? openModal('关闭智能助手', <CloseAssistant />) : navigate('assistant')} testId="agent-service" />
       <Row icon={IcoBell} tone="blue" title="消息渠道绑定" subtitle="飞书 / 微信 ClawBot" onClick={() => navigate('channels')} />
       <Row icon={IcoClock} tone="orange" title="智能助手操作与计划" onClick={() => navigate('tasks')} />
       <Row icon={IcoShield} tone="coral" title="智能助手安全" subtitle={data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() ? `已锁定至 ${date(data.agentLockedUntil)}` : '已开启 · 按操作需要确认与验证'} onClick={() => openModal('解除智能助手锁定', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/agent/unlock', f, '智能助手已解锁')) closeModal(); }}><PinField /><Submit>解除锁定</Submit></form>)} />
@@ -59,6 +60,31 @@ export function Security() {
     </Card>
     <Notice>连续8次密码验证失败后，该验证入口暂停15分钟。修改密码时不会将原始密码写入操作日志。</Notice>
   </div>;
+}
+
+// 关闭智能助手：只停用不需要密码；同时解绑渠道或清空数据不可撤销，需支付密码。
+function CloseAssistant() {
+  const { data, refresh, closeModal, toast } = useBank();
+  const [unbind, setUnbind] = useState(false), [clear, setClear] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const bound = data.bindings.filter(b => b.status === 'active').length, needsPin = unbind || clear;
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    const f = formValues(e); if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ cancelledActions: number; unboundChannels: number }>('/agent/enrollment/disable', 'POST', { unbindChannels: unbind, clearData: clear, ...(needsPin ? { pin: f.pin } : {}) });
+      closeModal(); await refresh();
+      toast(['智能助手已关闭', result.cancelledActions ? `取消${result.cancelledActions}笔待确认操作` : '', result.unboundChannels ? `解绑${result.unboundChannels}个渠道` : '', clear ? '已清空记忆与对话' : ''].filter(Boolean).join('，'));
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  return <form className="stack-form" onSubmit={submit}>
+    <p className="body-copy">关闭后，App、飞书、微信和外部接口都不再受理对话，尚未确认的对话操作会被取消。已确认的定时转账、联动计划和订阅代扣照常执行，可在「智能助手操作与计划」中取消。</p>
+    <label className="check-option"><input type="checkbox" checked={unbind} onChange={e => setUnbind(e.target.checked)} data-testid="close-unbind" /><span><strong>同时解绑飞书、微信</strong><small>{bound ? `当前已绑定 ${bound} 个渠道；` : '当前没有绑定渠道；'}不解绑则保留绑定，重新开通后可继续使用</small></span></label>
+    <label className="check-option"><input type="checkbox" checked={clear} onChange={e => setClear(e.target.checked)} data-testid="close-clear" /><span><strong>同时清空个性化记忆与对话历史</strong><small>清空后不可恢复；操作审计与决策记录依规保留</small></span></label>
+    {needsPin && <PinField />}
+    <InlineError message={error} />
+    <button className="btn-primary danger" disabled={busy} data-testid="close-submit">{needsPin ? '验证并关闭' : '确认关闭'}</button>
+    <p className="footnote">重新开通需再次阅读并同意服务协议。</p>
+  </form>;
 }
 
 export function Messages() {

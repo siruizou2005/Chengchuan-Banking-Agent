@@ -3,8 +3,9 @@ import { id } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
 import { enqueueExecution } from '../agent/execution.mjs';
 import { bindingFor, assertLease, resultLink, wechatResultText } from './wechat-state.mjs';
+import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
 
-const commandPattern=/^(帮助|help|解绑|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const commandPattern=/^(帮助|help|解绑|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 export function createWeChatInbox(services,router,delivery,options={}) {
   const {bank}=services,crypto=router.crypto,owner=randomUUID(),active=new Map(),ttl=options.executionLeaseMs||60000;
   const origin=options.publicOrigin??process.env.PUBLIC_ORIGIN??'',maxPending=options.maxPending||Number(process.env.WECHAT_MAX_PENDING_PER_USER)||3;
@@ -29,7 +30,7 @@ export function createWeChatInbox(services,router,delivery,options={}) {
         const context=typeof message.context_token==='string'&&message.context_token?crypto.encrypt(message.context_token):null;
         if(context)bank.run('UPDATE channel_bindings SET context_token=?,context_updated_at=? WHERE id=?',context,time,binding.id);
         const count=bank.get("SELECT count(*) AS n FROM wechat_inbox WHERE user_id=? AND status IN ('queued','running') AND is_command=0",binding.user_id).n;
-        const reason=!text||text.length>6000?'仅支持不超过6000字的文字消息，请用文字描述需求。':process.env.AGENT_DISABLED==='true'&&!isCommand?'智能助手暂不可用，请在App办理。':!isCommand&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':null;
+        const reason=!text||text.length>6000?'仅支持不超过6000字的文字消息，请用文字描述需求。':process.env.AGENT_DISABLED==='true'&&!isCommand?'智能助手暂不可用，请在App办理。':!isCommand&&!services.enrollment.enabled(binding.user_id)?IM_NOT_ENABLED_REPLY:!isCommand&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':null;
         bank.run(`INSERT INTO wechat_inbox(id,binding_id,binding_session_id,binding_generation,user_id,upstream_message_id,upstream_created_at,input_cipher,context_token_cipher,status,is_command,received_at,queue_deadline,run_id)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,binding.id,binding.binding_session_id,binding.binding_generation,binding.user_id,String(upstreamId),Number.isFinite(message.create_time_ms)?message.create_time_ms:null,crypto.encrypt(text.slice(0,6000)),context,reason?'failed':'queued',isCommand?1:0,time,time+(options.queueMs||30000),id('RUN'));
         if(reason){bank.run('UPDATE wechat_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);delivery.enqueue(binding,{requestId,kind:'error',body:reason,context});}
@@ -93,7 +94,7 @@ export function createWeChatInbox(services,router,delivery,options={}) {
     }catch(error){
       const current=bank.get('SELECT * FROM wechat_inbox WHERE id=?',row.id);
       if(current?.status==='running'&&current.lease_epoch===row.lease_epoch) {
-        try{complete(row,{text:'这次处理未完成，已有操作请在App查看。',events:[]},error);}catch{
+        try{complete(row,{text:error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:'这次处理未完成，已有操作请在App查看。',events:[]},error);}catch{
           bank.run("UPDATE wechat_inbox SET status='interrupted',finished_at=?,safe_error_code=?,lease_epoch=lease_epoch+1 WHERE id=? AND status='running' AND lease_epoch=?",Date.now(),error.code||'REQUEST_INTERRUPTED',row.id,row.lease_epoch);delivery.cancelFeedback(row.id);
         }
       }

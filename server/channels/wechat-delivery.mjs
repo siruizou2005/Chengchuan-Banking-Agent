@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { id } from '../db.mjs';
 import { bindingFor, assertLease, resultLink, wechatResultText } from './wechat-state.mjs';
 import { channelText } from './preferences.mjs';
+import { REPORT_DELIVERY_MS, reportDeliveryNotice } from './reports.mjs';
 
 const transient=new Set(['ack','progress']);
 export function createWeChatDelivery(services,crypto,send,options={}) {
@@ -11,7 +12,7 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
   let stopped=false;
   function enqueue(binding,{requestId=null,kind,body,context=null,sourceOutboxId=null,expiresMs,partIndex=0}) {
     const time=Date.now(),deliveryId=id('WXOUT');
-    const duration=expiresMs??(kind==='ack'?3000:kind==='progress'?5000:kind==='action_result'?900000:300000);
+    const duration=expiresMs??(kind==='ack'?3000:kind==='progress'?5000:kind==='action_result'?900000:kind==='report'?REPORT_DELIVERY_MS:300000);
     bank.run(`INSERT OR IGNORE INTO wechat_deliveries(id,binding_id,binding_session_id,binding_generation,request_id,kind,part_index,client_id,body_cipher,context_token_cipher,priority,next_at,expires_at,created_at,source_outbox_id)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,deliveryId,binding.id,binding.binding_session_id,binding.binding_generation,requestId,kind,partIndex,id('wx'),crypto.encrypt(body),context,kind==='progress'?3:kind==='ack'?1:0,time,time+duration,time,sourceOutboxId);
     return deliveryId;
@@ -20,7 +21,9 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
     if(transient.has(row.kind))return;
     const binding=bank.get('SELECT user_id FROM channel_bindings WHERE id=? AND binding_generation=? AND binding_session_id=?',row.binding_id,row.binding_generation,row.binding_session_id);
     if(binding&&!bank.get("SELECT id FROM audit WHERE action='wechat.delivery_notice' AND resource_id=?",row.id)) {
-      bank.notify(binding.user_id,'微信回复送达未确认',`结果已生成，微信回复暂时无法确认送达。请在App查看：${row.request_id?resultLink(origin,row.request_id):'/#tasks'}`);
+      const report=row.kind==='report'&&reportDeliveryNotice(bank,origin,row.source_outbox_id,'wechat');
+      if(report)bank.notify(binding.user_id,report.title,report.body);
+      else bank.notify(binding.user_id,'微信回复送达未确认',`结果已生成，微信回复暂时无法确认送达。请在App查看：${row.request_id?resultLink(origin,row.request_id):'/#tasks'}`);
       bank.audit(binding.user_id,'wechat.delivery_notice',row.id,{requestId:row.request_id});
     }
   }
@@ -31,8 +34,10 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
     bank.atomic(()=>{
       for(const out of bank.all("SELECT o.* FROM channel_outbox o JOIN channel_bindings b ON b.id=o.binding_id WHERE b.channel='wechat' AND o.status='pending' LIMIT 50")) {
         const binding=bank.get('SELECT * FROM channel_bindings WHERE id=?',out.binding_id);
-        if(binding.status!=='active'){bank.run("UPDATE channel_outbox SET status='cancelled' WHERE id=?",out.id);continue;}
-        enqueue(binding,{kind:'action_result',body:out.body+`\n详情：${origin}/#tasks`,sourceOutboxId:out.id});
+        // A report belongs to the binding generation it was written for; it carries its own App link.
+        const report=out.kind==='report';
+        if(binding.status!=='active'||(report&&out.binding_generation!==binding.binding_generation)){bank.run("UPDATE channel_outbox SET status='cancelled' WHERE id=?",out.id);continue;}
+        enqueue(binding,{kind:report?'report':'action_result',body:report?out.body:out.body+`\n详情：${origin}/#tasks`,sourceOutboxId:out.id});
         bank.run("UPDATE channel_outbox SET status='forwarded' WHERE id=? AND status='pending'",out.id);
       }
     });
@@ -75,9 +80,9 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
           const result=bank.get('SELECT result_json FROM wechat_inbox WHERE id=?',row.request_id)?.result_json;
           if(result)body=wechatResultText(JSON.parse(result),row.request_id,origin,bank);
         }
-        if(row.kind==='action_result'){
+        if(row.kind==='action_result'||row.kind==='report'){
           const out=bank.get('SELECT body FROM channel_outbox WHERE id=?',row.source_outbox_id);
-          if(out)body=out.body+`\n详情：${origin}/#tasks`;
+          if(out)body=row.kind==='report'?out.body:out.body+`\n详情：${origin}/#tasks`;
         }
         body=channelText(bank,binding.user_id,'wechat',body);
         // A setting/status change changes the message content; a known rejected attempt may use a new identity.

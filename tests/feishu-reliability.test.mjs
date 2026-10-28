@@ -120,7 +120,7 @@ test('飞书：重启恢复未开始请求；已提交工具而未完成的请�
  const sdk={LoggerLevel:{warn:2},Client:class{im={v1:{message:{reply:async()=>{sends++;return {code:0};}}}}},WSClient:class{start(){}close(){}},EventDispatcher:class{register(){return this;}}};
  const options={chat:{config:()=>({apiKey:'test',baseUrl:'https://llm.test',model:'test'}),fetch:async()=>{calls++;return Response.json(llm([],'恢复后的结果'));}},channels:{secret:'a'.repeat(64),feishu:{appId:'test',appSecret:'test',sdk},feishuPipeline:{feedback:false}}};
  t.after(async()=>{if(app){await app.channels.stop();app.bank.db.close();}rmSync(dir,{recursive:true,force:true});});
- app=createApp(path,options);const user=app.bank.get("SELECT * FROM users WHERE phone='13800138000'");
+ app=createApp(path,options);const user=app.bank.get("SELECT * FROM users WHERE phone='13800138000'");app.services.enrollment.enable(user,app.services.enrollment.status(user.id).documents);
  const b=app.channels.router.bind('feishu','owner',app.channels.router.createCode(user,'123456').code);
  app.channels.feishuPipeline.ingest({externalId:'owner',messageId:'interrupted',text:'记住偏好'});
  const row=app.bank.get("SELECT * FROM feishu_inbox WHERE message_id='interrupted'");

@@ -7,7 +7,7 @@ import { classifyMemory, MODULES, INTENTS } from './modules.mjs';
 import { routeBehavior } from './behavior-router.mjs';
 import { createModularRetriever } from './memory-retrieval.mjs';
 
-export const PROFILE_KEYS = ['language','answer_length','analysis_style','markets','sectors','watchlist','investment_goal','investment_horizon'];
+export const PROFILE_KEYS = ['preferred_name','focus_areas','language','answer_length','analysis_style','markets','sectors','watchlist','investment_goal','investment_horizon'];
 const sensitive = /password|\bpin\b|token|secret|密码|验证码|密钥|身份证|银行卡号|\d{11,19}|sk-[\w-]+/i;
 const authoritative = /^(balance|holdings|positions|risk_level|risk_tolerance|transactions|余额|持仓|风险等级|风险承受能力)$/i;
 const clean = text => text.normalize('NFKC').trim().replace(/\s+/g,' ');
@@ -34,7 +34,8 @@ export function createMemoryManager(bank, options={}) {
     key=clean(key);value=clean(value);
     requireThat(!sensitive.test(key+' '+value)&&!authoritative.test(key)&&!injectionFlags(value).length,'此内容不能保存为偏好记忆',400,'UNSAFE_MEMORY');
     if(key==='language')requireThat(['中文','English'].includes(value),'请选择中文或English',400,'INVALID_MEMORY');
-    if(key==='answer_length')requireThat(['简短','详细'].includes(value),'请选择简短或详细',400,'INVALID_MEMORY');
+    if(key==='answer_length')requireThat(['简短','适中','详细'].includes(value),'请选择简短、适中或详细',400,'INVALID_MEMORY');
+    if(key==='preferred_name')requireThat(value.length<=20,'称呼不超过20个字',400,'INVALID_MEMORY');
     return {key,value};
   }
   function epoch(p) { return bank.get('SELECT epoch FROM memory_epochs WHERE tenant_id=? AND user_id=?',...scope(p))?.epoch||0; }
@@ -48,7 +49,7 @@ export function createMemoryManager(bank, options={}) {
   }
   function activate(p,module){bank.run('INSERT INTO user_memory_modules VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,user_id,module) DO UPDATE SET updated_at=excluded.updated_at',...scope(p),module,now(),now());}
   function metadata(key,category,change={},route){
-    const base=classifyMemory(key,category),module=change.module||(base.module==='general'&&!['language','answer_length','analysis_style'].includes(key)?route?.primary_module:null)||base.module;
+    const base=classifyMemory(key,category),module=change.module||(base.module==='general'&&!['preferred_name','focus_areas','language','answer_length','analysis_style'].includes(key)?route?.primary_module:null)||base.module;
     const memory_type=change.memory_type||base.memory_type,intent=change.intent||'any';
     requireThat(Object.hasOwn(MODULES,module)&&['explicit','semantic','episodic','interaction'].includes(memory_type)&&(intent==='any'||INTENTS.includes(intent)),'记忆分类无效',400,'INVALID_MEMORY');return {module,memory_type,intent};
   }
@@ -144,15 +145,15 @@ export function createMemoryManager(bank, options={}) {
     if(/^(帮助|help)$/i.test(text))return '可以查询账户、分析账单；回复「查看我的记忆」管理偏好，或在App「我的 → 个性化与记忆」确认、修改、删除。资金操作仍需App验证。';
     const deletion=text.match(/^(?:删除|忘记)(?:记忆)?\s*(MEM[a-f0-9]+)$/i);
     if(deletion){remove(p,deletion[1]);return '该记忆已删除，旧对话不会将它自动恢复。';}
-    const deleteKey=text.match(/^(?:删除|忘记)(?:我的)?(回答语言|回答长度|分析方式|关注市场|关注行业|关注资产|投资目标|投资期限)(?:偏好|记忆)?$/);
+    const deleteKey=text.match(/^(?:删除|忘记)(?:我的)?(称呼|关注业务|回答语言|回答长度|分析方式|关注市场|关注行业|关注资产|投资目标|投资期限)(?:偏好|记忆)?$/);
     if(deleteKey){
-      const key=({回答语言:'language',回答长度:'answer_length',分析方式:'analysis_style',关注市场:'markets',关注行业:'sectors',关注资产:'watchlist',投资目标:'investment_goal',投资期限:'investment_horizon'})[deleteKey[1]];
+      const key=({称呼:'preferred_name',关注业务:'focus_areas',回答语言:'language',回答长度:'answer_length',分析方式:'analysis_style',关注市场:'markets',关注行业:'sectors',关注资产:'watchlist',投资目标:'investment_goal',投资期限:'investment_horizon'})[deleteKey[1]];
       const row=list(p).find(r=>r.key===key);if(row)remove(p,row.memory_id);
       return row?'该项记忆已删除，旧对话不会将它自动恢复。':'没有找到该项已保存记忆。';
     }
     const preference=text.match(/^(?:以后|今后)(?:请)?(?:用|使用)(中文|英文|English)(?:回答|回复)(?:我)?$/i);
-    const length=text.match(/^(?:以后|今后)(?:请)?(?:给我|回答|回复|分析|财务分析)*(?:更)?(简短|详细|完整)(?:的)?(?:回答|回复|分析|财务分析)?$/);
-    let change=preference?{key:'language',value:preference[1]==='中文'?'中文':'English'}:length?{key:'answer_length',value:length[1]==='简短'?'简短':'详细'}:null;
+    const length=text.match(/^(?:以后|今后)(?:请)?(?:给我|回答|回复|分析|财务分析)*(?:更)?(简短|适中|详细|完整)(?:的)?(?:回答|回复|分析|财务分析)?$/);
+    let change=preference?{key:'language',value:preference[1]==='中文'?'中文':'English'}:length?{key:'answer_length',value:length[1]==='完整'?'详细':length[1]}:null;
     if(text==='以后分析股票时先展示估值指标')change={key:'analysis_style',value:'先展示估值指标'};
     if(text==='以后比较投资方案时先讲风险')change={key:'analysis_style',value:'先说明下行风险'};
     if(text==='以后不要优先讲风险')change={key:'analysis_style',value:'按问题自然顺序说明'};
@@ -169,5 +170,5 @@ export function createMemoryManager(bank, options={}) {
     bank.run('DELETE FROM memory_module_summaries WHERE expires_at<=?',at);
   }
   const retrieval=createModularRetriever(bank,{scope,epoch,enabled,options:options.budgets});
-  return {enabled,list,profile,update,candidate,owned,confirm,remove,relevant,recent,command,cleanup,epoch,invalidate,activate,retrieve:retrieval.retrieve,setChangeListener:listener=>{onChange=listener;}};
+  return {enabled,validate,list,profile,update,candidate,owned,confirm,remove,relevant,recent,command,cleanup,epoch,invalidate,activate,retrieve:retrieval.retrieve,setChangeListener:listener=>{onChange=listener;}};
 }

@@ -34,6 +34,8 @@ body { background: #f5f5f5; }
 .bank-theme :is(.btn-primary, .pill.primary) { background: var(--brand); color: #fff; border: 0; box-shadow: none; }
 .bank-theme :is(.btn-primary, .pill.primary):hover:not(:disabled) { background: var(--brand-deep); }
 .bank-theme :is(.btn-primary, .pill.primary):disabled { background: #b4c3f5; opacity: 1; }
+.bank-theme .btn-primary.danger { background: var(--red); }
+.bank-theme .btn-primary.danger:hover:not(:disabled) { background: #d13f33; }
 .bank-theme .pill:not(.primary) { background: var(--pill); border-color: transparent; color: var(--brand); }
 .bank-theme .btn-primary { min-height: 44px; }
 .bank-theme :is(.btn-primary, .pill) { border-radius: 999px; }
