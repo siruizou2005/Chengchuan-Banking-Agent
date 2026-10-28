@@ -45,6 +45,7 @@ export function Transfer() {
   if (actionId) return <div className="page"><Notice>这是 Agent 生成的转账提议。请核对服务端记录中的收款人和金额，确认与验证后才会执行。</Notice>{action && action.tool === 'propose_transfer' ? <ActionCard action={action} /> : <Empty title="未找到该转账提议，请在操作与计划中检查状态" />}<button className="pill" onClick={() => navigate('tasks')}>查看全部操作与计划</button></div>;
   return <div className="page">
     {data.payees.length > 0 && <Card title="常用收款人" action="管理" onAction={() => navigate('payees')}><div className="payee-scroll">{data.payees.map(p => <button key={p.id} className={`payee${number === p.number ? ' selected' : ''}`} onClick={() => { setName(p.name); setNumber(p.number); setBank(p.bank); }}><Avatar size={40} /><strong>{p.name}</strong><small>尾号 {tail(p.number)}</small></button>)}</div></Card>}
+    <button className="pill" onClick={() => navigate('risk-transfer')}>转账草稿 · 独立核对与批准</button>
     <form className="card form-card stack-form" data-testid="transfer-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'transfer' }); }}>
       <Field label="收款人姓名"><input name="recipientName" placeholder="请输入收款人姓名" value={name} onChange={e => setName(e.target.value)} required minLength={2} maxLength={40} /></Field>
       <Field label="收款账号"><input name="recipientAccount" inputMode="numeric" placeholder="请输入16至19位银行卡号" value={number} onChange={e => setNumber(e.target.value.replace(/\s/g, ''))} required pattern="[0-9]{16,19}" /></Field>

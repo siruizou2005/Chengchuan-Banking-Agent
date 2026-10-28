@@ -50,7 +50,7 @@ export function createAuthorization(bank) {
     requireThat(rank[authorization.approved_level]>=rank[decision.level] && (decision.level!=='red'||hasSmsFactor(JSON.parse(authorization.factors))),'需补充App加强验证',403,'SUPPLEMENTAL_VERIFICATION_REQUIRED');
     const spent=bank.get('SELECT COALESCE(SUM(amount),0) AS n FROM authorization_executions WHERE action_id=?',action.id).n;
     requireThat(spent+step.amount<=scope.budget,'超出已授权预算',403,'AUTHORIZATION_BUDGET');
-    const p=Object.freeze({userId:user.id,runId:action.run_id,planId:authorization.plan_id,actionId:action.id,authorizationId:authorization.id,key,stepId,tool,digest:step.digest,amount:step.amount,at,transactionId,bodyFingerprint:args._transaction?hash(JSON.stringify(canonical(args._transaction))):undefined});
+    const p=Object.freeze({userId:user.id,runId:action.run_id,planId:authorization.plan_id,actionId:action.id,authorizationId:authorization.id,key,stepId,tool,digest:step.digest,amount:step.amount,at,transactionId,strong:authorization.approved_level==='red'&&hasSmsFactor(JSON.parse(authorization.factors)),bodyFingerprint:args._transaction?hash(JSON.stringify(canonical(args._transaction))):undefined});
     permits.add(p); return p;
   }
   function assertPermit(p,user,tool,args) {requireThat(p&&permits.has(p)&&p.userId===user.id&&p.tool===tool&&p.digest===paramsDigest(args),'缺少可信执行上下文',403,'AUTHORIZATION_REQUIRED');}

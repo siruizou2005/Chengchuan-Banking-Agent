@@ -3,7 +3,7 @@
 export const featureGroups = {
   accounts: ['accounts', 'ledger', 'receive', 'scan', 'payees'],
   wealth: ['wealth', 'deposit', 'funds', 'risk', 'advice'],
-  transfer: ['transfer', 'transactions'],
+  transfer: ['transfer', 'transactions', 'risk-transfer'],
   credit: ['credit'],
   loan: ['loan'],
   life: ['life', 'appointments', 'support'],

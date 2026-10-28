@@ -13,6 +13,8 @@
     "build": "tsc --noEmit && vite build",
     "start": "node --env-file-if-exists=.env server/index.mjs --production",
     "test": "node --test tests/*.test.mjs",
+    "test:risk": "node --test tests/risk-mvp.test.mjs",
+    "demo:risk": "node scripts/demo-risk-mvp.mjs",
     "benchmark:memory": "node scripts/benchmark-memory.mjs",
     "snapshot:products": "node scripts/snapshot-products.mjs"
   },

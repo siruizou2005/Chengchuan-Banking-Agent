@@ -1,0 +1,12 @@
+.risk-transfer .risk-details { display: grid; grid-template-columns: minmax(5em, 1fr) 2fr; gap: .6rem; }
+.risk-transfer .risk-details dd { margin: 0; overflow-wrap: anywhere; }
+.risk-transfer .risk-accessibility { display: flex; align-items: center; gap: .6rem; margin: 1rem 0; }
+.risk-transfer .stack-form { margin: 1rem 0; }
+.risk-transfer .stack-form > label { display: flex; flex-direction: column; gap: .45rem; margin: .7rem 0; }
+.risk-transfer .stack-form input, .risk-transfer .stack-form select { width: 100%; box-sizing: border-box; min-height: 44px; padding: .7rem; border: 1px solid #b3cce3; border-radius: 10px; font: inherit; background: #fff; color: #12385d; }
+.risk-transfer .risk-edit { margin: 1rem 0; border-top: 1px solid #d7e4ef; padding-top: .8rem; }
+.risk-transfer .risk-edit summary { cursor: pointer; padding: .4rem 0; font-weight: 600; }
+.risk-transfer .risk-details { margin: 1rem 0; }
+.risk-transfer.risk-large { font-size: 1.25rem; color: #111; background: #fff; }
+.risk-transfer.risk-large input, .risk-transfer.risk-large select, .risk-transfer.risk-large button { font-size: 1.1em; min-height: 3rem; }
+.risk-transfer :focus-visible { outline: 3px solid #164b9d; outline-offset: 3px; }

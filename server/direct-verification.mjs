@@ -21,6 +21,11 @@ export function registerDirectVerification(route,services) {
    tool='propose_card_action';args={action:body.status==='frozen'?'freeze':body.status==='lost'?'report_lost':'unfreeze'};title='卡片状态调整';resource=card.id;
   }else requireThat(false,'不支持的业务确认入口',400,'INVALID_INTENT');
   const decision=decide(bank,user,tool,args,{excludeId:transaction?.id,phase:'execute',confirmed:true});
+  if(transaction?.type==='transfer'){
+   const e=services.risk.legacy(user,{...JSON.parse(transaction.payload),type:'transfer',amountMinor:transaction.amount,heldByThisPayment:transaction.amount},'PRE_APPROVAL',transaction.id);
+   services.risk.assertAllowed(e);
+   if(e.finalAction==='STEP_UP'){decision.level='red';decision.requiredFactors=['explicit_confirmation','pin','sms','face_or_registered_fallback'];decision.outcome='require_verification';}
+  }
   const credentialHashes=Object.fromEntries(['newPin','newPassword'].filter(k=>body[k]!==undefined).map(k=>[k+'Digest',hash(String(body[k]))]));
   const digest=paramsDigest({path,body:canonical(body),credentialHashes,transaction:transaction?{id:transaction.id,amount:transaction.amount,payload:JSON.parse(transaction.payload)}:undefined});
   return {decision,digest,title,resource,transaction};

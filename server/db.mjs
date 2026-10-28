@@ -7,6 +7,7 @@ import { migrateFeishu } from './channels/feishu-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
+import { migrateRisk } from './risk/schema.mjs';
 import { DEMO_EMAILS, OWNER_PHONE, OWNER_PASSWORD_HASH } from './demo-users.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
@@ -164,6 +165,7 @@ export function createBank(path) {
   migrateFeishu(db);
   migratePersonalization(db);
   migrateProducts(db);
+  migrateRisk(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
     CREATE TABLE IF NOT EXISTS email_codes (id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);`);
