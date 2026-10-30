@@ -25,8 +25,10 @@ sudo install -d -m 0755 -o siruizou -g siruizou "$release_dir"
 tar -xzf "$upload_dir/bank-release.tar.gz" -C "$release_dir"
 cd "$release_dir"
 export PATH="/opt/chengchuan-bank/runtime/bin:$PATH"
-npm ci --omit=dev --ignore-scripts
+# 测试需要开发依赖（如 typescript），与 CI 一致地完整安装，测试通过后再移除。
+npm ci --ignore-scripts
 npm test
+npm prune --omit=dev --ignore-scripts
 sudo chown -R root:root "$release_dir"
 sudo install -d -m 0700 -o bank-sim -g bank-sim /var/lib/chengchuan-bank
 test ! -e /opt/chengchuan-bank/current

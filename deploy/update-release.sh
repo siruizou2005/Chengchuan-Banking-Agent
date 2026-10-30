@@ -13,9 +13,11 @@ test ! -e "$release_dir"
 sudo install -d -m 0755 -o "$(id -un)" -g "$(id -gn)" "$release_dir"
 tar -xzf "$upload_dir/bank-release.tar.gz" -C "$release_dir"
 cd "$release_dir"
-npm ci --omit=dev --ignore-scripts
+# 测试需要开发依赖（如 typescript），与 CI 一致地完整安装，测试通过后再移除。
+npm ci --ignore-scripts
 # 部分用例按计时判断，服务器负载高时可能偶发超时：失败后重试一次，真正的失败会再次失败。
 npm test || { echo '测试失败，重试一次' >&2; npm test; }
+npm prune --omit=dev --ignore-scripts
 sudo chown -R root:root "$release_dir"
 
 if test -f "$upload_dir/env"; then
