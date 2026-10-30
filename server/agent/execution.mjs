@@ -2,9 +2,13 @@ import { randomUUID, createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { requireThat } from '../errors.mjs';
 import { canonical } from '../authorization.mjs';
+import { assertAgentControl } from '../puma/control.mjs';
 
 // One durable FIFO and execution lease for App, Feishu and WeChat.
 export function enqueueExecution(bank,userId,requestId,channel,deadline=Date.now()+30000) {
+  const epoch=assertAgentControl(bank,userId);
+  bank.run('INSERT OR IGNORE INTO puma_queue_epochs VALUES(?,?,?)',requestId,userId,epoch);
+  assertAgentControl(bank,userId,bank.get('SELECT epoch FROM puma_queue_epochs WHERE request_id=?',requestId).epoch);
   bank.run("INSERT OR IGNORE INTO agent_execution_queue(request_id,user_id,channel,status,owner,deadline,created_at) VALUES(?,?,?,'queued','',?,?)",requestId,userId,channel,deadline,Date.now());
 }
 export function createExecutionCoordinator(bank, options = {}) {
@@ -17,6 +21,7 @@ export function createExecutionCoordinator(bank, options = {}) {
     });
     try {
       for (;;) {
+        assertAgentControl(bank,userId,bank.get('SELECT epoch FROM puma_queue_epochs WHERE request_id=?',requestId).epoch);
         signal?.throwIfAborted();
         const claim = bank.atomic(() => {
           const t = Date.now();
@@ -42,6 +47,7 @@ export function createExecutionCoordinator(bank, options = {}) {
 }
 
 export function assertChannelExecution(bank, context, userId) {
+  if(context.requestId || context.runId || context.controlEpoch!==undefined) assertAgentControl(bank,userId,context.controlEpoch);
   context.assertExecution?.();
   if (!['wechat','feishu'].includes(context.channel)) return;
   const binding=bank.get("SELECT * FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND channel=? AND status='active' AND auth_state='valid'",context.bindingId||context.sessionId||null,context.sessionId||null,userId,context.channel);

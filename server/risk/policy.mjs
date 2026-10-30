@@ -1,6 +1,7 @@
 import { applyAgePolicy } from './age.mjs';
+import { additionalSignals, RULE_REGISTRY } from '../puma/rules.mjs';
 
-export const RISK_VERSION = 'risk-mvp-v1';
+export const RISK_VERSION = 'risk-mvp-v1/puma-fixed-v1';
 export function detectSignals(f, candidate, trusted = {}, config = {}) {
   const noise = config.noise ?? 10000, amount = candidate?.amountMinor || 0, result = [];
   const add = (code, group, severity = 'moderate', evidenceRef = code) => result.push({ code, group, severity, evidenceRef, objective: true });
@@ -8,8 +9,8 @@ export function detectSignals(f, candidate, trusted = {}, config = {}) {
     if (f.newBeneficiary) add('NEW_BENEFICIARY', 'beneficiary_change');
     const m = f.monthly[candidate?.category || 'transfer'];
     if (m?.months >= 6 && m.current + amount > m.median + 3 * m.scale && m.current + amount > noise) add('MONTHLY_ANOMALY', 'unusual_outflow');
-    if (f.sampleCount >= 20 && amount > Math.max(3 * f.single.median, f.single.p95, noise)) add('LARGE_VS_HISTORY', 'unusual_outflow');
-    else if (f.sampleCount >= 20 && amount > Math.max(1.5 * f.single.median, noise)) add('MILD_OUTFLOW_ANOMALY', 'unusual_outflow', 'mild');
+    if (f.sampleCount >= (config.minimumSamples ?? 20) && amount > Math.max(3 * f.single.median, f.single.p95, noise)) add('LARGE_VS_HISTORY', 'unusual_outflow');
+    else if (f.sampleCount >= (config.minimumSamples ?? 20) && amount > Math.max(1.5 * f.single.median, noise)) add('MILD_OUTFLOW_ANOMALY', 'unusual_outflow', 'mild');
     if (f.historyDays >= 90 && ((f.windows.h24.count + 1 > f.dailyCount.median + 3 * f.dailyCount.scale && f.windows.h24.amount + amount > f.dailyAmount.median + 3 * f.dailyAmount.scale)
       || (f.windows.d7.count + 1 > f.weeklyCount.median + 3 * f.weeklyCount.scale && f.windows.d7.amount + amount > f.weeklyAmount.median + 3 * f.weeklyAmount.scale))) add('VELOCITY_SPIKE', 'transaction_velocity');
     if (f.balance !== null && amount + f.windows.h24.amount >= f.balance * (config.drainRatio ?? .5) && amount > noise) add('BALANCE_DRAIN', 'balance_drain');
@@ -23,7 +24,7 @@ export function detectSignals(f, candidate, trusted = {}, config = {}) {
     if (e.type === 'CONFIRMED_FRAUD') add(e.type, 'confirmed_external_fraud_intelligence', 'block', e.sourceRef);
     if (e.type === 'NAME_MISMATCH') add(e.type, 'beneficiary_verification_mismatch', 'moderate', e.sourceRef);
   }
-  return result;
+  return [...result,...additionalSignals(f,candidate,trusted,config)];
 }
 export function coreDecision(signals) {
   if (signals.some(s => s.severity === 'block')) return 'BLOCK';
@@ -39,5 +40,6 @@ export function evaluatePolicy(features, candidate, trusted, identity, agePolicy
   const coreAction = coreDecision(signals), age = applyAgePolicy(coreAction, signals, identity, trusted.at, agePolicy);
   return { coreAction, ...age, policyVersion: `${RISK_VERSION}/${age.agePolicyVersion}/${age.ageMode}`,
     reasonCodes: [...signals.map(s => s.code), ...features.notices, ...(features.balance === null ? ['UNKNOWN_FEATURE'] : []), ...(age.ageEffect === 'STEP_UP' ? ['AGE_STEP_UP_APPLIED'] : [])],
+    ruleHits: [...new Set(signals.map(s=>RULE_REGISTRY.find(r=>r.signal===s.code)?.rule_id).filter(Boolean))],
     evidenceRefs: signals.map(s => s.evidenceRef), signals };
 }

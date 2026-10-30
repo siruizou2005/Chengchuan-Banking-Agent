@@ -31,6 +31,7 @@ export function createMemoryEvolution(bank,memory,options={}) {
   }
   function audit(p,row,action) {bank.run('INSERT INTO memory_changes(tenant_id,user_id,memory_id,action,version,source_message_id,created_at) VALUES(?,?,?,?,?,?,?)',...scope(p),row.hypothesis_id,action,row.version,null,now());}
   function consolidate(p,{expectedEpoch=memory.epoch(p),at=Date.now()}={}) {
+    if(!memory.enabled(p))return [];
     return bank.atomic(()=>{
       requireThat(expectedEpoch===memory.epoch(p),'记忆已更新，旧整合任务已取消',409,'MEMORY_CONTEXT_CHANGED');
       for(const [signal,def] of Object.entries(BEHAVIORS)){
@@ -53,7 +54,7 @@ export function createMemoryEvolution(bank,memory,options={}) {
     });
   }
   function collect(p,{input,requestId,sessionId,route,expectedEpoch,runId}) {
-    if(!memory.enabled()||route.intent==='update_preference'||injectionFlags(input).length)return;
+    if(!memory.enabled(p)||route.intent==='update_preference'||injectionFlags(input).length)return;
     requireThat(expectedEpoch===memory.epoch(p),'旧事件不能更新记忆',409,'MEMORY_CONTEXT_CHANGED');
     const session=bank.get('SELECT 1 FROM agent_sessions WHERE id=? AND user_id=? AND channel=? AND archived=0',sessionId,scope(p)[1],p.channel);
     requireThat(session,'会话不存在',404,'NOT_FOUND');
@@ -78,7 +79,7 @@ export function createMemoryEvolution(bank,memory,options={}) {
     });
   }
   function hints(p,route) {
-    if(!memory.enabled()||!['analyze','compare','explain'].includes(route.intent))return [];
+    if(!memory.enabled(p)||!['analyze','compare','explain'].includes(route.intent))return [];
     const result=[];
     for(const row of view(p)){
       if(row.status!=='tentative'||!['general',route.primary_module,...route.secondary_modules].includes(row.module))continue;
@@ -121,7 +122,7 @@ export function createMemoryEvolution(bank,memory,options={}) {
   }
   memory.setChangeListener(invalidate);
   function history(p,route){
-    if(!memory.enabled()||route.retrieval_depth!=='detail')return [];
+    if(!memory.enabled(p)||route.retrieval_depth!=='detail')return [];
     return Object.entries(BEHAVIORS).filter(([,d])=>['general',route.primary_module,...route.secondary_modules].includes(d.module))
       .flatMap(([signal,def])=>evidence(p,signal).slice(0,3).map(e=>({key:`evidence:${e.event_id}`,value:def.text,polarity:e.polarity,created_at:e.created_at,unconfirmed:true}))).slice(0,6);
   }

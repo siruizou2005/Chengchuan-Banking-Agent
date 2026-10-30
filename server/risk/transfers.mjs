@@ -38,7 +38,8 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     const payload = { sourceAccountRef: account.id, beneficiaryRef: p.id, beneficiaryToken: hash(p.number),
       beneficiaryName: p.name, beneficiaryMasked: `****${p.number.slice(-4)}`, institution: p.bank,
       targetId: target?.id || 'system', ownAccount: target?.user_id === user.id,
-      amountMinor: body.amountMinor, currency: body.currency, memo: body.memo || '', feeMinor: 0 };
+      amountMinor: body.amountMinor, currency: body.currency, memo: body.memo || '', feeMinor: 0,
+      feeBearer: 'SENDER', paymentChannel: 'MOCK', paymentNetwork: 'SIMULATOR' };
     return payload;
   }
   const digest = (userId, draftId, version, payload) => paramsDigest({ userId, draftId, version, payload });
@@ -65,6 +66,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       beneficiaryRef: d.beneficiary_ref, beneficiaryName: p.beneficiaryName, beneficiaryMasked: p.beneficiaryMasked,
       institution: p.institution, amountMinor: d.amount_minor, currency: d.currency, memo: p.memo, feeMinor: p.feeMinor,
       expiresAt: d.expires_at, simulation: true, confirmationUrl: `/#risk-transfer?id=${encodeURIComponent(d.id)}`,
+      delegateApprovals: services.puma?.delegates.status(d) || [],
       risk: e ? { action: e.finalAction, messages, offers: e.offers, evaluationId: e.evaluationId } : null };
   }
   function create(user, body) {
@@ -72,7 +74,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       const p = parseInput(user, body), draftId = id('RD'), at = now();
       bank.run('INSERT INTO risk_drafts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', draftId, user.id, p.sourceAccountRef, p.beneficiaryRef,
         JSON.stringify(p), p.amountMinor, p.currency, 1, digest(user.id, draftId, 1, p), 'RISK_CHECKED', null, at, at, new Date(Date.parse(at) + 900000).toISOString());
-      const d = owned(user, draftId); evaluate(user, d, 'DRAFT');
+      const d = owned(user, draftId); services.puma?.delegates.sync(d); evaluate(user, d, 'DRAFT');
       bank.audit(user.id, 'risk.draft.created', draftId, { version: 1 }); return view(user, draftId);
     });
   }
@@ -99,6 +101,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
   function intent(user, draftId, body) {
     requireThat(Object.keys(body).every(k => ['version', 'payloadHash'].includes(k)), '确认参数包含无效字段', 400, 'INVALID_APPROVAL');
     const d = owned(user, draftId); match(d, body);
+    services.puma?.delegates.sync(d);
     requireThat(editable.includes(d.status), '草稿状态不可批准', 409, 'DRAFT_STATE');
     const e = evaluate(user, d, 'PRE_APPROVAL'); risk.assertAllowed(e);
     return bank.atomic(() => {
@@ -171,10 +174,12 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     const d = owned(user, draftId);
     if (bank.get('SELECT id FROM risk_payments WHERE draft_id=?', d.id)) return view(user, d.id);
     requireThat(d.status === 'USER_APPROVED', '缺少用户交易批准', 403, 'APPROVAL_REQUIRED');
+    if(services.puma && !services.puma.delegates.ready(d)) return view(user,d.id);
     const e = evaluate(user, d, 'PRE_EXECUTION'); risk.assertAllowed(e);
     const payment = bank.atomic(() => {
       const latest = owned(user, d.id);
       requireThat(latest.status === 'USER_APPROVED' && latest.payload_hash === d.payload_hash, '草稿状态变化', 409, 'DRAFT_STATE');
+      requireThat(!services.puma || services.puma.delegates.ready(latest),'共同确认未完成',409,'DELEGATE_APPROVAL_REQUIRED');
       bank.run("UPDATE risk_drafts SET status='PRE_EXECUTION_CHECK' WHERE id=?", d.id);
       const a = bank.get('SELECT * FROM risk_approvals WHERE user_id=? AND draft_id=? AND version=? AND payload_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1', user.id, d.id, d.version, d.payload_hash, now());
       requireThat(a, '批准失效，请重新确认', 403, 'APPROVAL_REQUIRED');

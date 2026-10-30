@@ -14,6 +14,9 @@
     "start": "node --env-file-if-exists=.env server/index.mjs --production",
     "test": "node scripts/test.mjs",
     "test:risk": "node --test tests/risk-mvp.test.mjs",
+    "test:puma": "node --test --test-concurrency=2 tests/puma.test.mjs tests/puma-control.test.mjs tests/risk-mvp.test.mjs",
+    "replay:puma": "node scripts/replay-puma.mjs",
+    "check:puma-ui": "node scripts/check-puma-ui.mjs",
     "demo:risk": "node scripts/demo-risk-mvp.mjs",
     "benchmark:memory": "node scripts/benchmark-memory.mjs",
     "snapshot:products": "node scripts/snapshot-products.mjs"

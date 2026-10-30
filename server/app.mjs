@@ -22,6 +22,9 @@ import { createContextAssembler } from './agent/context-assembler.mjs';
 import { createRiskService } from './risk/service.mjs';
 import { createRiskTransfers } from './risk/transfers.mjs';
 import { registerRiskRoutes } from './risk/routes.mjs';
+import { createAgentControl } from './puma/control.mjs';
+import { createPumaService, registerPumaRoutes } from './puma/service.mjs';
+import { loadPumaPolicy } from './puma/config.mjs';
 import { createEnrollment, registerEnrollmentRoutes } from './agent/enrollment.mjs';
 import { createOnboarding } from './agent/onboarding.mjs';
 
@@ -224,6 +227,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     services.authorization.assertSettlement(permit,user,t);
     requireThat(t.user_id === user.id && t.status === 'pending', '交易状态无效', 409, 'INVALID_STATE');
     if (t.type === 'transfer') {
+      services.puma?.delegates.assertLegacy(user,t.amount);
       const e = services.risk.legacy(user, { ...JSON.parse(t.payload), type: 'transfer', amountMinor: t.amount, heldByThisPayment: t.amount }, 'PRE_EXECUTION', t.id);
       services.risk.assertAllowed(e);
       requireThat(e.finalAction !== 'STEP_UP' || permit.strong, '风险已变化，请完成加强验证', 403, 'SUPPLEMENTAL_VERIFICATION_REQUIRED');
@@ -291,10 +295,16 @@ export function createApp(dbPath = ':memory:', options = {}) {
   services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
   services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
-  services.risk = createRiskService(bank, options.risk);
+  services.risk = createRiskService(bank, {...options.risk,pumaRules:loadPumaPolicy(options.puma).rules});
+  services.puma = createPumaService(bank, services, options.puma);
   const riskTransfers = createRiskTransfers(bank, services, services.risk, options.risk);
   services.riskDrafts = riskTransfers.drafts;
+  services.agentControl = createAgentControl(bank, services, riskTransfers.drafts);
+  route('get', '/agent/control', '本人助手运行状态', (req,res) => res.json(services.agentControl.state(req.user)));
+  route('post', '/agent/control/stop', '停止全部助手动作并撤销未执行授权', (req,res) => res.json(services.agentControl.stop(req.user)));
+  route('post', '/agent/control/resume', '可信认证后恢复助手', (req,res) => res.json(services.agentControl.resume(req.user,req.body.pin)));
   registerRiskRoutes(route, bank, services, services.risk, riskTransfers);
+  registerPumaRoutes(route, bank, services, riskTransfers);
   services.enrollment = createEnrollment(services, { agreements: options.agreements });
   services.onboarding = createOnboarding(services);
   const agent = createAgent(services, options.chat);

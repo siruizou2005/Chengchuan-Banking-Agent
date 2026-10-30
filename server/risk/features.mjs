@@ -20,7 +20,7 @@ export function normalizeTransactions(rows) {
   }
   return [...dedup.values()].filter(r => r.status === 'SETTLED' && r.direction === 'OUT' && !r.own_account && !r.reversal && !r.refund);
 }
-export function extractFeatures({ rows = [], userId, currency, at, timezone = 'Asia/Shanghai', coverageStart, balance, candidate, noise = 10000, fallbackRate = .1 }) {
+export function extractFeatures({ rows = [], userId, currency, at, timezone = 'Asia/Shanghai', coverageStart, balance, candidate, noise = 10000, fallbackRate = .1, windowMinutes = 60 }) {
   const time = Date.parse(at), today = localDate(at, timezone), month = today.slice(0, 7), day = Number(today.slice(8));
   const history = normalizeTransactions(rows).filter(r => r.user_id === userId && r.currency === currency && Date.parse(r.occurred_at) <= time)
     .map(r => ({ ...r, date: localDate(r.occurred_at, timezone) }));
@@ -38,7 +38,7 @@ export function extractFeatures({ rows = [], userId, currency, at, timezone = 'A
   const single = robust(eligible.map(r => r.amount_minor), noise, fallbackRate);
   const daily = Array.from({ length: 30 }, (_, i) => history.filter(r => Date.parse(r.occurred_at) > time - (i + 2) * DAY && Date.parse(r.occurred_at) <= time - (i + 1) * DAY));
   const weekly = Array.from({ length: 12 }, (_, i) => history.filter(r => Date.parse(r.occurred_at) > time - (i + 2) * 7 * DAY && Date.parse(r.occurred_at) <= time - (i + 1) * 7 * DAY));
-  return { currency, windows: { h24: window(1), d7: window(7), d30: window(30) }, monthly, single, sampleCount: eligible.length,
+  return { currency, windows: { short: window(windowMinutes/1440), m60: window(1/24), h24: window(1), d7: window(7), d30: window(30) }, monthly, single, sampleCount: eligible.length,
     dailyCount: robust(daily.map(v => v.length), 1), dailyAmount: robust(daily.map(v => v.reduce((s, r) => s + r.amount_minor, 0)), noise),
     weeklyCount: robust(weekly.map(v => v.length), 1), weeklyAmount: robust(weekly.map(v => v.reduce((s, r) => s + r.amount_minor, 0)), noise),
     historyDays: first ? Math.max(0, Math.floor((time - Date.parse(first)) / DAY)) : 0,

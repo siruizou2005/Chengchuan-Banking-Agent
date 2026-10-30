@@ -5,7 +5,7 @@ import { Card, InlineError, Notice, PinField } from './ui';
 import { Verify } from './Verify';
 import './risk-transfer.css';
 
-type Draft = { id: string; version: number; payloadHash: string; status: string; sourceAccountRef: string; beneficiaryRef: string; beneficiaryName: string; beneficiaryMasked: string; institution: string; amountMinor: number; currency: string; memo: string; feeMinor: number; risk: { action: string; messages: string[]; offers: string[] } };
+type Draft = { id: string; version: number; payloadHash: string; status: string; sourceAccountRef: string; beneficiaryRef: string; beneficiaryName: string; beneficiaryMasked: string; institution: string; amountMinor: number; currency: string; memo: string; feeMinor: number; delegateApprovals?: { id: string; status: string }[]; risk: { action: string; messages: string[]; offers: string[] } };
 type Intent = { challengeId: string; version: number; payloadHash: string; verificationActionId: string | null; draft: Draft };
 const statuses: Record<string, string> = { RISK_CHECKED: '尚未授权', AWAITING_APPROVAL: '等待本人批准', USER_APPROVED: '已批准，尚未支付', PRE_EXECUTION_CHECK: '执行前复核中', HOLD_REVIEW: '草稿未提交，待复核', BLOCKED: '草稿未提交', SUBMITTING: '正在提交', PENDING: '渠道处理中，尚未确认成功', SETTLED: '模拟支付已完成', FAILED: '模拟支付失败', CANCELLED: '已取消', EXPIRED: '已过期' };
 const editable = ['RISK_CHECKED', 'AWAITING_APPROVAL', 'USER_APPROVED', 'HOLD_REVIEW', 'BLOCKED'];
@@ -24,7 +24,7 @@ export function RiskTransfer() {
   useEffect(() => { setDraft(null); setIntent(null); setToken(''); if (draftId) load(draftId).catch(e => setError(e.message)); }, [draftId]);
   useEffect(() => { if (!draftId) api<Draft[]>('/v1/transfers/drafts').then(setSaved).catch(e => setError(e.message)); }, [draftId, data.user.id]);
   useEffect(() => {
-    if (!draft || !['PENDING', 'SUBMITTING'].includes(draft.status)) return;
+    if (!draft || !['PENDING', 'SUBMITTING', 'USER_APPROVED'].includes(draft.status)) return;
     const timer = setInterval(() => { load(draft.id).catch(e => setError(e.message)); }, 3000);
     return () => clearInterval(timer);
   }, [draft?.id, draft?.status]);
@@ -40,6 +40,7 @@ export function RiskTransfer() {
       <dt>收款人</dt><dd>{draft.beneficiaryName}</dd><dt>收款账户</dt><dd>{draft.beneficiaryMasked}</dd><dt>金融机构</dt><dd>{draft.institution}</dd>
       <dt>金额</dt><dd>{draft.currency} {yuan(draft.amountMinor)}</dd><dt>费用</dt><dd>{draft.currency} {yuan(draft.feeMinor)}</dd><dt>用途</dt><dd>{draft.memo || '未填写'}</dd>
     </dl>{draft.risk?.messages.map(m => <Notice key={m}>{m}</Notice>)}
+      {draft.delegateApprovals?.some(c=>c.status!=='APPROVED')&&<Notice>本笔转账还需完成已设置的共同确认，尚未提交付款。若关系过期、撤销或存在利益冲突，请取消此草稿并联系人工核实。</Notice>}
       {draft.risk?.offers.includes('INDEPENDENT_VERIFICATION_OFFER') && <Notice>可通过自己保存的电话或官方客服独立核实收款用途，不使用对方临时发来的联系方式。</Notice>}
       {draft.risk?.offers.includes('ACCESSIBLE_ASSISTANCE_OFFER') && <Notice>需要协助时可自愿联系人工客服；您无需添加家属或让他人代为批准。</Notice>}
     </div>}

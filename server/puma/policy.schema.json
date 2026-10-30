@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PUMA simulator policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "flags", "rules", "livePaymentEnabled"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[\\w.-]{1,80}$" },
+    "livePaymentEnabled": { "const": false },
+    "flags": {
+      "type": "object", "additionalProperties": false,
+      "required": ["puma_memory_v2", "puma_behavior_model", "puma_trait_research", "puma_scam_risk_shadow", "puma_age_protection", "puma_delegate_approval", "puma_dynamic_policy"],
+      "properties": {
+        "puma_memory_v2": { "$ref": "#/$defs/mode" },
+        "puma_behavior_model": { "$ref": "#/$defs/mode" },
+        "puma_trait_research": { "enum": ["disabled", "shadow"] },
+        "puma_scam_risk_shadow": { "enum": ["disabled", "shadow"] },
+        "puma_age_protection": { "$ref": "#/$defs/mode" },
+        "puma_delegate_approval": { "$ref": "#/$defs/mode" },
+        "puma_dynamic_policy": { "$ref": "#/$defs/mode" }
+      }
+    },
+    "rules": {
+      "type": "object", "additionalProperties": false,
+      "required": ["windowMinutes", "burstCount", "splitAmountMinor", "minimumSamples", "riskFlagDays"],
+      "properties": {
+        "windowMinutes": { "type": "integer", "minimum": 1 },
+        "burstCount": { "type": "integer", "minimum": 1 },
+        "splitAmountMinor": { "type": "integer", "minimum": 1 },
+        "minimumSamples": { "type": "integer", "minimum": 1 },
+        "riskFlagDays": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": { "mode": { "enum": ["disabled", "shadow", "monitored_canary", "enabled"] } },
+  "allOf": [
+    { "if": { "properties": { "flags": { "properties": { "puma_behavior_model": { "not": { "const": "disabled" } } } } } }, "then": { "properties": { "flags": { "properties": { "puma_memory_v2": { "not": { "const": "disabled" } } } } } } },
+    { "if": { "properties": { "flags": { "properties": { "puma_dynamic_policy": { "not": { "const": "disabled" } } } } } }, "then": { "properties": { "flags": { "properties": { "puma_scam_risk_shadow": { "not": { "const": "disabled" } } } } } } } }
+  ]
+}

@@ -15,7 +15,7 @@ export function createModularRetriever(bank,{scope,epoch,enabled,options={}}) {
     const started=performance.now(),owner=scope(p),budget={...memoryBudgets(options),...overrides};
     let sqliteMs=0;
     const sql=(method,...args)=>{const start=performance.now();try{return bank[method](...args);}finally{sqliteMs+=performance.now()-start;}};
-    if(!enabled())return {items:[],bytes:2,query_ms:0,cache_hits:0,levels:{core:0,module:0,history:0}};
+    if(!enabled(p))return {items:[],bytes:2,query_ms:0,cache_hits:0,levels:{core:0,module:0,history:0}};
     requireThat(Object.hasOwn(MODULES,route.primary_module)&&route.secondary_modules.every(m=>Object.hasOwn(MODULES,m)),'模块路由无效',400,'INVALID_MEMORY_ROUTE');
     const time=new Date().toISOString(),currentEpoch=epoch(p),terms=queryTerms(query),items=[],seen=new Set(),levels={core:0,module:0,history:0};let hits=0;
     const valid="status='active' AND confirmed=1 AND (expires_at IS NULL OR expires_at>?)";

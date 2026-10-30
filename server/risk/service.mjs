@@ -9,7 +9,7 @@ import { evaluatePolicy } from './policy.mjs';
 
 const cleanText = text => redact(String(text)).replace(/\b\d{4}-\d{2}-\d{2}\b/g, '[date]').slice(0, 1000);
 export function createRiskService(bank, options = {}) {
-  const rules = { noise: 10000, fallbackRate: .1, drainRatio: .5, dormantDays: 90, ...options.rules };
+  const rules = { noise: 10000, fallbackRate: .1, drainRatio: .5, dormantDays: 90, ...options.pumaRules, ...options.rules };
   requireThat(Number.isSafeInteger(rules.noise) && rules.noise > 0 && Number.isFinite(rules.fallbackRate) && rules.fallbackRate > 0 && rules.fallbackRate <= 1
     && Number.isFinite(rules.drainRatio) && rules.drainRatio > 0 && rules.drainRatio <= 1 && Number.isInteger(rules.dormantDays) && rules.dormantDays > 0, '风控规则配置无效', 503, 'INVALID_RISK_POLICY');
   const file = options.policyFile || process.env.RISK_POLICY_FILE;
@@ -41,19 +41,33 @@ export function createRiskService(bank, options = {}) {
     try {
       requireThat(sync(options.available) !== false, '风控服务暂不可用', 503, 'RISK_UNAVAILABLE');
       const identity = sync(options.identity, user.id) || null;
-      const trusted = { at, events: sync(options.signals, user.id, candidate) || [] };
+      expire();
+      const trusted = { at, events: [...(sync(options.signals, user.id, candidate) || [])] };
+      const reviewed=bank.all(`SELECT e.snapshot,f.updated_at FROM risk_flags f JOIN risk_evaluations e ON e.id=f.evaluation_id
+        WHERE f.user_id=? AND f.scope_ref=? AND f.status='FALSE_POSITIVE' AND f.expires_at>?`,user.id,draftId||'analysis',at);
+      trusted.events=trusted.events.filter(event=>!reviewed.some(r=>event.occurredAt&&event.occurredAt<=r.updated_at&&JSON.parse(r.snapshot).evidenceRefs.includes(hash(event.sourceRef||''))));
+      if(candidate?.beneficiaryRef)for(const flag of bank.all(`SELECT f.*,l.subject_ref FROM risk_flags f JOIN puma_risk_links l ON l.flag_id=f.id
+        WHERE f.user_id=? AND l.scope='payee' AND l.subject_ref=? AND l.severity='HIGH' AND f.status IN ('OPEN','UNDER_REVIEW','CONFIRMED') AND f.expires_at>?`,user.id,candidate.beneficiaryRef,at)){
+        const fraud=bank.get("SELECT id FROM puma_feedback WHERE flag_id=? AND outcome='CONFIRMED_FRAUD'",flag.id);
+        trusted.events.push({type:fraud?'CONFIRMED_FRAUD':'REPEAT_SUSPICIOUS_PAYEE',verified:true,sourceRef:flag.id,occurredAt:flag.created_at,expiresAt:flag.expires_at});
+      }
       const account = candidate?.sourceAccountRef ? bank.get('SELECT * FROM accounts WHERE id=? AND user_id=?', candidate.sourceAccountRef, user.id) : null;
       features = extractFeatures({ rows: sync(options.transactions, user.id) || rows(user.id), userId: user.id, currency: candidate?.currency || 'CNY', at,
         timezone: policy.businessTimezone, candidate, coverageStart: sync(options.coverageStart, user.id),
-        noise: rules.noise, fallbackRate: rules.fallbackRate,
+        noise: rules.noise, fallbackRate: rules.fallbackRate, windowMinutes:rules.windowMinutes,
         balance: account ? { available: account.balance - account.held + (candidate.heldByThisPayment || 0), currency: 'CNY', asOf: at } : null });
       evaluation = evaluatePolicy(features, candidate, trusted, identity, policy, rules);
       evaluation.policyVersion += '/' + hash(JSON.stringify({ policy, rules })).slice(0, 12);
     } catch { throw new BusinessError('暂时无法完成风险检查，请稍后重试', 503, 'RISK_UNAVAILABLE'); }
     const evaluationId = id('RE'), policyFactsHash = hash(JSON.stringify({ features, signals: evaluation.signals, candidate }));
+    // A failed/uncalibrated research adapter never changes deterministic payment decisions.
+    let modelStatus='RESEARCH_ONLY';
+    if(options.scamPredictor)try{sync(options.scamPredictor,user.id,candidate);}catch{modelStatus='UNAVAILABLE';bank.run('INSERT INTO puma_metrics(user_id,kind,value,created_at) VALUES(?,?,1,?)',user.id,'MODEL_UNAVAILABLE',at);}
     // Persist allowlisted, hashed evidence only. Neither DOB nor upstream text reaches logs/LLM.
     const safe = { ...evaluation, evidenceRefs: evaluation.evidenceRefs.map(hash), signals: undefined,
-      evaluationId, policyFactsHash, stage, evaluatedAt: at, latencyMs: Math.round(performance.now() - started) };
+      evaluationId, policyFactsHash, stage, evaluatedAt: at, latencyMs: Math.round(performance.now() - started), modelStatus,
+      risk_decision_id:evaluationId, expiresAt:new Date(Date.parse(at)+300000).toISOString(),recheck_required:true,
+      actions:[({ALLOW:'ALLOW',WARN:'NOTICE',STEP_UP:'STEP_UP',HOLD_REVIEW:'MANUAL_REVIEW',BLOCK:'REJECT'})[evaluation.finalAction]] };
     bank.atomic(() => {
       bank.run('INSERT INTO risk_evaluations VALUES(?,?,?,?,?,?,?,?,?,?,?)', evaluationId, user.id, draftId, stage, safe.coreAction, safe.finalAction,
         safe.protectionProfile, safe.policyVersion, policyFactsHash, JSON.stringify(safe), at);
@@ -64,8 +78,14 @@ export function createRiskService(bank, options = {}) {
       for (const type of types) {
         const scope = draftId || 'analysis';
         if (!bank.get("SELECT f.id FROM risk_flags f JOIN risk_evaluations e ON e.id=f.evaluation_id WHERE f.user_id=? AND f.scope_ref=? AND f.flag_type=? AND f.expires_at>? AND (f.status IN ('OPEN','UNDER_REVIEW') OR (f.status='FALSE_POSITIVE' AND e.facts_hash=?))", user.id, scope, type, at, policyFactsHash))
-          bank.run('INSERT INTO risk_flags VALUES(?,?,?,?,?,?,?,?,?)', id('RF'), user.id, scope, type, 'OPEN', evaluationId, at, new Date(Date.parse(at) + 7 * 86400000).toISOString(), at);
+          bank.run('INSERT INTO risk_flags VALUES(?,?,?,?,?,?,?,?,?)', id('RF'), user.id, scope, type, 'OPEN', evaluationId, at, new Date(Date.parse(at) + (rules.riskFlagDays ?? 7) * 86400000).toISOString(), at);
       }
+      for(const f of bank.all('SELECT * FROM risk_flags WHERE evaluation_id=?',evaluationId)){
+        bank.audit(user.id,'risk.flag.created',f.id,{evaluationId});
+        const event=bank.get("SELECT event_id FROM puma_events WHERE user_id=? AND type='RISK_FLAG_UPDATED' AND resource_ref=? ORDER BY ingested_at DESC LIMIT 1",user.id,'ref:'+hash(f.id));
+        bank.run('INSERT OR IGNORE INTO puma_risk_links VALUES(?,?,?,?,?,?,?,?,?)',f.id,user.id,candidate?.beneficiaryRef?'payee':'transaction',candidate?.beneficiaryRef||draftId||'analysis',['HOLD_REVIEW','BLOCK'].includes(safe.coreAction)?'HIGH':'LOW',JSON.stringify(event?[event.event_id]:[]),safe.policyVersion,null,new Date(Date.parse(at)+86400000).toISOString());
+      }
+      bank.run('INSERT INTO puma_metrics(user_id,kind,value,created_at) VALUES(?,?,?,?)',user.id,'RISK_LATENCY_MS',safe.latencyMs,at);
     });
     return safe;
   }
@@ -88,6 +108,7 @@ export function createRiskService(bank, options = {}) {
       const reviewId = id('RR');
       bank.run('INSERT INTO risk_reviews VALUES(?,?,?,?,?,?,?)', reviewId, f.id, user.id, body.disposition, cleanText(body.rationale), body.nextReviewAt || null, now());
       bank.run('UPDATE risk_flags SET status=?,updated_at=? WHERE id=?', body.disposition, now(), f.id);
+      bank.run('UPDATE puma_risk_links SET review_owner=?,review_due=COALESCE(?,review_due) WHERE flag_id=?',user.id,body.nextReviewAt||null,f.id);
       bank.audit(f.user_id, 'risk.reviewed', f.id, { reviewerId: user.id, reviewId, disposition: body.disposition });
       return { id: reviewId, status: body.disposition };
     });
@@ -127,5 +148,5 @@ export function createRiskService(bank, options = {}) {
       beneficiaryRef: hash(body.recipientAccount), amountMinor: body.amountMinor, currency: 'CNY', category: 'transfer', ownAccount: target?.user_id === user.id,
       heldByThisPayment: body.heldByThisPayment || 0 }, stage, resource);
   }
-  return { evaluate, assertAllowed, flags, queue, review, appeal, fairness, metric, legacy, changePolicy, expire };
+  return { evaluate, assertAllowed, flags, queue, review, appeal, fairness, metric, legacy, changePolicy, expire, rows };
 }

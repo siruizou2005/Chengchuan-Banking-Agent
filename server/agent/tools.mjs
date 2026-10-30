@@ -8,6 +8,8 @@ import { wealthAdvice, compactAdvice } from '../wealth.mjs';
 import { requireThat, cents } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 import { resolvePrincipal } from './principal.mjs';
+import { consentAllowed } from '../puma/consent.mjs';
+import { assertAgentControl } from '../puma/control.mjs';
 const str=(maxLength=100)=>({type:'string',minLength:1,maxLength});
 const money={type:'string',pattern:'^(0|[1-9]\\d{0,8})(\\.\\d{1,2})?$',description:'人民币元字符串，最多2位小数'};
 const obj=(properties={},required=[])=>({type:'object',properties,required,additionalProperties:false});
@@ -59,6 +61,19 @@ export function validateArgs(name,args) {
  return clean;
 }
 export async function executeTool(services,user,name,raw,context={}) {
+ context={...context,controlEpoch:assertAgentControl(services.bank,user.id,context.controlEpoch)};
+ services.guard.assertOpen(user.id);
+ if(READ_TOOLS.has(name)&&name!=='recall')requireThat(consentAllowed(services.bank,user.id,'data_read'),'助手数据读取授权已撤销或过期',403,'DATA_CONSENT_REQUIRED');
+ const ref=context.toolCallId||id('TOOL');
+ const event=type=>services.puma?.evidence.ingest({user_id:user.id,type,occurred_at:now(),source:'agent',initiated_by:'AGENT',correlation_id:context.requestId||ref,resource_ref:ref,consent_scope:'security',evidence_quality:'SUFFICIENT'});
+ event('AGENT_TOOL_REQUESTED');
+ const result=await executeToolInternal(services,user,name,raw,context);
+ assertChannelExecution(services.bank,context,user.id);
+ services.guard.assertOpen(user.id);
+ event('AGENT_TOOL_COMPLETED');
+ return result;
+}
+async function executeToolInternal(services,user,name,raw,context={}) {
  services.guard.assertOpen(user.id);
  const args=validateArgs(name,raw),{bank}=services;
  assertChannelExecution(bank,context,user.id);
