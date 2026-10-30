@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { classifyMemory, MODULES, INTENTS } from './modules.mjs';
 import { routeBehavior } from './behavior-router.mjs';
 import { createModularRetriever } from './memory-retrieval.mjs';
+import { consentAllowed } from '../puma/consent.mjs';
 
 export const PROFILE_KEYS = ['preferred_name','focus_areas','language','answer_length','analysis_style','markets','sectors','watchlist','investment_goal','investment_horizon'];
 const sensitive = /password|\bpin\b|token|secret|密码|验证码|密钥|身份证|银行卡号|\d{11,19}|sk-[\w-]+/i;
@@ -26,7 +27,7 @@ export function boundedHistory(history, maxBytes = 24000) {
 
 export function createMemoryManager(bank, options={}) {
   let onChange=()=>{};
-  const enabled = () => options.enabled ?? process.env.PERSONALIZATION_ENABLED !== 'false';
+  const enabled = p => (options.enabled ?? process.env.PERSONALIZATION_ENABLED !== 'false') && (!p || consentAllowed(bank,p.user_id,'personalization'));
   const scope = p => { assertPrincipal(bank,p); return [p.tenant_id,p.user_id]; };
   const live = "status='active' AND confirmed=1 AND (expires_at IS NULL OR expires_at>?)";
   function validate(key,value) {
@@ -62,10 +63,11 @@ export function createMemoryManager(bank, options={}) {
       .map(row=>({...row,status:row.expires_at&&row.expires_at<=now()?'expired':row.status}));
   }
   function profile(p) {
+    if(!enabled(p))return {};
     return Object.fromEntries(bank.all(`SELECT key,value FROM agent_memory WHERE tenant_id=? AND user_id=? AND ${live}`,...scope(p),now()).filter(r=>PROFILE_KEYS.includes(r.key)).map(r=>[r.key,r.value]));
   }
   function update(p, change, source={}) {
-    requireThat(enabled(),'个性化功能已关闭',503,'PERSONALIZATION_DISABLED');
+    requireThat(enabled(p),'个性化功能已关闭',503,'PERSONALIZATION_DISABLED');
     const {key,value}=validate(change.key,change.value);
     requireThat(source.type==='explicit'||source.type==='confirmed','记忆需要本人确认',400,'MEMORY_CONFIRMATION_REQUIRED');
     const category=PROFILE_KEYS.includes(key)?'profile':change.category||'preference';
@@ -89,7 +91,7 @@ export function createMemoryManager(bank, options={}) {
     });
   }
   function candidate(p, change, source) {
-    if(!enabled())return {saved:false};
+    if(!enabled(p))return {saved:false};
     const {key,value}=validate(change.key,change.value);
     requireThat(source?.messageId&&typeof source.input==='string'&&typeof change.evidence==='string'&&change.evidence.length<=600&&change.evidence.trim().length>=2&&source.input.includes(change.evidence)&&change.evidence.includes(value),'候选缺少当前用户原文证据',400,'MEMORY_EVIDENCE_REQUIRED');
     return bank.atomic(()=>{
@@ -139,7 +141,7 @@ export function createMemoryManager(bank, options={}) {
     return row&&Date.parse(row.updated_at)>Date.now()-7*86400000?boundedHistory(JSON.parse(row.history)):[];
   }
   function command(p,input,messageId) {
-    if(!enabled())return null;
+    if(!enabled(p))return null;
     const text=input.trim().replace(/[。！!]$/,'');
     if(/^(查看|列出)(我的)?(记忆|偏好|关注的主题)$/.test(text))return list(p).filter(r=>r.status==='active').map(r=>`${r.key}：${r.value}（${r.memory_id}）`).join('\n')||'尚未保存已确认的记忆。';
     if(/^(帮助|help)$/i.test(text))return '可以查询账户、分析账单；回复「查看我的记忆」管理偏好，或在App「我的 → 个性化与记忆」确认、修改、删除。资金操作仍需App验证。';

@@ -55,6 +55,9 @@ test('按需拉取一次后缓存到期前不再请求，并发请求共享同�
 });
 
 test('外部接口超时或失败时立即返回缓存，并提示数据可能不是最新', async t => {
+  // AbortSignal.timeout uses an unref'ed timer; the fake fetch has no socket to
+  // keep Node alive while this test awaits the abort event.
+  const keepAlive = setInterval(() => {}, 1000); t.after(() => clearInterval(keepAlive));
   const hang = fakeFetch((_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('timeout')))));
   const { bank, catalog } = catalogWith({ remote: true, fetch: hang, timeoutMs: 50, waitMs: 20 });
   t.after(() => bank.db.close());

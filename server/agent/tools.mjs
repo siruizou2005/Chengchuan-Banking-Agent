@@ -8,6 +8,8 @@ import { wealthAdvice, compactAdvice } from '../wealth.mjs';
 import { requireThat, cents } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 import { resolvePrincipal } from './principal.mjs';
+import { consentAllowed } from '../puma/consent.mjs';
+import { assertAgentControl } from '../puma/control.mjs';
 const str=(maxLength=100)=>({type:'string',minLength:1,maxLength});
 const money={type:'string',pattern:'^(0|[1-9]\\d{0,8})(\\.\\d{1,2})?$',description:'人民币元字符串，最多2位小数'};
 const obj=(properties={},required=[])=>({type:'object',properties,required,additionalProperties:false});
@@ -22,6 +24,8 @@ const productDetail=p=>Object.fromEntries(Object.entries({id:p.id,name:p.name,ca
 const catalogNote=meta=>({source:meta.source,updatedAt:meta.updatedAt,stale:meta.stale,...(meta.notice?{notice:meta.notice}:{}),units:'收益率为百分比；minimum、purchaseLimit、principal为整数分；过往业绩不代表未来'});
 const STATS_BY=['category','merchant','platform','month','week','day','weekday','hour'];
 const definitions={
+ create_transfer_draft:['用户明确要求转账时优先使用：生成未授权的模拟转账草稿；只返回可信确认页面链接，聊天不能批准或执行支付。收款人必须来自resolve_recipient。amountMinor为整数分。',obj({beneficiaryRef:str(),sourceAccountRef:str(),amountMinor:{type:'integer',minimum:1,maximum:1000000000},currency:{type:'string',enum:['CNY']},memo:str(100)},['beneficiaryRef','amountMinor','currency'])],
+ get_finance_risk_summary:['读取本人可申诉的风险提示，不读取生日或内部检测规则',obj()],
  get_overview:['查询本人账户余额与可用资金',obj()],
  get_ledger:['查询本人流水明细，返回{total,shown,rows}；行含bj_time北京时间（只有日期表示原对账单无时间）、amount整数分、title、tag分类、kind类型（consumption消费/refund退款/income收入/transfer_out转账给他人/self本人账户互转/wallet充值提现/investment理财存款/debt信用卡贷款/opening期初余额）、merchant商户、platform支付平台。时段用preset/period/from+to，不传为全部；keyword匹配摘要、对方、商户与附言。只需汇总时用bill_report或spending_stats',obj({...range,direction:{enum:['income','expense'],type:'string'},kind,category:str(20),keyword:str(),limit:{type:'integer',minimum:1,maximum:50}})],
  get_transactions:['查询本人交易状态',obj()],
@@ -57,9 +61,27 @@ export function validateArgs(name,args) {
  return clean;
 }
 export async function executeTool(services,user,name,raw,context={}) {
+ context={...context,controlEpoch:assertAgentControl(services.bank,user.id,context.controlEpoch)};
+ services.guard.assertOpen(user.id);
+ if(READ_TOOLS.has(name)&&name!=='recall')requireThat(consentAllowed(services.bank,user.id,'data_read'),'助手数据读取授权已撤销或过期',403,'DATA_CONSENT_REQUIRED');
+ const ref=context.toolCallId||id('TOOL');
+ const event=type=>services.puma?.evidence.ingest({user_id:user.id,type,occurred_at:now(),source:'agent',initiated_by:'AGENT',correlation_id:context.requestId||ref,resource_ref:ref,consent_scope:'security',evidence_quality:'SUFFICIENT'});
+ event('AGENT_TOOL_REQUESTED');
+ const result=await executeToolInternal(services,user,name,raw,context);
+ assertChannelExecution(services.bank,context,user.id);
+ services.guard.assertOpen(user.id);
+ event('AGENT_TOOL_COMPLETED');
+ return result;
+}
+async function executeToolInternal(services,user,name,raw,context={}) {
  services.guard.assertOpen(user.id);
  const args=validateArgs(name,raw),{bank}=services;
  assertChannelExecution(bank,context,user.id);
+ if(name==='get_finance_risk_summary')return {ok:true,level:'green',data:{simulation:true,flags:services.risk.flags(user)}};
+ if(name==='create_transfer_draft')return commitToolEffect(bank,user.id,name,args,context,()=>{
+  const draft=services.riskDrafts.create(user,{...args,sourceAccountRef:args.sourceAccountRef||services.accountFor(user).id});
+  return {ok:true,level:'yellow',data:draft,event:{type:'risk_draft',data:draft}};
+ });
  if(!READ_TOOLS.has(name)) return commitToolEffect(bank,user.id,name,args,context,()=>{
   if(!LOW_RISK_EFFECTS.has(name)){
    const action=services.propose(user,name,args,context);

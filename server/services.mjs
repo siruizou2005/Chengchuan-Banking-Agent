@@ -54,7 +54,19 @@ export function createServices(bank,core,guard) {
   if(tool==='set_reminder')args.at=future(args.at);
   return args;
  }
- function policyDecision(user,tool,args,options={}){return decide(bank,fresh(user),tool,args,options);}
+ function policyDecision(user,tool,args,options={}){
+  const decision=decide(bank,fresh(user),tool,args,options);
+  if(services.risk && !options.denial){
+   const transfers=tool==='create_plan'?args.steps.filter(s=>s.tool==='propose_transfer').map(s=>s.args):tool==='propose_transfer'?[args]:[];
+   for(const a of transfers){
+    if(!a._transaction)continue;
+    const e=services.risk.legacy(user,{...a._transaction,amountMinor:cents(a.amount)},options.phase==='execute'?'PRE_EXECUTION':options.excludeId?'PRE_APPROVAL':'DRAFT',options.excludeId||null);
+    services.risk.assertAllowed(e);
+    if(e.finalAction==='STEP_UP'){decision.level='red';decision.requiredFactors=['explicit_confirmation','pin','sms','face_or_registered_fallback'];decision.outcome='require_verification';decision.reasons.push({code:'RISK_STEP_UP',message:'本次转账需要加强验证，请独立核对收款信息。'});}
+   }
+  }
+  return decision;
+ }
  function policy(user,tool,args,exclude=''){return policyDecision(user,tool,args,{excludeId:exclude}).level;}
  function recordDecision(user,action,decision,phase){run('UPDATE agent_actions SET decision=?,level=? WHERE id=?',JSON.stringify(decision),rank[decision.level]>rank[action.level]?decision.level:action.level,action.id);audit(user.id,'policy.evaluated',action.id,{phase,decision,paramsDigest:action.params_digest});}
 
@@ -288,6 +300,6 @@ export function createServices(bank,core,guard) {
   });
  }
  function plans(user){return all('SELECT * FROM agent_plans WHERE user_id=? ORDER BY created_at DESC',user.id).map(planView);}
- function snapshot(user){return {agentActions:all('SELECT * FROM agent_actions WHERE user_id=? ORDER BY created_at DESC LIMIT 100',user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,auth_state,connection_state,last_inbound_at,last_api_accepted_at,last_error_code,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
+ function snapshot(user){return {agentActions:all("SELECT * FROM agent_actions WHERE user_id=? AND tool<>'risk_transfer_approval' ORDER BY created_at DESC LIMIT 100",user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,auth_state,connection_state,last_inbound_at,last_api_accepted_at,last_error_code,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
  return Object.assign(services,{resolveRecipients,normalize,policy,policyDecision,recheckTask,pauseAction,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
 }

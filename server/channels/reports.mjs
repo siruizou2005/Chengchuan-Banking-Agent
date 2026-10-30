@@ -4,6 +4,8 @@ import { businessDate } from '../agent/policy.mjs';
 import { ledgerFor, resolveRange, billReport, detectAnomalies, utcBounds, addDays, isUnknownTag } from '../agent/analytics.mjs';
 import { redactIdentity } from '../privacy.mjs';
 import { channelNames } from './preferences.mjs';
+import { controlState } from '../puma/control.mjs';
+import { consentAllowed } from '../puma/consent.mjs';
 
 export const REPORT_KINDS=['daily','weekly','monthly'];
 export const REPORT_DELIVERY_MS=12*3600000;
@@ -84,6 +86,7 @@ export function createReportPush(services,options={}){
   let resume=null,pruned=0;
   const binding=(userId,channel)=>get("SELECT * FROM channel_bindings WHERE user_id=? AND channel=? AND status='active' AND auth_state='valid' ORDER BY created_at DESC LIMIT 1",userId,channel);
   function blocked(sub,b){
+    if(controlState(bank,sub.user_id).stopped||!consentAllowed(bank,sub.user_id,'agent_tools')||!consentAllowed(bank,sub.user_id,'data_read'))return 'assistant_unavailable';
     if(!services.enrollment.available(sub.user_id))return 'assistant_unavailable';
     if(services.guard.locked(sub.user_id))return 'assistant_locked';
     if(!b)return 'binding_unavailable';

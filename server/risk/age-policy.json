@@ -1,0 +1,18 @@
+{
+  "policyVersion": "age-v1-draft",
+  "mode": "shadow",
+  "jurisdiction": "DEFAULT",
+  "businessTimezone": "Asia/Shanghai",
+  "bands": [
+    { "name": "STANDARD", "min": 18 },
+    { "name": "AWARENESS", "min": 60 },
+    { "name": "ENHANCED", "min": 65 },
+    { "name": "ENHANCED_PLUS", "min": 70 },
+    { "name": "ASSISTED", "min": 80 }
+  ],
+  "warningAge": 60,
+  "stepUpAge": 65,
+  "verificationOfferAge": 70,
+  "assistanceAge": 80,
+  "stepUpGroups": 2
+}

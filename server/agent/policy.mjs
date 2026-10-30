@@ -46,6 +46,11 @@ export function classify(tool, args = {}, ctx = {}) {
 export function dailyAmounts(bank,userId,{excludeId='',excludeStep='',date=businessDate(),at=new Date().toISOString()}={}) {
   const result = {completed:0,committed:0,proposed:0};
   const keys = new Set();
+  // The strict draft flow reserves only after approval. Pending provider payments
+  // also count toward the existing shared daily authorization/limit policy.
+  for (const d of bank.all("SELECT id,amount_minor FROM risk_drafts WHERE user_id=? AND status IN ('SUBMITTING','PENDING')", userId)) {
+    if (d.id !== excludeId) result.committed += d.amount_minor;
+  }
   for (const t of bank.all("SELECT * FROM transactions WHERE user_id=? AND type IN ('transfer','payment','credit_spend') AND status IN ('pending','completed')",userId)) {
     keys.add(t.idempotency_key);
     if (t.id === excludeId || t.idempotency_key === excludeId || t.idempotency_key === excludeStep) continue;

@@ -1,6 +1,7 @@
 import { now } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
 import { redactIdentity } from '../privacy.mjs';
+import { assertAgentControl } from '../puma/control.mjs';
 
 export function injectionFlags(text) {
   return [/忽略.{0,12}(指令|规则|之前)/i,/你现在是/i,/\b(system|developer)\s*:/i,/(无需|不用|跳过|绕过).{0,6}(确认|验证|密码)/i,/ignore.{0,25}(instructions|rules)/i].filter(r=>r.test(text)).map(r=>r.source);
@@ -49,7 +50,7 @@ export function unsupportedSuccess(text, completed = false) {
 export function createGuard(bank, options = {}) {
   const disabled = () => (options.disabled ?? process.env.AGENT_DISABLED === 'true');
   function locked(userId) { const u=bank.get('SELECT agent_locked_until FROM users WHERE id=?',userId); return disabled() || (u?.agent_locked_until && u.agent_locked_until > now()); }
-  function assertOpen(userId) { requireThat(!locked(userId), disabled() ? '智能助手暂时关闭，请使用银行业务页面' : '智能助手已安全锁定30分钟，可在安全中心使用支付密码解除',423,'AGENT_LOCKED'); }
+  function assertOpen(userId) { assertAgentControl(bank,userId); requireThat(!locked(userId), disabled() ? '智能助手暂时关闭，请使用银行业务页面' : '智能助手已安全锁定30分钟，可在安全中心使用支付密码解除',423,'AGENT_LOCKED'); }
   function record(userId, kind) {
     bank.run('INSERT INTO agent_security(user_id,kind,created_at) VALUES(?,?,?)',userId,kind,now());
     const since = new Date(Date.now()-900000).toISOString();

@@ -8,6 +8,9 @@ import { migrateReports } from './channels/reports-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
+import { migrateRisk } from './risk/schema.mjs';
+import { migratePuma } from './puma/schema.mjs';
+import { mirrorAudit } from './puma/evidence.mjs';
 import { DEMO_EMAILS, OWNER_PHONE, OWNER_PASSWORD_HASH } from './demo-users.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
@@ -166,6 +169,8 @@ export function createBank(path) {
   migrateReports(db);
   migratePersonalization(db);
   migrateProducts(db);
+  migrateRisk(db);
+  migratePuma(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   // Assistant enrollment: every user starts disabled until they accept the current agreements themselves.
   for (const [column, ddl] of [['agent_enabled_at', 'TEXT'], ['agent_onboarding', "TEXT NOT NULL DEFAULT 'pending'"], ['agent_onboarding_state', "TEXT NOT NULL DEFAULT '{}'"]])
@@ -183,7 +188,7 @@ export function createBank(path) {
     catch (error) { db.exec(depth === 1 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`); throw error; }
     finally { depth--; }
   }
-  function audit(user, action, resource = '', detail = {}) { run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, redactIdentity(resource), JSON.stringify(redactIdentity(detail)), now()); }
+  function audit(user, action, resource = '', detail = {}) { const at=now(); run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, redactIdentity(resource), JSON.stringify(redactIdentity(detail)), at); mirrorAudit(db,user,action,resource,detail,at); }
   function notify(user, title, body) { run('INSERT INTO notifications(id,user_id,title,body,created_at) VALUES(?,?,?,?,?)', id('N'), user, title, body, now()); }
   function post(tx, from, to, amount, title, category, date = now(), detail = {}) {
     for (const [account, delta] of [[from, -amount], [to, amount]]) {

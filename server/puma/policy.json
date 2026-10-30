@@ -1,0 +1,14 @@
+{
+  "version": "puma-v1",
+  "flags": {
+    "puma_memory_v2": "shadow",
+    "puma_behavior_model": "shadow",
+    "puma_trait_research": "disabled",
+    "puma_scam_risk_shadow": "shadow",
+    "puma_age_protection": "shadow",
+    "puma_delegate_approval": "disabled",
+    "puma_dynamic_policy": "disabled"
+  },
+  "rules": { "windowMinutes": 60, "burstCount": 5, "splitAmountMinor": 500000, "minimumSamples": 20, "riskFlagDays": 7 },
+  "livePaymentEnabled": false
+}

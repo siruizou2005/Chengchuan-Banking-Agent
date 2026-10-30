@@ -19,6 +19,12 @@ import { createMemoryManager } from './agent/memory.mjs';
 import { createInferenceManager } from './agent/inference.mjs';
 import { createMemoryEvolution } from './agent/memory-evolution.mjs';
 import { createContextAssembler } from './agent/context-assembler.mjs';
+import { createRiskService } from './risk/service.mjs';
+import { createRiskTransfers } from './risk/transfers.mjs';
+import { registerRiskRoutes } from './risk/routes.mjs';
+import { createAgentControl } from './puma/control.mjs';
+import { createPumaService, registerPumaRoutes } from './puma/service.mjs';
+import { loadPumaPolicy } from './puma/config.mjs';
 import { createEnrollment, registerEnrollmentRoutes } from './agent/enrollment.mjs';
 import { createOnboarding } from './agent/onboarding.mjs';
 
@@ -209,6 +215,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if (previous) { requireThat(previous.fingerprint === fingerprint, '该幂等键已用于其他请求', 409, 'IDEMPOTENCY_CONFLICT'); return previous; }
     return atomic(() => {
       const { p, title, amount, account } = prepare(user, {...body,_excludeId:context.excludeId,_businessAt:context.at});
+      if (body.type === 'transfer') services.risk.assertAllowed(services.risk.legacy(user, { ...body, amountMinor: amount }, 'DRAFT', context.excludeId || null));
       const tx = id('TX'), created = now(), expires = new Date(Date.now() + 900000).toISOString();
       if (p.debit) run('UPDATE accounts SET held=held+? WHERE id=?', amount, account.id);
       run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', tx, user.id, body.type, amount, title, 'pending', JSON.stringify(p), account.id, created, created, expires, key, fingerprint);
@@ -219,6 +226,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
   function settle(user, t, permit) {
     services.authorization.assertSettlement(permit,user,t);
     requireThat(t.user_id === user.id && t.status === 'pending', '交易状态无效', 409, 'INVALID_STATE');
+    if (t.type === 'transfer') {
+      services.puma?.delegates.assertLegacy(user,t.amount);
+      const e = services.risk.legacy(user, { ...JSON.parse(t.payload), type: 'transfer', amountMinor: t.amount, heldByThisPayment: t.amount }, 'PRE_EXECUTION', t.id);
+      services.risk.assertAllowed(e);
+      requireThat(e.finalAction !== 'STEP_UP' || permit.strong, '风险已变化，请完成加强验证', 403, 'SUPPLEMENTAL_VERIFICATION_REQUIRED');
+    }
         const payload = JSON.parse(t.payload);
         const { p, account } = prepare(user, { ...payload, amount: t.amount }, true);
         if(t.type==='transfer')requireThat(dailyTotal(bank,user.id,t.id,businessDate(permit.at),permit.at)+t.amount<=get('SELECT daily_limit FROM users WHERE id=?',user.id).daily_limit,'已超出每日转账限额',409,'DAILY_LIMIT');
@@ -282,6 +295,16 @@ export function createApp(dbPath = ':memory:', options = {}) {
   services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
   services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
+  services.risk = createRiskService(bank, {...options.risk,pumaRules:loadPumaPolicy(options.puma).rules});
+  services.puma = createPumaService(bank, services, options.puma);
+  const riskTransfers = createRiskTransfers(bank, services, services.risk, options.risk);
+  services.riskDrafts = riskTransfers.drafts;
+  services.agentControl = createAgentControl(bank, services, riskTransfers.drafts);
+  route('get', '/agent/control', '本人助手运行状态', (req,res) => res.json(services.agentControl.state(req.user)));
+  route('post', '/agent/control/stop', '停止全部助手动作并撤销未执行授权', (req,res) => res.json(services.agentControl.stop(req.user)));
+  route('post', '/agent/control/resume', '可信认证后恢复助手', (req,res) => res.json(services.agentControl.resume(req.user,req.body.pin)));
+  registerRiskRoutes(route, bank, services, services.risk, riskTransfers);
+  registerPumaRoutes(route, bank, services, riskTransfers);
   services.enrollment = createEnrollment(services, { agreements: options.agreements });
   services.onboarding = createOnboarding(services);
   const agent = createAgent(services, options.chat);
@@ -513,5 +536,5 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
     res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
   });
-  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); } };
+  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); services.risk.expire(); riskTransfers.executor.reconcile(); } };
 }
