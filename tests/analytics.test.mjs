@@ -124,6 +124,6 @@ test('get_ledger 工具裁剪到4096字节以内并支持分类与时段', async
   assert.ok(food.data.rows.length && food.data.rows.every(r => r.tag === '餐饮美食' && r.bj_time.startsWith('2026-09')));
   const report = await executeTool(services, user, 'bill_report', { period: '2026-09' });
   assert.equal(report.event.type, 'report'); assert.ok(report.event.data.trend.length === 30 && !report.data.trend);
-  const stats = await executeTool(services, user, 'spending_stats', { by: 'category', preset: 'last_month' });
+  const stats = await executeTool(services, user, 'spending_stats', { by: 'category', period: '2026-09' }); // The imported statements end on 2026-10-01, so a relative period would run out of data.
   assert.equal(stats.event.type, 'stats'); assert.ok(stats.data.buckets.length > 3);
 });

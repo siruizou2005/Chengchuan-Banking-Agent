@@ -112,7 +112,8 @@ test('解绑、退订、关闭智能助手后不再推送，重新绑定按原�
 
 test('重启后不重复推送；宕机后一天内补发最近一期，更早的记为错过',async t=>{
   const f=await feishu(t);f.bind();await f.call('/channels/reports/feishu',{daily:true,weekly:true},'PATCH');
-  const slot=todaySlot();f.due('daily',slot);
+  // On a Sunday today's slot is tomorrow's Monday morning, when the weekly report is due too; keep it out of this count.
+  const slot=todaySlot();f.due('daily',slot);f.due('weekly',nextSlot('weekly',slot));
   const dir=await mkdtemp(join(tmpdir(),'report-push-'));t.after(()=>rm(dir,{recursive:true,force:true}));
   const reopen=async(source,name)=>{const path=join(dir,name);await backup(source.bank.db,path);return createApp(path,{channels:{secret:'a'.repeat(64)}});};
   const reports=app=>app.bank.all("SELECT * FROM channel_outbox WHERE kind='report'");
