@@ -110,5 +110,5 @@ export function registerVerification(route,verification) {
   route('get','/verify/face/sessions/:id','本人核身进度',(req,res)=>res.json(verification.faceVerification.status(req.user,req.params.id)));
   route('post','/verify/start','发送加强验证验证码',async(req,res)=>res.json(await verification.start(req.user,req.body.actionId)));
   route('post','/verify/face','记录摄像头人脸演示步骤',(req,res)=>res.json(verification.face(req.user,req.body)));
-  route('post','/verify/complete','验证短信并签发一次性操作令牌',(req,res)=>res.json(verification.complete(req.user,req.body)));
+  route('post','/verify/complete','校验模拟手机验证码并签发一次性操作令牌',(req,res)=>res.json(verification.complete(req.user,req.body)));
 }

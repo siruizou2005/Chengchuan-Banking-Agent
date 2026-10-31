@@ -2,6 +2,7 @@ import { isDemoUser, UNLIMITED_EMAILS } from './demo-users.mjs';
 import { isReservedEmail, maskEmail } from './email.mjs';
 import { hash, requireThat } from './errors.mjs';
 
+export const SIMULATED_CODE_TITLE = '模拟手机验证码';
 // Any one-time-code channel satisfies the policy's `sms` factor: real SMS, real email, or the simulation.
 export const hasSmsFactor = factors => factors.some(factor => ['simulated_sms', 'tencent_sms', 'resend_email'].includes(factor));
 
@@ -12,7 +13,8 @@ const beijingDate = (ms = Date.now()) => new Date(ms + 8 * 3600000).toISOString(
  *   provider: { channel: 'tencent_sms', async sendVerificationCode({ phone, code, expiresIn, verificationId, actionTitle }) }
  *   email:    { channel: 'resend_email', async sendVerificationCode({ email, code, expiresIn, verificationId, actionTitle }) }
  * Resolve only after provider acceptance; reject on failure/timeout. Never log code or credentials.
- * Channel order: reserved demo address (code shown on the page) → real email → SMS → simulation.
+ * Enhanced verification: real SMS when a provider is configured, otherwise the simulated phone code shown on the page.
+ * Registration: forEmail proves the address (reserved demo domains show the code on the page).
  * See docs/SMS.md.
  */
 export function createSmsDelivery(bank, { provider, email: emailProvider, limits = {} } = {}) {
@@ -53,11 +55,9 @@ export function createSmsDelivery(bank, { provider, email: emailProvider, limits
   return {
     forEmail,
     forUser(user) {
-      const notify = (code, actionTitle) => bank.notify(user.id, '模拟验证码', `【澄川银行】验证码 ${code}，用于：${actionTitle}。5分钟内有效。请勿发送给聊天助手或他人。`);
-      if (user.email && (isReservedEmail(user.email) || emailProvider)) {
-        const delivery = forEmail(user.email);
-        return delivery.simulated ? simulated(delivery.reason, notify) : delivery;
-      }
+      const notify = (code, actionTitle) => bank.notify(user.id, SIMULATED_CODE_TITLE, `【澄川银行】模拟手机验证码 ${code}，用于：${actionTitle}。5分钟内有效。请勿发送给聊天助手或他人。`);
+      // Enhanced verification is a simulated phone code; email is only used to prove an address at registration.
+      if (user.email && isReservedEmail(user.email)) return simulated('demo_email', notify);
       if (provider && !isDemoUser(user)) return real(provider, user.phone, 'phone');
       return simulated(isDemoUser(user) ? 'demo_account' : !user.email ? 'no_email' : 'provider_not_configured', notify);
     },

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { AgentMark } from '../AgentMark';
 import { BotanicalArt, ThemeGlyph } from '../Botanical';
-import { Megaphone, ChevronRight } from 'lucide-react';
+import { Megaphone, ChevronRight, ChartLine, ReceiptText, FileCheck2, Eye, EyeOff } from 'lucide-react';
 import { useBank } from '../bank';
-import { yuan, formValues, date, tail } from '../api';
+import { api, yuan, formValues, date, tail } from '../api';
 import { Card, Row, Empty, Amount, Field, AccountSelect, Notice, Submit, PinField, Tile, CircleIcon, Rate, Promo, Pill } from '../ui';
 import { IcoDeposit, IcoWealth, IcoShield, IcoWallet, IcoSnow, IcoBag, IcoRecord, Logo } from '../icons';
 import { CATEGORIES, minText, pct, statusText, sourceLine, featuredFund, riskTag, RISK_QUESTIONS } from '../products';
 import { NavChart, IndexDetail } from './NavChart';
 import type { Product, Holding } from '../types';
 
+const signedYuan = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${yuan(Math.abs(n))}`;
 const termText = (p: Product) => p.type === 'deposit' ? `${p.days}天整存整取` : p.days ? `持有${p.days}天后可赎` : p.fundType || '每日可申赎';
 // Funds open for purchase need no badge; only limits and suspensions are worth flagging.
 const badge = (p: Product) => p.type === 'deposit' ? p.tags[1] : p.purchasable === false ? statusText(p) : p.purchaseLimit ? p.tags[1] : undefined;
@@ -76,11 +77,11 @@ function HoldingsCard({ holdings }: { holdings: Holding[] }) {
   const { openModal, begin, navigate } = useBank();
   function redeem(h: Holding) {
     const deposit = h.product.type === 'deposit';
-    openModal(deposit ? '支取定期存款' : '赎回', <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'redeem', holdingId: h.id }); }}><h3 className="modal-subtitle">{h.product.name}</h3><dl className="kv"><div><dt>持有本金</dt><dd>¥{yuan(h.principal)}</dd></div><div><dt>{deposit ? '到期日' : '可赎回日'}</dt><dd>{h.unlock_at.slice(0, 10)}</dd></div></dl><Notice>{deposit ? '支持提前支取，本模拟版本按本金结算，不结算利息。' : '本模拟版本按本金赎回，不计算净值涨跌；固定持有期产品须到期后赎回。'}</Notice><AccountSelect /><Amount defaultValue={(h.principal / 100).toFixed(2)} max={(h.principal / 100).toFixed(2)} label={deposit ? '支取金额（元）' : '赎回金额（元）'} /><Submit>下一步</Submit></form>);
+    openModal(deposit ? '支取定期存款' : '赎回', <form className="stack-form" onSubmit={e => { const f = formValues(e); void begin({ ...f, type: 'redeem', holdingId: h.id }); }}><h3 className="modal-subtitle">{h.product.name}</h3><dl className="kv"><div><dt>{deposit ? '可支取金额' : '可赎回金额'}</dt><dd>¥{yuan(h.value)}</dd></div><div><dt>本金</dt><dd>¥{yuan(h.principal)}</dd></div><div><dt>累计收益</dt><dd>{signedYuan(h.earnings)}</dd></div><div><dt>{deposit ? '到期日' : '可赎回日'}</dt><dd>{h.unlock_at.slice(0, 10)}</dd></div></dl><Notice>{deposit ? '支持提前支取，按实际持有天数和产品利率计息，利息随本金按比例到账。' : '收益随赎回金额按比例到账；固定持有期产品须到期后赎回。'}</Notice><AccountSelect /><Amount defaultValue={(h.value / 100).toFixed(2)} max={(h.value / 100).toFixed(2)} label={deposit ? '支取金额（元）' : '赎回金额（元）'} /><Submit>下一步</Submit></form>);
   }
   return <Card title="我的持有" className="wealth-holdings" action={holdings.length ? `${holdings.length}笔` : undefined}>
     <div id="my-holdings" />
-    {holdings.map(h => <Row key={h.id} glyph={h.product.type === 'deposit' ? '存' : '基'} tone={h.product.type === 'deposit' ? 'orange' : 'coral'} title={h.product.name} subtitle={h.product.type === 'deposit' ? `到期 ${h.unlock_at.slice(0, 10)}` : h.unlock_at <= new Date().toISOString() ? `${h.product.risk} · 可随时赎回` : `可赎回 ${h.unlock_at.slice(0, 10)}`} trailing={<b className="amount">{yuan(h.principal)}</b>} trailingSub="持有本金" action={<Pill small onClick={() => redeem(h)}>{h.product.type === 'deposit' ? '支取' : '赎回'}</Pill>} />)}
+    {holdings.map(h => <Row key={h.id} glyph={h.product.type === 'deposit' ? '存' : '基'} tone={h.product.type === 'deposit' ? 'orange' : 'coral'} title={h.product.name} subtitle={h.product.type === 'deposit' ? `到期 ${h.unlock_at.slice(0, 10)}` : h.unlock_at <= new Date().toISOString() ? `${h.product.risk} · 可随时赎回` : `可赎回 ${h.unlock_at.slice(0, 10)}`} trailing={<b className="amount">{yuan(h.value)}</b>} trailingSub={`昨日 ${signedYuan(h.yesterdayEarning)} · 累计 ${signedYuan(h.earnings)}`} action={<Pill small onClick={() => redeem(h)}>{h.product.type === 'deposit' ? '支取' : '赎回'}</Pill>} />)}
     {!holdings.length && <><Empty title="暂无持有产品" /><button className="btn-text center" onClick={() => navigate('advice')}>不知道买什么？生成配置建议<ChevronRight size={16} /></button></>}
   </Card>;
 }
@@ -96,12 +97,13 @@ function previewPicks(products: Product[], level: number) {
 }
 
 export function Wealth({ deposits = false }: { deposits?: boolean }) {
-  const { data, navigate, route } = useBank();
+  const { data, navigate, route, hidden, toggleHidden } = useBank();
   const productModal = useProductModal();
   const [display, setDisplay] = useDisplay();
   const level = data.user.riskLevel;
   const holdings = data.holdings.filter(h => !deposits || h.product.type === 'deposit');
-  const principal = holdings.reduce((s, h) => s + h.principal, 0);
+  const total = holdings.reduce((s, h) => s + h.value, 0), earned = data.earningsSummary;
+  const money = (n: number) => hidden ? '******' : yuan(n), gain = (n: number) => hidden ? '****' : signedYuan(n);
   const all = data.products.filter(p => p.type === (deposits ? 'deposit' : 'wealth'));
   // Advice cards link here as #wealth?product=<id>&amount=<元> to open that product with the amount filled in.
   useEffect(() => {
@@ -111,7 +113,7 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   const meta = data.productMeta;
-  const summary = <section className="card split"><div><CircleIcon icon={IcoWallet} tone="blue" size={30} glyph={16} /><span>{deposits ? '存款本金' : '持有本金'}</span><b>¥{yuan(principal)}</b></div><button onClick={() => navigate('risk')}><CircleIcon icon={IcoShield} tone="orange" size={30} glyph={16} /><span>风险等级</span><b>{level ? `R${level}` : '未测评'}</b></button></section>;
+  const summary = <section className="card split"><div><CircleIcon icon={IcoWallet} tone="blue" size={30} glyph={16} /><span>{deposits ? '存款金额' : '持有金额'}</span><b>¥{yuan(total)}</b></div><button onClick={() => navigate('risk')}><CircleIcon icon={IcoShield} tone="orange" size={30} glyph={16} /><span>风险等级</span><b>{level ? `R${level}` : '未测评'}</b></button></section>;
   if (deposits) {
     const top = [...all].sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0))[0];
     return <div className="page">
@@ -124,7 +126,8 @@ export function Wealth({ deposits = false }: { deposits?: boolean }) {
   const picks = previewPicks(all, level);
   return <div className="page oak-page wealth-page satin-wealth">
     <header className="oak-intro wealth-heading"><div><span className="oak-eyebrow"><ThemeGlyph theme="wealth" size={15} />生长 · 财富管理</span><h2>为长远，做好配置。</h2></div><BotanicalArt theme="wealth" /></header>
-    <section className="card wealth-overview surface-signature finish-champagne" aria-label="持有概览"><div className="wealth-overview-heading"><span>持有本金</span><span className="wealth-currency">人民币 · CNY</span></div><strong data-testid="wealth-principal"><span className="wealth-currency-symbol">¥</span>{yuan(principal)}</strong><p className="wealth-principal-note">按持有本金统计，不代表当前市值或收益</p><div className="wealth-overview-footer"><span>{holdings.length} 笔持有</span><button onClick={() => navigate('risk')}>风险测评 · {level ? `R${level}` : '未测评'}<ChevronRight size={14} /></button></div></section>
+    <section className="card wealth-overview surface-signature finish-champagne" aria-label="持有概览"><div className="wealth-overview-heading"><span>总金额(元)</span><button aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong data-testid="wealth-total">{money(total)}</strong><div className="wealth-overview-stats"><div><small>昨日收益(元)</small><b data-testid="wealth-yesterday">{gain(earned.yesterday)}</b></div><div><small>累计收益(元)</small><b data-testid="wealth-earned">{gain(earned.total)}</b></div></div></section>
+    <div className="wealth-tools"><button onClick={() => navigate('earnings')} data-testid="wealth-earnings"><ChartLine size={20} />收益明细</button><button onClick={() => navigate('ledger?kind=investment')}><ReceiptText size={20} />交易记录</button><button onClick={() => navigate('asset-proof')} data-testid="wealth-proof"><FileCheck2 size={20} />资产证明</button></div>
     <div className="entry-grid four bare">
       <Tile icon={IcoDeposit} tone="blue" label="定期存款" onClick={() => navigate('deposit')} />
       <Tile icon={IcoWealth} tone="cyan" label="基金理财" onClick={() => navigate('funds')} />
@@ -174,10 +177,19 @@ export function Funds() {
 }
 
 export function Risk() {
-  const { mutate, navigate, data } = useBank();
+  const { mutate, navigate, navigatePage, refresh, data, route } = useBank();
+  // Opened from the assistant's first-run guide: finishing returns to the conversation and moves the guide on.
+  const fromGuide = new URLSearchParams(route.split('?')[1] || '').get('from') === 'onboarding';
+  async function finished() {
+    if (!fromGuide) { navigate('wealth'); return; }
+    await api('/agent/onboarding/advance', 'POST', { field: 'risk' }).catch(() => {});
+    await refresh().catch(() => {});
+    navigatePage('assistant');
+  }
   return <div className="page">
+    {fromGuide && <Notice>答完后会自动回到智能助手，继续刚才的设置。</Notice>}
     <section className="card split"><div><CircleIcon icon={IcoShield} tone="blue" size={30} glyph={16} /><span>当前风险等级</span><b>{riskTag(data.user.riskLevel)}</b></div><div><CircleIcon icon={IcoWealth} tone="orange" size={30} glyph={16} /><span>题目数量</span><b>{RISK_QUESTIONS.length}题</b></div></section>
-    <form className="card form-card stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/risk-assessment', { answers: RISK_QUESTIONS.map(q => Number(f[q.key])) }, '风险测评已完成')) navigate('wealth'); }}>
+    <form className="card form-card stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/risk-assessment', { answers: RISK_QUESTIONS.map(q => Number(f[q.key])) }, '风险测评已完成')) await finished(); }}>
       {RISK_QUESTIONS.map((q, i) => <fieldset className="risk-question" key={q.key}><legend>{i + 1}. {q.title}</legend>{q.options.map((o, j) => <label key={o}><input type="radio" name={q.key} value={j + 1} required />{o}</label>)}</fieldset>)}
       <Submit>提交测评</Submit>
     </form>

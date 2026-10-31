@@ -17,7 +17,7 @@ export function eventsText(result,{maskAmounts=false,origin=''}={}) {
  const text=[result.text];
  for(const event of result.events||[]){const a=event.data;
   if(event.type==='risk_draft')text.push(`【转账草稿，尚未授权】${a.beneficiaryName} ${a.beneficiaryMasked} · CNY ${yuan(a.amountMinor)}\n请回App独立核对并批准：${origin?origin+a.confirmationUrl:'澄川银行App「转账 → 转账草稿」'}\n草稿编号：${a.id}。聊天不能批准付款。`);
-  if(['action','plan'].includes(event.type)){text.push(a.level==='red'?`【待App加强验证】${a.title}\n操作编号：${a.id}\n请在App内完成人脸模拟、短信验证码及支付密码确认：${appLink(origin,a.id)}`:`【待授权确认】${a.title}${a.args.note?'\n备注：'+a.args.note:''}\n操作编号：${a.id}\n为保障资金安全，请在App内输入支付密码确认：${appLink(origin,a.id)}\n回复「取消 ${a.id}」可放弃。`);}
+  if(['action','plan'].includes(event.type)){text.push(a.level==='red'?`【待App加强验证】${a.title}\n操作编号：${a.id}\n请在App内完成人脸模拟、模拟手机验证码及支付密码确认：${appLink(origin,a.id)}`:`【待授权确认】${a.title}${a.args.note?'\n备注：'+a.args.note:''}\n操作编号：${a.id}\n为保障资金安全，请在App内输入支付密码确认：${appLink(origin,a.id)}\n回复「取消 ${a.id}」可放弃。`);}
   if(event.type==='report')text.push(a.totals?`【账单·${a.label}】${a.from}至${a.to}\n消费¥${yuan(a.totals.consumption)}（已扣退款），转账给他人¥${yuan(a.totals.transferOut)}，收入¥${yuan(a.totals.income)}\n${a.categories.slice(0,6).map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}${a.excluded.length?'\n不计入消费：'+a.excluded.map(e=>`${e.name} 转出¥${yuan(e.out)} 转入¥${yuan(e.in)}`).join('；'):''}`:`【账单·${a.period}】收入¥${yuan(a.income)}，支出¥${yuan(a.expense)}\n${a.categories.map(c=>`${c.name} ¥${yuan(c.amount)}`).join('；')}`);
   if(event.type==='stats')text.push(`【统计·${a.label}·${STATS_LABEL[a.by]}】合计¥${yuan(a.total)}\n${[...a.buckets].filter(b=>b.count).sort((x,y)=>y.amount-x.amount).slice(0,8).map(b=>`${b.key} ¥${yuan(b.amount)}`).join('；')}`);
   if(event.type==='advice'){const p=a.profile,lines=[`【配置建议·${a.user.risk}】活期可用¥${yuan(p.available)}，月均支出¥${yuan(p.monthlySpend)}，建议可投资¥${yuan(p.investable)}`];
@@ -114,7 +114,7 @@ export function createChannelRouter(services,agent,options={}) {
     if(command[1]==='取消'){services.cancel(user,a.id);return `操作已取消。编号：${a.id}`;}
     if(a.status==='confirmed')return `【已授权，等待执行】${a.title}\n编号：${a.id}`;
     // Confirming needs an in-app factor (PIN, plus face and SMS when required); IM only points the user there.
-    return `为保障资金安全，确认需在澄川银行App内完成${a.level==='red'?'人脸模拟、短信验证码和支付密码验证':'支付密码验证'}：${appLink(origin(),a.id)}\n编号：${a.id}`;
+    return `为保障资金安全，确认需在澄川银行App内完成${a.level==='red'?'人脸模拟、模拟手机验证码和支付密码验证':'支付密码验证'}：${appLink(origin(),a.id)}\n编号：${a.id}`;
    }
    return null;
  });}

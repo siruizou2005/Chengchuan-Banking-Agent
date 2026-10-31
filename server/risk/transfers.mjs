@@ -58,13 +58,15 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
   function view(user, draftId) {
     const d = owned(user, draftId), p = JSON.parse(d.payload), row = bank.get('SELECT snapshot FROM risk_evaluations WHERE id=?', d.evaluation_id);
     const e = row ? JSON.parse(row.snapshot) : null;
-    const messages = [];
-    if (e?.reasonCodes.includes('NEW_BENEFICIARY')) messages.push('这是首次向该收款账户付款，请独立核对收款信息。');
-    if (e?.reasonCodes.some(c => ['MONTHLY_ANOMALY', 'LARGE_VS_HISTORY', 'MILD_OUTFLOW_ANOMALY', 'BALANCE_DRAIN'].includes(c))) messages.push('本次或近期转出金额偏离历史情况，请确认用途与剩余资金。');
+    // Reminders to check the payee only help before paying; they read as an unresolved warning afterwards.
+    const finished = ['SETTLED', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(d.status), messages = [];
+    if (!finished && e?.reasonCodes.includes('NEW_BENEFICIARY')) messages.push('这是首次向该收款账户付款，请独立核对收款信息。');
+    if (!finished && e?.reasonCodes.some(c => ['MONTHLY_ANOMALY', 'LARGE_VS_HISTORY', 'MILD_OUTFLOW_ANOMALY', 'BALANCE_DRAIN'].includes(c))) messages.push('本次或近期转出金额偏离历史情况，请确认用途与剩余资金。');
     if (['HOLD_REVIEW', 'BLOCKED'].includes(d.status)) messages.push('该草稿尚未提交，可在帮助与客服申请复核；这不会冻结您的银行账户。');
     return { id: d.id, version: d.version, payloadHash: d.payload_hash, status: d.status, sourceAccountRef: d.source_account_ref,
       beneficiaryRef: d.beneficiary_ref, beneficiaryName: p.beneficiaryName, beneficiaryMasked: p.beneficiaryMasked,
       institution: p.institution, amountMinor: d.amount_minor, currency: d.currency, memo: p.memo, feeMinor: p.feeMinor,
+      paymentId: bank.get('SELECT id FROM risk_payments WHERE draft_id=?', d.id)?.id || null, updatedAt: d.updated_at,
       expiresAt: d.expires_at, simulation: true, confirmationUrl: `/#risk-transfer?id=${encodeURIComponent(d.id)}`,
       delegateApprovals: services.puma?.delegates.status(d) || [],
       risk: e ? { action: e.finalAction, messages, offers: e.offers, evaluationId: e.evaluationId } : null };
@@ -162,7 +164,8 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
           bank.run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             payment.id, d.user_id, 'transfer', d.amount_minor, `模拟转账 · ${payload.beneficiaryName}`, 'completed', JSON.stringify({ recipientName: payload.beneficiaryName, recipientAccount: account?.number || payload.beneficiaryMasked, bank: payload.institution, targetId: payload.targetId, simulation: true }), d.source_account_ref, now(), now(), d.expires_at, payment.provider_key, d.payload_hash, now());
           bank.post(payment.id, d.source_account_ref, payload.targetId, d.amount_minor, `模拟转账 · ${payload.beneficiaryName}`, 'transfer');
-        }
+          bank.notify(d.user_id, '模拟转账已完成', `已向${payload.beneficiaryName}（${payload.beneficiaryMasked}）转账 ¥${(d.amount_minor / 100).toFixed(2)}，流水号 ${payment.id}。`);
+        } else if (p.status === 'FAILED') bank.notify(d.user_id, '模拟转账未成功', `向${payload.beneficiaryName}（${payload.beneficiaryMasked}）的转账 ¥${(d.amount_minor / 100).toFixed(2)} 未成功，预留资金已释放。`);
       }
       bank.run('UPDATE risk_payments SET status=?,provider_reference=?,last_event_sequence=?,held=?,updated_at=? WHERE id=?', p.status, p.providerReference, p.sequence, p.status === 'PENDING' ? payment.held : 0, now(), payment.id);
       bank.run('UPDATE risk_drafts SET status=?,updated_at=? WHERE id=?', p.status, now(), d.id);

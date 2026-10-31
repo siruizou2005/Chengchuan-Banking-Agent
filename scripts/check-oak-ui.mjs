@@ -72,9 +72,9 @@ try {
   }
   assert.deepEqual(layoutIssues, [], 'all routes fit narrow screens');
   await go('wealth');
-  const principal = snapshot.holdings.reduce((sum, h) => sum + h.principal, 0);
-  assert.equal(await page.getByTestId('wealth-principal').textContent(), `¥${(principal / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-  await page.locator('.wealth-overview button').click(); await page.waitForURL('**/#risk');
+  const holdingTotal = snapshot.holdings.reduce((sum, h) => sum + h.value, 0);
+  assert.equal(await page.getByTestId('wealth-total').textContent(), (holdingTotal / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  await page.getByTestId('wealth-earnings').click(); await page.waitForURL('**/#earnings');
   await go('wealth');
   // Explicit test fixture: a rise followed by a loss must remain a falling line.
   await page.route('**/api/market/*/history?*', route => route.fulfill({ json: {

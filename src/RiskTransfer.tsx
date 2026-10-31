@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, CircleAlert } from 'lucide-react';
 import { api, formValues, yuan } from './api';
 import { useBank } from './bank';
 import { Card, InlineError, Notice, PinField } from './ui';
 import { Verify } from './Verify';
 import './risk-transfer.css';
 
-type Draft = { id: string; version: number; payloadHash: string; status: string; sourceAccountRef: string; beneficiaryRef: string; beneficiaryName: string; beneficiaryMasked: string; institution: string; amountMinor: number; currency: string; memo: string; feeMinor: number; delegateApprovals?: { id: string; status: string }[]; risk: { action: string; messages: string[]; offers: string[] } };
+type Draft = { id: string; paymentId?: string | null; version: number; payloadHash: string; status: string; sourceAccountRef: string; beneficiaryRef: string; beneficiaryName: string; beneficiaryMasked: string; institution: string; amountMinor: number; currency: string; memo: string; feeMinor: number; delegateApprovals?: { id: string; status: string }[]; risk: { action: string; messages: string[]; offers: string[] } };
 type Intent = { challengeId: string; version: number; payloadHash: string; verificationActionId: string | null; draft: Draft };
 const statuses: Record<string, string> = { RISK_CHECKED: '尚未授权', AWAITING_APPROVAL: '等待本人批准', USER_APPROVED: '已批准，尚未支付', PRE_EXECUTION_CHECK: '执行前复核中', HOLD_REVIEW: '草稿未提交，待复核', BLOCKED: '草稿未提交', SUBMITTING: '正在提交', PENDING: '渠道处理中，尚未确认成功', SETTLED: '模拟支付已完成', FAILED: '模拟支付失败', CANCELLED: '已取消', EXPIRED: '已过期' };
 const editable = ['RISK_CHECKED', 'AWAITING_APPROVAL', 'USER_APPROVED', 'HOLD_REVIEW', 'BLOCKED'];
@@ -14,12 +15,19 @@ const parseMoney = (text: string) => {
   const [whole, fraction = ''] = text.split('.'); return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
 };
 export function RiskTransfer() {
-  const { data, route, refresh, navigate } = useBank();
+  const { data, route, refresh, navigate, navigatePage, toast } = useBank();
   const draftId = new URLSearchParams(route.split('?')[1] || '').get('id');
   const [draft, setDraft] = useState<Draft | null>(null), [intent, setIntent] = useState<Intent | null>(null);
   const [token, setToken] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [large, setLarge] = useState(false);
   const [flags, setFlags] = useState<{ id: string; scope_ref: string; status: string }[]>([]), [appealed, setAppealed] = useState(false);
   const [saved, setSaved] = useState<Draft[]>([]);
+  // Announce the result once, when this page sees the draft reach it (also covers a payment that settles while polling).
+  const lastStatus = useRef('');
+  useEffect(() => {
+    const status = draft?.status || '';
+    if (lastStatus.current && lastStatus.current !== status) { if (status === 'SETTLED') toast('模拟转账已完成'); if (status === 'FAILED') toast('模拟转账未成功，预留资金已释放', true); }
+    lastStatus.current = status;
+  }, [draft?.status]);
   const load = async (id: string) => { setDraft(await api(`/v1/transfers/drafts/${id}`)); setFlags(await api('/v1/risk/flags')); };
   useEffect(() => { setDraft(null); setIntent(null); setToken(''); if (draftId) load(draftId).catch(e => setError(e.message)); }, [draftId]);
   useEffect(() => { if (!draftId) api<Draft[]>('/v1/transfers/drafts').then(setSaved).catch(e => setError(e.message)); }, [draftId, data.user.id]);
@@ -30,16 +38,22 @@ export function RiskTransfer() {
   }, [draft?.id, draft?.status]);
   async function act(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); await refresh(); } catch (e) { setError((e as Error).message); if (draft) await load(draft.id).catch(() => {}); setIntent(null); setToken(''); } finally { setBusy(false); } }
   if (intent?.verificationActionId && !token) return <Verify actionId={intent.verificationActionId} onVerified={setToken} onCancel={() => setIntent(null)} />;
-  return <div className={`page risk-transfer${large ? ' risk-large' : ''}`}><Card title="核对并批准模拟转账">
+  const account = draft && data.accounts.find(a => a.id === draft.sourceAccountRef);
+  if (draft?.status === 'SETTLED') return <div className={`page risk-transfer${large ? ' risk-large' : ''}`}><Card testId="risk-transfer-done">
+    <div className="risk-done" aria-live="polite"><span className="risk-done-icon"><Check size={30} /></span><h3>{statuses.SETTLED}</h3><p className="risk-done-amount">¥{yuan(draft.amountMinor)}</p></div>
+    <dl className="risk-details"><dt>收款人</dt><dd>{draft.beneficiaryName}</dd><dt>收款账户</dt><dd>{draft.beneficiaryMasked} · {draft.institution}</dd><dt>付款账户</dt><dd>{account?.name} · 尾号 {account?.number.slice(-4)}</dd><dt>用途</dt><dd>{draft.memo || '未填写'}</dd>{draft.paymentId && <><dt>流水号</dt><dd className="mono">{draft.paymentId}</dd></>}</dl>
+    <div className="risk-done-actions"><button className="pill" onClick={() => navigate('ledger')}>查看交易记录</button><button className="pill primary" data-testid="risk-back-chat" onClick={() => navigatePage('assistant')}>回到对话</button></div>
+  </Card></div>;
+  return <div className={`page risk-transfer${large ? ' risk-large' : ''}`}><Card>
     <Notice>所有资金均为模拟。请在此核对银行服务端返回的信息；聊天中的“同意”不会批准付款。</Notice>
     <label className="risk-accessibility"><input type="checkbox" checked={large} onChange={e => setLarge(e.target.checked)} />大字与高对比显示</label>
     <InlineError message={error} />
     {!draftId && saved.length > 0 && <div aria-label="已有转账草稿">{saved.map(d => <button className="agent-list-row" key={d.id} onClick={() => navigate(`risk-transfer?id=${d.id}`)}>{d.beneficiaryName} · CNY {yuan(d.amountMinor)} · {statuses[d.status]}</button>)}</div>}
-    {draft && <div aria-live="polite"><h3>{statuses[draft.status] || draft.status}</h3><dl className="risk-details">
-      <dt>付款账户</dt><dd>{data.accounts.find(a => a.id === draft.sourceAccountRef)?.name} · 尾号 {data.accounts.find(a => a.id === draft.sourceAccountRef)?.number.slice(-4)}</dd>
+    {draft && <div aria-live="polite"><h3 className="risk-status">{statuses[draft.status] || draft.status}</h3><dl className="risk-details">
+      <dt>付款账户</dt><dd>{account?.name} · 尾号 {account?.number.slice(-4)}</dd>
       <dt>收款人</dt><dd>{draft.beneficiaryName}</dd><dt>收款账户</dt><dd>{draft.beneficiaryMasked}</dd><dt>金融机构</dt><dd>{draft.institution}</dd>
       <dt>金额</dt><dd>{draft.currency} {yuan(draft.amountMinor)}</dd><dt>费用</dt><dd>{draft.currency} {yuan(draft.feeMinor)}</dd><dt>用途</dt><dd>{draft.memo || '未填写'}</dd>
-    </dl>{draft.risk?.messages.map(m => <Notice key={m}>{m}</Notice>)}
+    </dl>{draft.risk && draft.risk.messages.length > 0 && <div className="risk-alert" data-testid="risk-alert" role="note"><CircleAlert size={18} /><div><strong>付款前请再核对一下</strong><ul>{draft.risk.messages.map(m => <li key={m}>{m}</li>)}</ul></div></div>}
       {draft.delegateApprovals?.some(c=>c.status!=='APPROVED')&&<Notice>本笔转账还需完成已设置的共同确认，尚未提交付款。若关系过期、撤销或存在利益冲突，请取消此草稿并联系人工核实。</Notice>}
       {draft.risk?.offers.includes('INDEPENDENT_VERIFICATION_OFFER') && <Notice>可通过自己保存的电话或官方客服独立核实收款用途，不使用对方临时发来的联系方式。</Notice>}
       {draft.risk?.offers.includes('ACCESSIBLE_ASSISTANCE_OFFER') && <Notice>需要协助时可自愿联系人工客服；您无需添加家属或让他人代为批准。</Notice>}

@@ -11,7 +11,7 @@ test('IM只能提议和取消，所有确认都必须回App输入支付密码或
  assert.equal((await f.call(`/agent/actions/${small.id}/confirm`,{pin:'000000'})).status,403);assert.equal(f.services.owned(f.user,small.id).status,'proposed');
  assert.equal((await f.call(`/agent/actions/${small.id}/confirm`,{pin:'123456'})).data.status,'completed');assert.equal(f.balance().balance,before-20000);
  assert.match(f.bank.get('SELECT body FROM channel_outbox WHERE binding_id=? ORDER BY rowid DESC LIMIT 1',binding.id).body,/操作完成/);
- const big=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'2000'},{channel:'feishu',sessionId:binding.id});assert.match(await receive('确认 '+big.id),/人脸模拟、短信验证码和支付密码/);assert.equal(f.services.owned(f.user,big.id).status,'proposed');
+ const big=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'2000'},{channel:'feishu',sessionId:binding.id});assert.match(await receive('确认 '+big.id),/人脸模拟、模拟手机验证码和支付密码/);assert.equal(f.services.owned(f.user,big.id).status,'proposed');
  const token=await f.verify(big.id);await f.call(`/agent/actions/${big.id}/confirm`,{pin:'123456',verificationToken:token});assert.equal(f.services.owned(f.user,big.id).status,'completed');
  const drop=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'50'},{channel:'feishu',sessionId:binding.id});assert.match(await receive('取消 '+drop.id),/已取消/);assert.equal(f.services.owned(f.user,drop.id).status,'cancelled');
  const text=eventsText({text:'',events:[{type:'action',data:{id:'ACT1',title:'转账 ¥200.00',level:'yellow',args:{}}}]},{origin:'https://bank.test'});assert.match(text,/https:\/\/bank\.test\/#tasks\?action=ACT1/);assert.match(text,/取消 ACT1/);assert.doesNotMatch(text,/回复「确认/);

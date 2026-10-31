@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, Bell, Bot, ChartNoAxesColumnIncreasing, ChevronRight, Eye, EyeOff, Search, Send, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Bell, Bot, ChevronRight, Eye, EyeOff, LoaderCircle, Search, Send, ShieldCheck, X } from 'lucide-react';
 import { useBank } from '../bank';
-import { yuan } from '../api';
+import { api, date, yuan } from '../api';
+import { compressAvatar } from '../avatar';
 import { categoryMedian } from '../products';
-import { Card, Tile, Empty, InlineError, type Icon, type Tone } from '../ui';
+import { Card, Tile, Empty, InlineError, UserAvatar, type Icon, type Tone } from '../ui';
 import { IcoWallet, IcoTransfer, IcoRecord, IcoDeposit, IcoWealth, IcoLoan, IcoCard, IcoHouse, IcoQr, IcoPerson, IcoCalendar, IcoHeadset, IcoShield, IcoBell, IcoCode, IcoSwap, IcoGrid, BrandTexture } from '../icons';
 import { AgentMark } from '../AgentMark';
 import { ServiceArtwork, hasServiceArtwork } from '../DesignAssets';
 import type { Feature } from '../workspace';
 import { Accounts } from './Accounts';
 import { HomeCashFlow } from './HomeCashFlow';
+import { HomeModules } from './HomeModules';
 import './home.css';
 export const services: { id: string; label: string; icon: Icon; tone: Tone }[] = [
   { id: 'accounts', label: '银行卡', icon: IcoWallet, tone: 'blue' }, { id: 'transfer', label: '转账汇款', icon: IcoTransfer, tone: 'blue' },
@@ -50,8 +52,8 @@ export function AgentEntry({ feature }: { feature: Feature }) {
 
 type HomeProps = { feature?: Feature; workspaceRoute?: string; title: string; onSelect: (feature: Feature) => void; onClose: () => void; onBack: () => void; canBack: boolean; children: ReactNode; operations: ReactNode; hasOperation: boolean };
 export function Home({ feature, workspaceRoute, title, onSelect, onClose, onBack, canBack, children, operations, hasOperation }: HomeProps) {
-  const { data, navigate, askAgent, busy, formError } = useBank();
-  const [draft, setDraft] = useState('');
+  const { data, navigate, askAgent, busy, formError, hidden, toggleHidden, refresh, toast } = useBank();
+  const [draft, setDraft] = useState(''), [uploading, setUploading] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null), panel = useRef<HTMLElement>(null);
   const [rendered, setRendered] = useState(Boolean(feature)), [expanded, setExpanded] = useState(false);
   const lastContent = useRef<ReactNode>(null);
@@ -83,17 +85,30 @@ export function Home({ feature, workspaceRoute, title, onSelect, onClose, onBack
   </section>;
   if (content) lastContent.current = content;
   const unread = data.notifications.filter(n => !n.is_read).length;
+  const total = data.accounts.reduce((s, a) => s + a.balance, 0) + data.holdings.reduce((s, h) => s + h.value, 0);
+  const earned = data.earningsSummary;
+  const signed = (n: number) => hidden ? '****' : `${n > 0 ? '+' : n < 0 ? '-' : ''}${yuan(Math.abs(n))}`;
+  const hour = new Date(Date.now() + 8 * 3600000).getUTCHours();
+  const greeting = hour < 11 ? '早上好' : hour < 13 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+  // Verification codes stay in the message center: the home page is on screen too often to show them.
+  const latest = data.notifications.filter(n => !n.title.includes('验证码')).slice(0, 3);
+  async function pickAvatar(file?: File) {
+    if (!file) return;
+    setUploading(true);
+    try { await api('/me/avatar', 'POST', { image: await compressAvatar(file) }); await refresh(); toast('头像已更新'); }
+    catch (e) { toast((e as Error).message, true); }
+    finally { setUploading(false); }
+  }
   return <main className="cc-home">
-    <div className="cc-brand-zone"><BrandTexture className="cc-brand-texture" /><header className="cc-brand-header"><div className="cc-brand-top"><h1>澄川</h1><div><button className="icon-button" aria-label="搜索" onClick={() => navigate('search')}><Search size={22} /></button><button className="icon-button" aria-label={unread ? `消息中心，${unread}条未读` : '消息中心'} onClick={() => navigate('messages')}><Bell size={21} />{unread > 0 && <i className="dot" />}</button></div></div></header>
-    <form className="cc-agent-input" onSubmit={e => { e.preventDefault(); if (draft.trim()) { askAgent(draft.trim()); setDraft(''); } }}><AgentMark size={30} /><input aria-label="向 Agent 提问" placeholder="和我聊聊你的任何金融需求…" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} /><button type="submit" aria-label="发送给智能助手" disabled={!draft.trim() || busy}><Send size={19} /></button></form>
+    <div className="cc-brand-zone"><BrandTexture className="cc-brand-texture" /><header className="cc-brand-header"><div className="cc-brand-top"><span aria-hidden="true" /><h1>澄川银行</h1><div><button className="icon-button" aria-label="搜索" onClick={() => navigate('search')}><Search size={22} /></button><button className="icon-button" aria-label={unread ? `消息中心，${unread}条未读` : '消息中心'} onClick={() => navigate('messages')}><Bell size={21} />{unread > 0 && <i className="dot" />}</button></div></div></header>
+    <div className="cc-user-row"><label className="cc-user-avatar" aria-label="更换头像"><input type="file" accept="image/*" data-testid="avatar-input" disabled={uploading} onChange={e => { void pickAvatar(e.target.files?.[0]); e.target.value = ''; }} /><UserAvatar size={54} />{uploading && <i><LoaderCircle size={20} className="spin" /></i>}</label><div><strong data-testid="home-nickname">{data.user.nickname}</strong><small>{greeting}，欢迎回到澄川银行</small></div></div>
     <div className="cc-feature-grid" aria-label="常用服务">{features.map(f => <button key={f.id} data-feature={f.id} data-testid={`feature-${f.id}`} aria-expanded={feature === f.id} aria-controls="home-workspace" className={`cc-feature ${feature === f.id ? 'selected' : ''}`} disabled={busy} onClick={() => onSelect(f.id)}><span className={`cc-feature-icon ${f.tone || 'blue'}`}><f.icon size={26} className="cc-feature-art" /></span><span>{f.label}</span></button>)}</div>
     </div>
     <div id="home-workspace" className={`cc-expansion${expanded ? ' expanded' : ''}`} inert={!feature} aria-hidden={!feature}><div>{rendered && (content || lastContent.current)}</div></div>
-    <section className="cc-home-card"><header><h2>为你推荐</h2><button className="icon-button" aria-label="查看智能助手操作与计划" onClick={() => navigate('tasks')}><ChevronRight size={17} /></button></header>
-      <Recommendation icon={ChartNoAxesColumnIncreasing} tone="gold" title="优化本月支出结构" detail="智能分析，帮你更好规划" onClick={() => askAgent('请分析本月支出结构，给出基于实际账单的建议。')} />
-      <Recommendation icon={IcoWealth} tone="mint" title="查看我的理财机会" detail="根据你的风险偏好推荐" onClick={() => navigate('advice')} />
-      <Recommendation icon={IcoCard} title="管理我的信用卡" detail="账单、还款、额度一站式管理" onClick={() => onSelect('credit')} />
-    </section>
+    <form className="cc-agent-input" onSubmit={e => { e.preventDefault(); if (draft.trim()) { askAgent(draft.trim()); setDraft(''); } }}><AgentMark size={30} /><input aria-label="向 Agent 提问" placeholder="和我聊聊你的任何金融需求…" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} /><button type="submit" aria-label="发送给智能助手" disabled={!draft.trim() || busy}><Send size={19} /></button></form>
+    <section className="cc-asset-card" aria-label="资产情况"><div className="cc-asset-top"><span className="cc-asset-title"><h2>总资产</h2><button className="icon-button" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={18} /> : <Eye size={18} />}</button></span><button className="cc-asset-amount" data-testid="home-total-assets" onClick={() => onSelect('accounts')}>{hidden ? '******' : `¥${yuan(total)}`}</button></div><div className="cc-asset-stats"><span>累计收益<b className={earned.total < 0 ? 'down' : ''}>{signed(earned.total)}</b></span><span>昨日收益<b className={earned.yesterday < 0 ? 'down' : ''}>{signed(earned.yesterday)}</b></span></div></section>
+    <HomeModules onSelectCredit={() => onSelect('credit')} />
+    {latest.length > 0 && <section className="cc-home-card cc-home-messages" data-testid="home-messages"><header><h2>消息</h2><button className="cc-card-link" onClick={() => navigate('messages')}>全部{unread > 0 ? `（${unread}条未读）` : ''}<ChevronRight size={15} /></button></header>{latest.map(n => <button className={`cc-home-message${n.is_read ? ' read' : ''}`} key={n.id} onClick={() => navigate(`messages?id=${encodeURIComponent(n.id)}`)}>{!n.is_read && <i className="dot" aria-label="未读" />}<span><strong>{n.title}</strong>{!hidden && <small>{n.body}</small>}</span><time>{date(n.created_at)}</time></button>)}</section>}
     <section className="cc-home-card"><header><h2>财富机会</h2><button className="icon-button" aria-label="查看理财服务" onClick={() => onSelect('wealth')}><ChevronRight size={17} /></button></header>
       <div className="cc-opportunities">{[
         { name: '稳健优选', route: 'funds?maxRisk=2', caption: '近一年中位数', stat: categoryMedian(data.products, p => p.riskLevel != null && p.riskLevel <= 2, p => p.returns?.y1) },
@@ -107,22 +122,18 @@ export function Home({ feature, workspaceRoute, title, onSelect, onClose, onBack
       </button>)}</div>
       <p className="cc-opportunity-note">基金过往业绩不预示未来表现，市场有风险，投资需谨慎</p>
     </section>
-    <button className="cc-agent-entry cc-following" onClick={() => navigate('tasks')}><AgentMark size={34} /><span>你的专属助手正在关注{data.agentActions.filter(a => ['proposed', 'awaiting_verification'].includes(a.status)).length > 0 && <small>有待确认的操作，请核对后授权</small>}</span><ChevronRight size={18} /></button>
     <footer className="cc-footnote"><ShieldCheck size={12} />澄川银行 · 模拟演示环境</footer>
   </main>;
-}
-function Recommendation({ icon: Icon, title, detail, onClick, tone = 'blue' }: { icon: Icon; title: string; detail: string; onClick: () => void; tone?: string }) {
-  return <button className="cc-recommendation" onClick={onClick}><span className={`cc-mini-icon ${tone}`}><Icon size={20} /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={15} /></button>;
 }
 export function AccountWorkspace() {
   const { data, hidden, toggleHidden, navigate } = useBank();
   const [tab, setTab] = useState('overview');
-  const total = data.accounts.reduce((s, a) => s + a.balance, 0) + data.holdings.reduce((s, h) => s + h.principal, 0);
+  const total = data.accounts.reduce((s, a) => s + a.balance, 0) + data.holdings.reduce((s, h) => s + h.value, 0);
   const mask = (n: number) => hidden ? '******' : yuan(n);
   return <><div className="tabs grow" role="tablist" aria-label="账户视图">{[['overview', '总览'], ['cards', '账户管理'], ['analysis', '交易分析']].map(([id, label]) => <button className={`tab${tab === id ? ' active' : ''}`} role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)}>{label}</button>)}<button className="tab" onClick={() => navigate('ledger')}>交易记录</button></div>
-    {tab === 'cards' ? <Accounts /> : tab === 'analysis' ? <HomeCashFlow /> : <div className="cc-account-overview"><section className="cc-assets"><span>总资产（元）<button className="icon-button" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></span><strong data-testid="total-assets">{mask(total)}</strong><small>账户余额与持仓本金合计</small></section><div className="cc-account-stats"><div><small>可用余额</small><strong>{mask(data.accounts.reduce((s, a) => s + a.available, 0))}</strong></div><div><small>待确认预留</small><strong>{mask(data.accounts.reduce((s, a) => s + a.held, 0))}</strong></div></div>{[
+    {tab === 'cards' ? <Accounts /> : tab === 'analysis' ? <HomeCashFlow /> : <div className="cc-account-overview"><section className="cc-assets"><span>总资产（元）<button className="icon-button" aria-label={hidden ? '显示金额' : '隐藏金额'} onClick={toggleHidden}>{hidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></span><strong data-testid="total-assets">{mask(total)}</strong><small>账户余额与持有金额合计</small></section><div className="cc-account-stats"><div><small>可用余额</small><strong>{mask(data.accounts.reduce((s, a) => s + a.available, 0))}</strong></div><div><small>待确认预留</small><strong>{mask(data.accounts.reduce((s, a) => s + a.held, 0))}</strong></div></div>{[
       { icon: IcoWallet, label: '储蓄账户', count: `${data.accounts.length} 张`, amount: data.accounts.reduce((s, a) => s + a.balance, 0), action: () => setTab('cards') },
-      { icon: IcoWealth, label: '理财账户', count: `${data.holdings.length} 笔持有`, amount: data.holdings.reduce((s, h) => s + h.principal, 0), action: () => navigate('wealth') },
+      { icon: IcoWealth, label: '理财账户', count: `${data.holdings.length} 笔持有`, amount: data.holdings.reduce((s, h) => s + h.value, 0), action: () => navigate('wealth') },
       { icon: IcoCard, label: '信用卡待还', count: `尾号 ${data.creditCard.number.slice(-4)}`, amount: data.creditCard.used, action: () => navigate('credit') },
       { icon: IcoLoan, label: '贷款待还本金', count: `${data.loans.length} 笔`, amount: data.loans.reduce((s, l) => s + l.outstanding, 0), action: () => navigate('loan') },
     ].map(x => <button className="cc-account-row" key={x.label} onClick={x.action}><x.icon size={24} /><strong>{x.label}<small>{x.count}</small></strong><span>{mask(x.amount)}</span><ChevronRight size={15} /></button>)}</div>}

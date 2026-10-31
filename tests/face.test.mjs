@@ -108,7 +108,7 @@ test('H5回跳由服务端核对身份，核身因素贯通短信与操作授权
   assert.equal(f.bank.get('SELECT face_session_id FROM verifications WHERE id=?', b.verification.id).face_session_id, session.id);
   assert.equal((await f.call('/verify/face', { id: b.verification.id, frameHash: 'a'.repeat(64) })).status, 403);
   assert.equal((await f.call('/verify/face', { id: b.verification.id, skipped: true, reason: 'denied' })).status, 403);
-  const code = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).body.match(/验证码 (\d{6})/)[1];
+  const code = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟手机验证码'", f.user.id).body.match(/验证码 (\d{6})/)[1];
   assert.equal((await f.call('/verify/complete', { id: b.verification.id, code })).data.error.code, 'FACE_REQUIRED');
   assert.equal((await f.call('/verify/face/result', { ...b.body, status: 'passed' })).data.status, 'passed');
   assert.equal(f.provider.queries.length, 1);

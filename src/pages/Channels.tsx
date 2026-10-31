@@ -96,7 +96,7 @@ function BindChannel({ channel, enabled, closed, reauth }: { channel: ChannelNam
       {channel === 'wechat' && wechat.login?.status === 'awaiting_code' && <form className="stack-form form-card" onSubmit={async e => {
         const form = e.currentTarget, f = formValues(e); setBusy(true); setError('');
         try { await wechat.verify(f.code); form.reset(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
-      }}><Field label="微信扫码验证码"><input name="code" required maxLength={32} autoComplete="one-time-code" /></Field><p className="data-note">填写微信扫码页面显示的验证码，不是银行支付密码或短信验证码。</p><button className="btn-primary" disabled={busy}>提交验证码</button></form>}
+      }}><Field label="微信扫码验证码"><input name="code" required maxLength={32} autoComplete="one-time-code" /></Field><p className="data-note">填写微信扫码页面显示的验证码，不是银行支付密码或模拟手机验证码。</p><button className="btn-primary" disabled={busy}>提交验证码</button></form>}
       {channel === 'wechat' && wechat.message && <p role="status" aria-live="polite">{wechat.message}</p>}
       {(channel === 'wechat' ? !wechat.waiting : personal ? !feishu.bot : !code.code) && <button className="pill" onClick={() => setStep('confirm')}>重新生成</button>}
       {channel === 'wechat' && wechat.waiting && <button className="pill" disabled={busy} onClick={() => void wechat.cancel().catch(e => setError(e.message))}>取消本次连接</button>}

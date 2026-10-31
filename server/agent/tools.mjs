@@ -108,7 +108,7 @@ async function executeToolInternal(services,user,name,raw,context={}) {
  case 'get_products_and_holdings':{await services.catalog.ready();const all=services.catalog.list(),meta=services.catalog.meta(),kw=args.keyword?.toLowerCase();
   let rows=all.filter(p=>(!args.category||p.category===args.category)&&(!args.maxRisk||p.riskLevel<=args.maxRisk)&&(!kw||`${p.name}${p.issuer}${p.code||''}`.toLowerCase().includes(kw)));
   if(args.sort==='return')rows=[...rows].sort((a,b)=>(b.rate??-Infinity)-(a.rate??-Infinity));else if(args.sort==='risk')rows=[...rows].sort((a,b)=>a.riskLevel-b.riskLevel);
-  const holdings=services.state(user).holdings.map(h=>({id:h.id,productId:h.product_id,name:h.product.name,risk:h.product.risk,principal:h.principal,unlock_at:h.unlock_at}));
+  const holdings=services.state(user).holdings.map(h=>({id:h.id,productId:h.product_id,name:h.product.name,risk:h.product.risk,principal:h.principal,earnings:h.earnings,value:h.value,unlock_at:h.unlock_at}));
   const shown=fits(rows.slice(0,args.limit||10).map(productBrief),3300-Buffer.byteLength(JSON.stringify(holdings)));
   const counts=Object.fromEntries(Object.entries(Object.groupBy(all,p=>CATEGORY_LABEL[p.category])).map(([k,v])=>[k,v.length]));
   data={catalog:catalogNote(meta),counts,total:rows.length,shown:shown.length,products:shown,holdings};

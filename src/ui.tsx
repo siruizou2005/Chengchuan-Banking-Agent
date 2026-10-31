@@ -16,10 +16,15 @@ export function Brand({ light = false, sub, size = 28, mark = true }: { light?: 
   return <div className={`brand${light ? ' light' : ''}`}>{mark && <Logo size={size} light={light} />}<span className="brand-name">澄川银行</span>{sub && <><i className="brand-sep" /><span className="brand-sub">{sub}</span></>}</div>;
 }
 
-/* 默认头像：人形剪影。 */
-export function Avatar({ size = 44 }: { name?: string; size?: number }) {
+/* 头像：有图显示图片，否则显示人形剪影。 */
+export function Avatar({ size = 44, src }: { name?: string; size?: number; src?: string }) {
   const g = Math.round(size * 0.58);
-  return <span className="avatar" style={{ width: size, height: size }} aria-hidden="true"><svg width={g} height={g} viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4.3" /><path d="M3.5 21c0-4.6 3.8-7.2 8.5-7.2s8.5 2.6 8.5 7.2z" /></svg></span>;
+  return <span className="avatar" style={{ width: size, height: size }} aria-hidden="true">{src ? <img src={src} alt="" width={size} height={size} /> : <svg width={g} height={g} viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4.3" /><path d="M3.5 21c0-4.6 3.8-7.2 8.5-7.2s8.5 2.6 8.5 7.2z" /></svg>}</span>;
+}
+/* 当前登录用户的头像。 */
+export function UserAvatar({ size = 44 }: { size?: number }) {
+  const { data } = useBank(), version = data.user.avatarVersion;
+  return <Avatar size={size} src={version ? `/api/me/avatar?v=${encodeURIComponent(version)}` : undefined} />;
 }
 
 /* 渐变圆图标：可放面性图标，或放一个汉字（如“存”“贷”）。 */

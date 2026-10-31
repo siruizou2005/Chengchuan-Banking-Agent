@@ -89,7 +89,7 @@ export function createServices(bank,core,guard) {
    const saved=get('SELECT * FROM agent_actions WHERE id=?',actionId);run('UPDATE agent_actions SET params_digest=?,decision=?,run_id=? WHERE id=?',paramsDigest(actionParams(saved)),JSON.stringify(decision),context.runId||null,actionId);audit(user.id,'policy.evaluated',actionId,{phase:'propose',decision,runId:context.runId});
    if(tool==='create_plan')run('INSERT INTO agent_plans(id,user_id,action_id,title,steps,status,created_at) VALUES(?,?,?,?,?,?,?)',id('PLAN'),user.id,actionId,args.title,JSON.stringify(args.steps),'proposed',now());
    audit(user.id,'agent.action.proposed',actionId,{tool,args:redact(args),level,channel:context.channel||'app',runId:context.runId});
-   if(context.channel&&context.channel!=='app')notify(user.id,level==='red'?'操作待加强验证':'操作待确认',`${title}，请打开「智能助手 → 操作与计划」${level==='red'?'完成人脸模拟、短信验证码及支付密码验证':'输入支付密码确认'}。操作编号：${actionId}`);
+   if(context.channel&&context.channel!=='app')notify(user.id,level==='red'?'操作待加强验证':'操作待确认',`${title}，请打开「智能助手 → 操作与计划」${level==='red'?'完成人脸模拟、模拟手机验证码及支付密码验证':'输入支付密码确认'}。操作编号：${actionId}`);
    return actionView(get('SELECT * FROM agent_actions WHERE id=?',actionId));
   });
  }

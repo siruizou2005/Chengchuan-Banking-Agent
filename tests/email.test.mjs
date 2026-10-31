@@ -34,7 +34,7 @@ test('Resend适配器：鉴权、幂等键、收件人与失败不泄漏内容',
   assert.equal(maskEmail('owner@example.com'), 's***@163.com');
 });
 
-test('邹瑞收真实邮件验证码并完成红色授权；example邮箱演示账户在页面显示验证码', async t => {
+test('加强验证不发邮件：有真实邮箱的账户也用模拟手机验证码，验证码在页面和消息中心', async t => {
   const { sent, provider } = fakeEmail();
   const f = await fixture(t, { sms: { email: provider } });
   const zou = await login(f, '19900000000');
@@ -42,53 +42,46 @@ test('邹瑞收真实邮件验证码并完成红色授权；example邮箱演示�
   assert.equal(action.level, 'red');
   const r = await zou('/verify/start', { actionId: action.id });
   assert.equal(r.status, 200);
-  assert.equal(r.data.channel, 'resend_email'); assert.equal(r.data.simulated, false); assert.equal(r.data.target, 's***@163.com');
-  assert.equal(r.data.demoCode, undefined);
-  assert.equal(sent.length, 1); assert.equal(sent[0].email, 'owner@example.com'); assert.equal(sent[0].actionTitle, action.title);
+  assert.equal(r.data.channel, 'simulated_sms'); assert.equal(r.data.simulated, true); assert.match(r.data.demoCode, /^\d{6}$/);
+  assert.equal(sent.length, 0);
   const zouId = f.bank.get("SELECT id FROM users WHERE phone='19900000000'").id;
-  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟验证码'", zouId).n, 0);
+  assert.match(f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟手机验证码'", zouId).body, new RegExp(`模拟手机验证码 ${r.data.demoCode}`));
   await zou('/verify/face', { id: r.data.id, skipped: true, reason: 'unavailable' });
-  const done = await zou('/verify/complete', { id: r.data.id, code: sent[0].code });
+  const done = await zou('/verify/complete', { id: r.data.id, code: r.data.demoCode });
   assert.ok(done.data.verificationToken);
   const confirmed = await zou(`/agent/actions/${action.id}/confirm`, { pin: '123456', verificationActionId: action.id, verificationToken: done.data.verificationToken });
   assert.equal(confirmed.status, 200);
   assert.equal(f.bank.get('SELECT daily_limit FROM users WHERE id=?', zouId).daily_limit, 6000000);
-  // 林知夏 uses linzhixia@example.com: no email is sent and the page shows the code.
+  // 林知夏 uses linzhixia@example.com: same simulated code.
   const demo = (await f.propose('propose_virtual_card', { limit: '100' })).data;
   const d = await f.call('/verify/start', { actionId: demo.id });
   assert.equal(d.data.simulated, true); assert.equal(d.data.reason, 'demo_email'); assert.match(d.data.demoCode, /^\d{6}$/);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 0);
 });
 
-test('真实邮件60秒内不能重发、每个邮箱每天有上限（邹瑞不限次数），发送失败返回503', async t => {
+test('注册邮件60秒内不能重发、每个邮箱每天有上限（邹瑞不限次数），发送失败返回503', async t => {
   let fail = false;
   const sent = [];
   const f = await fixture(t, { sms: { email: { channel: 'resend_email', async sendVerificationCode(m) { if (fail) throw new Error('boom 123456'); sent.push(m); } } } });
-  f.bank.newUser('13700000009', '限流测试', 'Bank123456', '123456', undefined, undefined, 'tester@163.com');
-  const step = () => { f.bank.run('UPDATE otp_sends SET created_at=0'); f.bank.run("UPDATE verifications SET created_at='2000-01-01'"); };
-  for (const [phone, unlimited] of [['13700000009', false], ['19900000000', true]]) {
-    const call = await login(f, phone);
-    const action = (await call('/agent/actions', { tool: 'propose_set_daily_limit', args: { amount: '60000' } })).data;
-    assert.equal((await call('/verify/start', { actionId: action.id })).status, 200);
-    f.bank.run("UPDATE verifications SET created_at='2000-01-01'");
-    const again = await call('/verify/start', { actionId: action.id });
-    assert.equal(again.status, 429); assert.match(again.data.error.message, /秒后再试/);
-    for (let i = 0; i < 9; i++) { step(); assert.equal((await call('/verify/start', { actionId: action.id })).status, 200); }
+  const delivery = createSmsDelivery(f.bank, { email: { channel: 'resend_email', async sendVerificationCode() {} } });
+  const reserve = email => f.bank.atomic(() => delivery.forEmail(email).reserve());
+  const step = () => f.bank.run('UPDATE otp_sends SET created_at=0');
+  for (const [email, unlimited] of [['tester@163.com', false], ['owner@example.com', true]]) {
+    reserve(email);
+    assert.throws(() => reserve(email), /秒后再试/);
+    for (let i = 0; i < 9; i++) { step(); reserve(email); }
     step();
-    const eleventh = await call('/verify/start', { actionId: action.id });
-    if (unlimited) assert.equal(eleventh.status, 200);
-    else { assert.equal(eleventh.status, 429); assert.match(eleventh.data.error.message, /今日验证码发送次数已达上限/); }
+    if (unlimited) reserve(email);
+    else assert.throws(() => reserve(email), /今日验证码发送次数已达上限/);
   }
-  assert.equal(sent.filter(m => m.email === 'tester@163.com').length, 10);
-  assert.equal(sent.filter(m => m.email === 'owner@example.com').length, 11);
-  const call = await login(f, '13700000009');
-  const action = (await call('/agent/actions', { tool: 'propose_set_daily_limit', args: { amount: '60000' } })).data;
-  f.bank.run('DELETE FROM otp_sends'); fail = true;
-  const failed = await call('/verify/start', { actionId: action.id });
+  const accepted = await f.req('/auth/email-code', { email: 'fresh@163.com' });
+  assert.equal(accepted.status, 200); assert.equal(accepted.data.channel, 'resend_email'); assert.equal(sent.at(-1).email, 'fresh@163.com');
+  fail = true;
+  const failed = await f.req('/auth/email-code', { email: 'other@163.com' });
   assert.equal(failed.status, 503); assert.equal(failed.data.error.code, 'SMS_SEND_FAILED'); assert.ok(!JSON.stringify(failed.data).includes('123456'));
   // The overall daily cap protects the provider quota.
-  const delivery = createSmsDelivery(f.bank, { email: { channel: 'resend_email', async sendVerificationCode() {} }, limits: { daily: 0 } });
-  assert.throws(() => f.bank.atomic(() => delivery.forEmail('someone@163.com').reserve()), /今日验证码发送量已达上限/);
+  const capped = createSmsDelivery(f.bank, { email: { channel: 'resend_email', async sendVerificationCode() {} }, limits: { daily: 0 } });
+  assert.throws(() => f.bank.atomic(() => capped.forEmail('someone@163.com').reserve()), /今日验证码发送量已达上限/);
 });
 
 test('邹瑞不再使用公开的演示密码', async t => {

@@ -90,7 +90,7 @@ try {
   }
   findings.push('Supplied image assets load; More service search and all three wealth entry filters use existing services/products');
   await feature('accounts');
-  const total = snapshot.accounts.reduce((s, a) => s + a.balance, 0) + snapshot.holdings.reduce((s, h) => s + h.principal, 0);
+  const total = snapshot.accounts.reduce((s, a) => s + a.balance, 0) + snapshot.holdings.reduce((s, h) => s + h.value, 0);
   assert.equal(await page.getByTestId('total-assets').innerText(), (total / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   await page.getByRole('button', { name: '隐藏金额', exact: true }).click();
   assert.equal(await page.getByTestId('total-assets').innerText(), '******');
@@ -147,11 +147,11 @@ try {
   await page.getByTestId('apply-loan').click();
   await page.getByTestId('confirm-transaction').waitFor(); await noOverlay();
   await page.getByTestId('confirm-transaction').click();
-  await page.getByRole('button', { name: '开始验证并发送验证码' }).waitFor(); await noOverlay();
-  await page.getByRole('button', { name: '开始验证并发送验证码' }).click();
+  await page.getByRole('button', { name: '开始验证并发送模拟手机验证码' }).waitFor(); await noOverlay();
+  await page.getByRole('button', { name: '开始验证并发送模拟手机验证码' }).click();
   await page.getByRole('button', { name: '开启摄像头并采集' }).click();
-  await page.getByRole('button', { name: '记录降级并继续短信验证' }).click();
-  const verificationNotice = instance.bank.get("SELECT body FROM notifications WHERE title='模拟验证码' ORDER BY rowid DESC LIMIT 1");
+  await page.getByRole('button', { name: '记录降级并继续模拟手机验证码' }).click();
+  const verificationNotice = instance.bank.get("SELECT body FROM notifications WHERE title='模拟手机验证码' ORDER BY rowid DESC LIMIT 1");
   await page.locator('.inline-surface input[name="code"]').fill(verificationNotice.body.match(/验证码 (\d{6})/)[1]);
   await page.getByRole('button', { name: '验证并继续输入支付密码' }).click();
   await page.locator('.inline-surface input[name="pin"]').fill('123456');

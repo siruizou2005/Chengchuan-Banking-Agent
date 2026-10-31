@@ -7,13 +7,13 @@ import { Markdown } from '../chat/Markdown';
 import { DecisionTrace } from '../chat/cards';
 import type { AgentRun } from '../types';
 import { api, date, formValues, yuan } from '../api';
-import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelect, Avatar, CircleIcon, InlineError } from '../ui';
+import { Card, Row, Empty, Field, PinField, Submit, Notice, Amount, AccountSelect, UserAvatar, CircleIcon, InlineError } from '../ui';
 
 export function Profile() {
   const { data, navigate, logout, openModal, closeModal } = useBank();
   const unread = data.notifications.filter(n => !n.is_read).length;
   return <div className="page oak-page profile-page satin-profile">
-    <section className="card profile-card"><span className="profile-identity-art"><BotanicalArt theme="profile" /><Avatar size={34} /></span><div className="profile-text"><span className="profile-kicker">树心 · 个人空间</span><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}{data.user.email ? ` · ${data.user.email}` : ''}</small></div></section>
+    <section className="card profile-card"><span className="profile-identity-art"><BotanicalArt theme="profile" /><UserAvatar size={34} /></span><div className="profile-text"><span className="profile-kicker">树心 · 个人空间</span><strong>{data.user.name}</strong><small>{data.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}{data.user.email ? ` · ${data.user.email}` : ''}</small></div></section>
     <Card title="安全与授权" className="profile-settings" material="matte">
       <Row icon={IcoShield} tone="green" title="安全中心" subtitle="密码、验证与转账限额" onClick={() => navigate('security')} />
       <Row icon={IcoSliders} tone="orange" title="个性化与记忆" subtitle="回答偏好、长期记忆与候选确认" onClick={() => navigate('personalization')} />
@@ -39,7 +39,7 @@ export function Profile() {
 
 export function Security() {
   const { data, openModal, closeModal, mutate, navigate } = useBank();
-  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按 UTC 日期统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<Notice>下一步核对操作，高风险修改需完成人脸模拟、短信验证码和支付密码验证。</Notice><Submit>下一步</Submit></form>);
+  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按 UTC 日期统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<Notice>下一步核对操作，高风险修改需完成人脸模拟、模拟手机验证码和支付密码验证。</Notice><Submit>下一步</Submit></form>);
   return <div className="page">
     <section className="card split"><div><CircleIcon icon={IcoShield} tone="blue" size={30} glyph={16} /><span>支付验证</span><b>已开启</b></div><div><CircleIcon icon={IcoClock} tone="orange" size={30} glyph={16} /><span>会话有效期</span><b>24小时</b></div></section>
     <Card title="密码与验证">
@@ -51,7 +51,7 @@ export function Security() {
       <Row icon={IcoBell} tone="blue" title="消息渠道绑定" subtitle="飞书 / 微信 ClawBot" onClick={() => navigate('channels')} />
       <Row icon={IcoClock} tone="orange" title="智能助手操作与计划" onClick={() => navigate('tasks')} />
       <Row icon={IcoShield} tone="coral" title="智能助手安全" subtitle={data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() ? `已锁定至 ${date(data.agentLockedUntil)}` : '已开启 · 按操作需要确认与验证'} onClick={() => openModal('解除智能助手锁定', <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/agent/unlock', f, '智能助手已解锁')) closeModal(); }}><PinField /><Submit>解除锁定</Submit></form>)} />
-      <Row icon={IcoKeypad} tone="gold" title="验证方式" subtitle="摄像头人脸演示 + 站内短信模拟 + 支付密码" />
+      <Row icon={IcoKeypad} tone="gold" title="验证方式" subtitle="摄像头人脸演示 + 模拟手机验证码 + 支付密码" />
     </Card>
     <Card title="交易保护">
       <Row icon={IcoSliders} tone="orange" title="每日转账限额" trailing={<b className="amount">¥{yuan(data.user.dailyLimit)}</b>} onClick={() => edit('limit')} />
@@ -88,10 +88,20 @@ function CloseAssistant() {
 }
 
 export function Messages() {
-  const { data, mutate } = useBank();
+  const { data, mutate, route, navigate, refresh } = useBank();
+  const selected = new URLSearchParams(route.split('?')[1] || '').get('id');
+  const message = selected ? data.notifications.find(n => n.id === selected) : undefined;
+  // Opening one message reads only that one; a failed mark is harmless and retried the next time it opens.
+  useEffect(() => { if (message && !message.is_read) void api(`/notifications/${encodeURIComponent(message.id)}/read`, 'POST', {}).then(() => refresh()).catch(() => {}); }, [message?.id]);
+  if (selected) return <div className="page">
+    <Card className="message-detail" testId="message-detail">
+      {message ? <><h2>{message.title}</h2><small>{new Date(message.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}</small><p>{message.body}</p></> : <Empty title="消息不存在或已过期" />}
+      <button className="btn-text center" onClick={() => navigate('messages')}>返回消息列表</button>
+    </Card>
+  </div>;
   return <div className="page">
     <Card title="账户通知" action="全部已读" onAction={() => void mutate('/notifications/read', {}, '全部消息已读')}>
-      {data.notifications.map(n => <article className={`message${n.is_read ? ' read' : ''}`} key={n.id}><CircleIcon icon={IcoBell} tone={n.is_read ? 'gray' : 'blue'} size={40} glyph={20} /><div><h3>{n.title}{!n.is_read && <i className="dot" />}</h3><p>{n.body}</p><small>{date(n.created_at)}</small></div></article>)}
+      {data.notifications.map(n => <button className={`message message-row${n.is_read ? ' read' : ''}`} key={n.id} data-testid="message-row" onClick={() => navigate(`messages?id=${encodeURIComponent(n.id)}`)}><CircleIcon icon={IcoBell} tone={n.is_read ? 'gray' : 'blue'} size={40} glyph={20} /><div><h3>{n.title}{!n.is_read && <i className="dot" />}</h3><p>{n.body}</p><small>{date(n.created_at)}</small></div><ChevronRight size={17} className="chevron" /></button>)}
       {!data.notifications.length && <Empty title="暂无消息" />}
     </Card>
   </div>;

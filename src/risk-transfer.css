@@ -3,10 +3,26 @@
 .risk-transfer .risk-accessibility { display: flex; align-items: center; gap: .6rem; margin: 1rem 0; }
 .risk-transfer .stack-form { margin: 1rem 0; }
 .risk-transfer .stack-form > label { display: flex; flex-direction: column; gap: .45rem; margin: .7rem 0; }
-.risk-transfer .stack-form input, .risk-transfer .stack-form select { width: 100%; box-sizing: border-box; min-height: 44px; padding: .7rem; border: 1px solid #b3cce3; border-radius: 10px; font: inherit; background: #fff; color: #12385d; }
-.risk-transfer .risk-edit { margin: 1rem 0; border-top: 1px solid #d7e4ef; padding-top: .8rem; }
+.risk-transfer .stack-form input, .risk-transfer .stack-form select { width: 100%; box-sizing: border-box; min-height: 44px; padding: .7rem; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; color: var(--text); }
+.risk-transfer .risk-edit { margin: 1rem 0; border-top: 1px solid var(--line); padding-top: .8rem; }
 .risk-transfer .risk-edit summary { cursor: pointer; padding: .4rem 0; font-weight: 600; }
 .risk-transfer .risk-details { margin: 1rem 0; }
 .risk-transfer.risk-large { font-size: 1.25rem; color: #111; background: #fff; }
 .risk-transfer.risk-large input, .risk-transfer.risk-large select, .risk-transfer.risk-large button { font-size: 1.1em; min-height: 3rem; }
-.risk-transfer :focus-visible { outline: 3px solid #164b9d; outline-offset: 3px; }
+.risk-transfer :focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+.risk-transfer .notice { margin: 10px 0; }
+.risk-transfer .risk-status { font-size: 17px; font-weight: 600; color: var(--text); }
+.risk-transfer .risk-alert { display: flex; gap: 10px; margin: 12px 0; padding: 12px; border-radius: 10px; background: #fff7e8; color: #7a4d00; }
+.risk-transfer .risk-alert > svg { flex-shrink: 0; margin-top: 2px; color: #e08a00; }
+.risk-transfer .risk-alert strong { display: block; font-size: 14px; font-weight: 600; }
+.risk-transfer .risk-alert ul { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; }
+.risk-transfer .risk-alert li + li { margin-top: 4px; }
+.risk-transfer.risk-large .notice, .risk-transfer.risk-large .risk-alert ul { font-size: 1em; color: #111; }
+.risk-transfer.risk-large .risk-alert { background: #fff; border: 2px solid #111; color: #111; }
+.risk-transfer .risk-done { display: flex; flex-direction: column; align-items: center; padding: 10px 0 2px; text-align: center; }
+.risk-transfer .risk-done-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #e7f7ef; color: #1fa774; }
+.risk-transfer .risk-done h3 { margin-top: 12px; font-size: 18px; font-weight: 600; color: var(--text); }
+.risk-transfer .risk-done-amount { margin-top: 6px; font-size: 28px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.risk-transfer .risk-done-actions { display: flex; gap: 10px; margin-top: 8px; }
+.risk-transfer .risk-done-actions > * { flex: 1; }
+.risk-transfer .risk-details .mono { font-size: 12px; }

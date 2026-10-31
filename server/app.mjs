@@ -2,6 +2,8 @@ import express from 'express';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
 import { createProductCatalog, holdingSnapshot } from './products.mjs';
+import { createEarnings } from './earnings.mjs';
+import { resolvePrincipal } from './agent/principal.mjs';
 import { wealthAdvice } from './wealth.mjs';
 import { normalizeEmail, validEmail, maskEmail } from './email.mjs';
 import { registerChat } from './chat.mjs';
@@ -36,6 +38,12 @@ import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
 const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, email: u.email ? maskEmail(u.email) : null, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
+const HOME_MODULES = Object.freeze(['bill_daily', 'spend_tips', 'recommend']), DEFAULT_HOME_MODULES = Object.freeze(['bill_daily', 'recommend']);
+const AVATAR_LIMIT = 128 * 1024;
+function homeModules(stored) {
+  try { const list = JSON.parse(stored || 'null'); if (Array.isArray(list)) return list.filter(m => HOME_MODULES.includes(m)); } catch { /* fall back to the default */ }
+  return [...DEFAULT_HOME_MODULES];
+}
 const transactionView = t => ({ ...t, payload: JSON.parse(t.payload), fingerprint: undefined, idempotency_key: undefined });
 const money = n => (n / 100).toFixed(2);
 // Five questions scored 1-4 (total 5-20): 5-7 R1, 8-10 R2, 11-13 R3, 14-16 R4, 17-20 R5.
@@ -45,11 +53,14 @@ export function createApp(dbPath = ':memory:', options = {}) {
   const bank = createBank(dbPath);
   const { get, all, run, atomic, audit, notify, post } = bank;
   const catalog = createProductCatalog(bank, options.products);
+  const earnings = createEarnings(bank, catalog);
   const app = express();
   const guard = createGuard(bank, options.agent);
   let services;
   app.disable('x-powered-by');
   if (options.trustProxy) app.set('trust proxy', 'loopback');
+  // Only avatar uploads may exceed the normal JSON limit; the body parser skips a request that is already parsed.
+  app.post('/api/me/avatar', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: '32kb' }));
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -166,8 +177,9 @@ export function createApp(dbPath = ':memory:', options = {}) {
         p.productId = product.id; title = product.name; break;
       }
       case 'redeem': {
+        earnings.settle(user.id);
         const h = get('SELECT * FROM holdings WHERE id=? AND user_id=?', b.holdingId, user.id);
-        requireThat(h && h.principal >= amount, '可赎回本金不足', 409, 'HOLDING_UNAVAILABLE');
+        requireThat(h && h.principal + h.earnings >= amount, h ? `可赎回金额不足，当前可赎回${money(Math.max(0, h.principal + h.earnings))}元，请重新输入` : '可赎回金额不足', 409, 'HOLDING_UNAVAILABLE');
         const product = catalog.forHolding(h);
         requireThat(product.type === 'deposit' || h.unlock_at <= now(), '产品尚未到期，暂不可赎回', 409, 'HOLDING_LOCKED');
         p.holdingId = h.id; debit = false; title = `赎回 · ${product.name}`; break;
@@ -234,6 +246,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     }
         const payload = JSON.parse(t.payload);
         const { p, account } = prepare(user, { ...payload, amount: t.amount }, true);
+        let realized = 0;
         if(t.type==='transfer')requireThat(dailyTotal(bank,user.id,t.id,businessDate(permit.at),permit.at)+t.amount<=get('SELECT daily_limit FROM users WHERE id=?',user.id).daily_limit,'已超出每日转账限额',409,'DAILY_LIMIT');
         if (p.scenario === 'bank_rejected') fail('模拟收款行拒绝入账，预留资金已释放', 409, 'BANK_REJECTED');
         if (p.debit) {
@@ -252,7 +265,11 @@ export function createApp(dbPath = ':memory:', options = {}) {
           const product = catalog.get(p.productId);
           run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at,product_snapshot) VALUES(?,?,?,?,?,?,?)', id('H'), user.id, p.productId, t.amount, now(), new Date(Date.now() + product.days * 86400000).toISOString(), JSON.stringify(holdingSnapshot(product)));
         } else if (t.type === 'redeem') {
-          run('UPDATE holdings SET principal=principal-? WHERE id=?', t.amount, p.holdingId);
+          // The payout splits pro rata; redeeming the whole value clears both parts. Earned days stay in holding_earnings.
+          const h = get('SELECT principal,earnings FROM holdings WHERE id=?', p.holdingId), value = h.principal + h.earnings;
+          const fromPrincipal = t.amount >= value ? h.principal : Math.min(h.principal, Math.round(t.amount * h.principal / value));
+          realized = t.amount - fromPrincipal;
+          run('UPDATE holdings SET principal=principal-?,earnings=earnings-?,accrual_carry=CASE WHEN principal=? AND earnings=? THEN 0 ELSE accrual_carry END WHERE id=?', fromPrincipal, realized, fromPrincipal, realized, p.holdingId);
           post(t.id, 'system', account.id, t.amount, t.title, t.type);
         } else if (t.type === 'loan_draw') {
           run('INSERT INTO loans VALUES(?,?,?,?,?,?,?)', id('L'), user.id, t.amount, t.amount, p.months, 'active', now());
@@ -268,16 +285,23 @@ export function createApp(dbPath = ':memory:', options = {}) {
         } else if (t.type === 'payment') post(t.id, account.id, 'system', t.amount, t.title, t.type);
         run("UPDATE transactions SET status='completed',updated_at=?,completed_at=? WHERE id=?", now(), permit.at||now(), t.id);
         audit(user.id, 'transaction.completed', t.id, { amount: t.amount, type: t.type,runId:permit.runId,actionId:permit.actionId,planId:permit.planId,stepId:permit.stepId,authorizationId:permit.authorizationId,subscriptionId:permit.subscriptionId,mandateSource:permit.mandateSource });
-        notify(user.id, '交易完成', `${t.title} ¥${money(t.amount)}，已完成。`);
+        notify(user.id, '交易完成', `${t.title} ¥${money(t.amount)}${realized ? `（含${realized > 0 ? '收益' : '亏损'}¥${money(Math.abs(realized))}）` : ''}，已完成。`);
     return get('SELECT * FROM transactions WHERE id=?', t.id);
+  }
+  // Nickname is the preference confirmed in onboarding; the registered name stands in until then.
+  function profileView(row) {
+    const nickname = services?.memory ? services.memory.profile(resolvePrincipal(bank, row, { channel: 'app' })).preferred_name : null;
+    return { ...publicUser(row), nickname: nickname || row.name, avatarVersion: get('SELECT updated_at FROM user_avatars WHERE user_id=?', row.id)?.updated_at || null, homeModules: homeModules(row.home_modules) };
   }
   function state(user) {
     const accounts = all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', user.id);
-    const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal>0 ORDER BY created_at DESC', user.id).map(({ product_snapshot, ...h }) => ({ ...h, product: catalog.forHolding({ ...h, product_snapshot }) }));
+    earnings.settle(user.id);
+    const yesterdays = earnings.byHolding(user.id);
+    const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal+earnings>0 ORDER BY created_at DESC', user.id).map(({ product_snapshot, accrual_carry, settled_through, ...h }) => ({ ...h, value: h.principal + h.earnings, yesterdayEarning: yesterdays.get(h.id) || 0, product: catalog.forHolding({ ...h, product_snapshot }) }));
     const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id).map(enrich);
     return {
       ...(services ? services.snapshot(user) : {}),
-      user: publicUser(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, ledger,
+      user: profileView(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, earningsSummary: earnings.summary(user.id), ledger,
       products: catalog.list(), productMeta: catalog.meta(), market: catalog.market(),
       loans: all('SELECT * FROM loans WHERE user_id=? ORDER BY created_at DESC', user.id),
       creditCard: get('SELECT * FROM credit_cards WHERE user_id=?', user.id),
@@ -364,6 +388,27 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }, false);
   route('post', '/auth/logout', '退出当前会话', (req, res) => { run('DELETE FROM sessions WHERE token=?', req.tokenHash); res.clearCookie('bank_session', { path: '/' }); res.json({ ok: true }); });
   route('get', '/me', '当前用户信息', (req, res) => res.json(publicUser(req.user)));
+  route('post', '/me/avatar', '上传本人头像（JPEG/PNG 的 data URL，解码后不超过128KB）', (req, res) => {
+    const match = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/]+={0,2})$/.exec(typeof req.body.image === 'string' ? req.body.image : '');
+    requireThat(match, '请上传 JPG 或 PNG 图片', 400, 'INVALID_AVATAR');
+    const image = Buffer.from(match[2], 'base64'), signature = match[1] === 'jpeg' ? image.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) : image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    requireThat(signature, '图片内容与格式不符', 400, 'INVALID_AVATAR');
+    requireThat(image.length <= AVATAR_LIMIT, '图片不能超过128KB', 413, 'AVATAR_TOO_LARGE');
+    const at = now();
+    atomic(() => { run('INSERT INTO user_avatars(user_id,mime,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET mime=excluded.mime,data=excluded.data,updated_at=excluded.updated_at', req.user.id, `image/${match[1]}`, image, at); audit(req.user.id, 'profile.avatar_updated'); });
+    res.json({ avatarVersion: at });
+  }, true, { required: ['image'], properties: { image: { type: 'string' } } });
+  route('get', '/me/avatar', '读取本人头像', (req, res) => {
+    const row = get('SELECT mime,data FROM user_avatars WHERE user_id=?', req.user.id);
+    requireThat(row, '尚未设置头像', 404, 'NOT_FOUND');
+    res.type(row.mime).send(Buffer.from(row.data));
+  });
+  route('post', '/me/home-modules', '保存首页自定义区域显示的模块与顺序', (req, res) => {
+    const list = req.body.modules;
+    requireThat(Array.isArray(list) && new Set(list).size === list.length && list.every(m => HOME_MODULES.includes(m)), '首页模块无效', 400, 'INVALID_HOME_MODULES');
+    run('UPDATE users SET home_modules=? WHERE id=?', JSON.stringify(list), req.user.id);
+    res.json({ modules: list });
+  }, true, { required: ['modules'], properties: { modules: { type: 'array', items: { type: 'string', enum: [...HOME_MODULES] } } } });
   route('get', '/dashboard', '完整账户视图与业务数据', async (req, res) => { await catalog.ready(); res.json(state(req.user)); });
   route('get', '/accounts', '账户与可用余额（单位：分）', (req, res) => res.json(all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', req.user.id)));
   route('patch', '/accounts/:id', '冻结或解冻借记卡', (req, res) => {
@@ -439,6 +484,10 @@ export function createApp(dbPath = ':memory:', options = {}) {
     requireThat(result, '该产品没有走势数据', 404, 'NOT_FOUND');
     res.json(result);
   });
+  route('get', '/wealth/earnings', '收益明细：view=day/month/year/all，period 为 YYYY-MM（day）或 YYYY（month），key 选择要拆分的日期、月份或年份', (req, res) => {
+    const q = name => req.query[name] === undefined ? undefined : String(req.query[name]);
+    res.json(earnings.report(req.user.id, { view: q('view'), period: q('period'), key: q('key') }));
+  });
   route('get', '/wealth/advice', '理财配置建议：amount（元，可选）、horizon=short/mid/long（可选）；按风险测评、活期余额、近3个月收支与应急资金确定性筛选排序，只读', async (req, res) => {
     const horizon = req.query.horizon ? String(req.query.horizon) : undefined;
     requireThat(!horizon || ['short', 'mid', 'long'].includes(horizon), '资金期限须为short、mid或long');
@@ -496,6 +545,10 @@ export function createApp(dbPath = ':memory:', options = {}) {
     }); res.json({ ok: true });
   });
   route('get', '/notifications', '站内消息', (req, res) => res.json(all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC', req.user.id)));
+  route('post', '/notifications/:id/read', '将本人的一条消息标为已读', (req, res) => {
+    requireThat(run('UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?', req.params.id, req.user.id).changes, '消息不存在', 404, 'NOT_FOUND');
+    res.json({ ok: true });
+  });
   route('post', '/notifications/read', '将全部消息标为已读', (req, res) => { run('UPDATE notifications SET is_read=1 WHERE user_id=?', req.user.id); res.json({ ok: true }); });
   route('post', '/support', '创建模拟客服工单', (req, res) => {
     const subject = textField(req.body.subject, '问题类型', 2, 40), content = textField(req.body.content, '问题描述', 5, 2000), ticketId = id('S');

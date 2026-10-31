@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | transfer | recipientName、recipientAccount、bank | 附言 note 可选；scenario=`bank_rejected` 模拟失败 |
 | deposit | productId | deposit-90 / deposit-365，最低 50 元 |
-| investment | productId | 基金 `fund-<代码>`（见 GET /products）；先风险测评，产品风险等级不得高于测评等级（`RISK_MISMATCH`）；校验起购金额、暂停申购（`PRODUCT_UNAVAILABLE`）与单日上限（`PURCHASE_LIMIT`）；模拟申购，按本金结算 |
+| investment | productId | 基金 `fund-<代码>`（见 GET /products）；先风险测评，产品风险等级不得高于测评等级（`RISK_MISMATCH`）；校验起购金额、暂停申购（`PRODUCT_UNAVAILABLE`）与单日上限（`PURCHASE_LIMIT`）；模拟申购，按每日净值变动计算收益，赎回时随本金到账 |
 | redeem | holdingId | 部分或全部本金；固定持有期理财须到期 |
 | loan_draw | months | 3/6/12/24 个月，最低 1000 元，总待还不超过 20 万元 |
 | loan_repay | loanId | 不超过待还本金 |
@@ -69,7 +69,7 @@
 | DELETE /payees/{id} | {} |
 | POST /risk-assessment | answers：5 个 1–4 整数，如 [3,3,3,2,2]；总分 5–7 为 R1，8–10 R2，11–13 R3，14–16 R4，17–20 R5；返回 level |
 | PATCH /settings | pin 以及 dailyLimit（元）、newPin，或 oldPassword+newPassword；调高限额、改密码为红色，需附 verificationActionId + verificationToken |
-| GET /notifications | 本人站内通知（含模拟短信验证码、待验证提醒） |
+| GET /notifications | 本人站内通知（含模拟手机验证码、待验证提醒） |
 | POST /notifications/read | {}，全部标为已读 |
 | GET /support | 本人工单 |
 | POST /support | subject、content（5 至 2000 字） |
@@ -194,7 +194,7 @@
 | 方法与路径 | 请求 / 返回 |
 | --- | --- |
 | POST /verify/intent | `{path, body}` 业务页面直接操作前询问是否需要强验证，如 `{"path":"/settings","body":{"dailyLimit":"60000"}}` → `{required, actionId?, decision}`；token 与具体参数及服务端保存的交易参数绑定 |
-| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated, channel, faceChannel, target?, demoCode?, reason?}`。登记真实邮箱且配置 Resend 时 `channel:"resend_email"`、`target` 为脱敏邮箱；example.com 演示邮箱或未配置发送服务时 `simulated:true, channel:"simulated_sms"`，响应附 `demoCode` 由验证页直接显示，并抄送消息中心（标题「模拟验证码」）。6 位验证码只存哈希。真实人脸模式须先录入实名资料。可注入异步短信适配器，外部发送失败返回 503 `SMS_SEND_FAILED`；不向模型或审计记录明文验证码。接入约定见 [SMS.md](SMS.md) |
+| POST /verify/start | `{actionId}` → `{id, expiresIn:300, simulated, channel, faceChannel, target?, demoCode?, reason?}`。登记真实邮箱且配置 Resend 时 `channel:"resend_email"`、`target` 为脱敏邮箱；example.com 演示邮箱或未配置发送服务时 `simulated:true, channel:"simulated_sms"`，响应附 `demoCode` 由验证页直接显示，并抄送消息中心（标题「模拟手机验证码」）。6 位验证码只存哈希。真实人脸模式须先录入实名资料。可注入异步短信适配器，外部发送失败返回 503 `SMS_SEND_FAILED`；不向模型或审计记录明文验证码。接入约定见 [SMS.md](SMS.md) |
 | POST /verify/face | 仅限模拟模式：`{id, frameHash}`（64 位十六进制 SHA-256，前端摄像头画面摘要）或 `{id, skipped:true, reason:"unavailable"|"denied"|"unsupported"}` 降级，降级写审计 `verification.face_skipped`；真实人脸模式拒绝调用 |
 | GET /verify/identity | 本人实名资料状态 `{enrolled, required, channel, maskedName?, maskedIdNumber?}`；默认模拟，无需提交真实信息 |
 | POST /verify/identity | 真实模式首次提交 `{realName, idNumber}`，姓名及身份证号加密保存，响应仅脱敏；不支持自行覆盖 |
@@ -274,3 +274,13 @@ IM 侧命令：「帮助」、「绑定 123456」（飞书）、「取消 ACT…
 - 持仓保存申购时的产品快照，基金被移出清单后持仓仍可展示与赎回。原演示产品 `wealth-flex`、`wealth-180` 已停售，仅保留存量持仓。
 - 中国理财网只提供登记信息（无业绩基准、起购金额与净值），且查询接口为加密请求并有验证码，未接入。
 
+## 收益与个人资料
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/wealth/earnings` | 收益明细。`view` 为 `day`、`month`、`year`、`all`；`period` 为 `YYYY-MM`（day）或 `YYYY`（month）；`key` 选择要拆分的日期、月份或年份。返回 `summary`、`series`、`selected`（`total`、`composition`、`items`） |
+| `GET /api/holdings` | 持仓增加 `earnings`（未支付收益）、`value`（本金 + 收益）、`yesterdayEarning`。`redeem` 的金额上限为 `value`，到账金额按比例拆分本金和收益 |
+| `POST /api/me/avatar`、`GET /api/me/avatar` | 上传或读取本人头像。上传内容为 JPEG/PNG 的 data URL，解码后不超过 128KB |
+| `POST /api/me/home-modules` | 保存首页自定义模块及顺序：`bill_daily`、`spend_tips`、`recommend` |
+| `POST /api/notifications/:id/read` | 将本人的一条消息标为已读 |
+| `POST /api/agent/onboarding/answer` | 点选项或提交卡片直接保存一项首次引导，不调用模型。参数 `field`、`value`、`label`、`skip`、`sessionId` |

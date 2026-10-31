@@ -1,10 +1,11 @@
 import { requireThat } from '../errors.mjs';
-import { now } from '../db.mjs';
+import { id, now } from '../db.mjs';
+import { boundedHistory } from './memory.mjs';
 import { channelNames, setChannelPreference } from '../channels/preferences.mjs';
 import { REPORT_KINDS, setReportSubscriptions } from '../channels/reports.mjs';
 
 // First conversation after enrollment: the model asks, the server validates and saves. Only the App channel runs it.
-// Binding a channel and the risk questionnaire happen in the App card below the chat; the model only records the choice.
+// Binding a channel happens in the App card below the chat and the risk questionnaire on its own page; the model only records the choice.
 export const ONBOARDING_FIELDS = Object.freeze(['preferred_name','focus_areas','answer_length','investment_goal','channels','mask_amounts','reports','risk']);
 export const FIELD_LABEL = Object.freeze({preferred_name:'称呼',focus_areas:'关注业务',answer_length:'回复详略',investment_goal:'理财目标',channels:'绑定飞书/微信',mask_amounts:'飞书/微信隐藏金额',reports:'账单推送',risk:'风险测评'});
 export const FOCUS_AREAS = Object.freeze(['账单分析','理财','转账','信用卡与贷款','生活缴费']);
@@ -15,7 +16,7 @@ export const ONBOARDING_TOOLS = new Set(['save_onboarding_answer','skip_onboardi
 const field={type:'string',enum:ONBOARDING_FIELDS},saveField={type:'string',enum:ONBOARDING_FIELDS.filter(f=>f!=='risk')};
 const evidence={type:'string',minLength:1,maxLength:200,description:'本轮用户原文中支持该操作的片段，须逐字摘录'};
 export const onboardingToolDefinitions=[
- {type:'function',function:{name:'save_onboarding_answer',description:`保存用户在首次引导中亲口说出的偏好；一句话说了多项就分别调用。value取值：preferred_name为用户希望的称呼（不超过20字，须原样出现在evidence中）；focus_areas为${FOCUS_AREAS.join('、')}中的一项或多项，用顿号分隔；answer_length为简短、适中或详细；investment_goal为${GOAL_OPTIONS.join('、')}之一，或用户原话（不超过40字）；channels为用户想绑定的渠道：微信、飞书或都绑（只记下选择，用户在App卡片里扫码完成绑定）；mask_amounts为隐藏或显示（同时作用于飞书和微信）；reports为日报、周报、月报中的一项或多项，用顿号分隔。风险测评只能在App卡片答题，不能保存`,parameters:{type:'object',properties:{field:saveField,value:{type:'string',minLength:1,maxLength:60},evidence},required:['field','value','evidence'],additionalProperties:false}}},
+ {type:'function',function:{name:'save_onboarding_answer',description:`保存用户在首次引导中亲口说出的偏好；一句话说了多项就分别调用。value取值：preferred_name为用户希望的称呼（不超过20字，须原样出现在evidence中）；focus_areas为${FOCUS_AREAS.join('、')}中的一项或多项，用顿号分隔；answer_length为简短、适中或详细；investment_goal为${GOAL_OPTIONS.join('、')}之一，或用户原话（不超过40字）；channels为用户想绑定的渠道：微信、飞书或都绑（只记下选择，用户在App卡片里扫码完成绑定）；mask_amounts为隐藏或显示（同时作用于飞书和微信）；reports为日报、周报、月报中的一项或多项，用顿号分隔。风险测评只能在App专门页面完成，不能保存`,parameters:{type:'object',properties:{field:saveField,value:{type:'string',minLength:1,maxLength:60},evidence},required:['field','value','evidence'],additionalProperties:false}}},
  {type:'function',function:{name:'skip_onboarding',description:'用户表示某些问题不想回答时传fields；表示不想继续引导、以后再说时传all=true，结束引导',parameters:{type:'object',properties:{fields:{type:'array',items:field,minItems:1,maxItems:ONBOARDING_FIELDS.length},all:{type:'boolean'},evidence},required:['evidence'],additionalProperties:false}}},
 ];
 export const ONBOARDING_OPENING='开通成功！想先花一分钟了解你，方便以后按你的习惯来服务，每个问题都可以说「跳过」。先问一下，我该怎么称呼你？';
@@ -24,10 +25,13 @@ export const ONBOARDING_INSTRUCTIONS=`当前是用户开通智能助手后的首
 2. 用户回答后，用save_onboarding_answer保存；用户一句话里说了多项就分别保存；用户说跳过或不想答，用skip_onboarding。只保存用户本轮亲口表达的内容，不要猜测；含糊时先确认。
 3. 绑定飞书/微信：只提引导状态channels.available里的渠道，问用户绑微信、飞书还是两个都绑；用户选好后保存channels，并请用户在下方卡片输入支付密码、扫二维码完成绑定。绑定只能在卡片里完成：不要在对话中索要支付密码或验证码；是否绑好以channels.bound为准，不要自己说已绑定。
 4. 账单推送：日报每天、周报每周一、月报每月1日，都在上午8:00推送到已绑定的飞书/微信；问用户要哪几种，选好后保存reports。
-5. 风险测评是最后一项，由用户在下方卡片答题完成；不要自己出题，也不要评估或记录用户的风险承受能力。用户不想做就用skip_onboarding跳过。
+5. 风险测评是最后一项，由用户点下方卡片的「去测评」到专门页面完成；不要自己出题，也不要评估或记录用户的风险承受能力。用户不想做就用skip_onboarding跳过。
 6. 用户如果提出银行业务请求，先按正常规则办理，最后一句再问是否继续设置。
 7. 引导期间不使用memory_candidates和remember。保存后说「已记下」，不要说「已完成」。
 8. 全部问完或用户结束引导后，用一两句话总结已记下的偏好，并告诉用户可以在「我的 → 个性化与记忆」中随时修改；跳过了风险测评时，提醒以后在「理财 → 风险测评」完成后可以按结果给出配置建议。`;
+// Prompts for answers saved without the model: each states the next question in the same voice as the opening line.
+const NEXT_QUESTION={preferred_name:'我该怎么称呼你？',focus_areas:'你最关注哪些业务？可以多选。',answer_length:'希望我的回复简短、适中还是详细？',investment_goal:'你的理财目标是什么？',channels:'要不要绑定飞书或微信？绑定后可以在那边查询和接收推送。',mask_amounts:'在飞书、微信里要隐藏金额吗？',reports:'要不要账单推送？日报每天、周报每周一、月报每月1日上午8:00发送。',risk:'最后做一下风险测评吧，到专门页面答5道题，理财建议才能按结果来。不想做也可以跳过。'};
+const DONE_TEXT='首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？';
 const compact=text=>String(text).normalize('NFKC').replace(/\s+/g,'').toLowerCase();
 
 export function createOnboarding(services) {
@@ -137,9 +141,29 @@ export function createOnboarding(services) {
   bank.atomic(()=>{if(state(user.id).status==='pending')finishWith(user.id,read(user.id),true);});
   return state(user.id);
  }
+ // Tapping an option or submitting the card answers directly: the server validates and saves it with no model call.
+ function answerDirectly(user,principal,{field:fieldName,value,skip,label},sessionId,messageId) {
+  requireThat(ONBOARDING_FIELDS.includes(fieldName),'引导字段无效',400,'INVALID_ONBOARDING');
+  requireThat(skip===true||(fieldName!=='risk'&&typeof value==='string'&&value.trim().length>0&&value.length<=60),'引导字段无效',400,'INVALID_ONBOARDING');
+  const text=typeof label==='string'&&label.trim()?label.trim().slice(0,60):String(value||`${FIELD_LABEL[fieldName]}这个问题跳过`);
+  return bank.atomic(()=>{
+   const current=state(user.id);requireThat(current.status==='pending','首次引导已结束',409,'ONBOARDING_FINISHED');
+   if(sessionId)requireThat(bank.get("SELECT 1 FROM agent_sessions WHERE id=? AND user_id=? AND channel='app' AND archived=0",sessionId,user.id),'会话不存在',404,'NOT_FOUND');
+   const change=skip===true?{field:fieldName,skip:true}:{field:fieldName,value:normalize(fieldName,value.trim(),value,current)};
+   apply(user,principal,[change],messageId);
+   const next=state(user.id),acknowledged=fieldName==='preferred_name'&&!skip?`好的，${value.trim()}。`:skip?'好的，这项先跳过。':'已记下。';
+   const reply=fieldName==='channels'&&!skip&&next.next==='channels'?'好的，请在下方输入支付密码生成二维码，扫码后就绑定好了。':next.status==='pending'&&next.next?`${acknowledged}${NEXT_QUESTION[next.next]}`:DONE_TEXT;
+   const at=now(),session=sessionId||id('SESSION');
+   bank.run('INSERT OR IGNORE INTO agent_sessions(id,user_id,channel,updated_at) VALUES(?,?,?,?)',session,user.id,'app',at);
+   const history=services.memory.recent(principal,session);
+   bank.run('UPDATE agent_sessions SET history=?,updated_at=? WHERE id=?',JSON.stringify(boundedHistory([...history,{role:'user',content:text},{role:'assistant',content:reply}])),at,session);
+   bank.run("INSERT INTO agent_runs(id,user_id,channel,session_id,input,injection,trace,output,duration_ms,tokens,created_at,events,topic) VALUES(?,?,'app',?,?,'[]','[]',?,0,0,?,'[]','onboarding')",id('RUN'),user.id,session,text,reply,at);
+   return {state:next,reply,sessionId:session,text};
+  });
+ }
  function reset(user) {
   bank.atomic(()=>{bank.run("UPDATE users SET agent_onboarding='pending',agent_onboarding_state='{}' WHERE id=?",user.id);bank.audit(user.id,'agent.onboarding.reset');});
   return state(user.id);
  }
- return {state,active,stage,apply,advance,end,reset};
+ return {state,active,stage,apply,advance,end,reset,answerDirectly};
 }

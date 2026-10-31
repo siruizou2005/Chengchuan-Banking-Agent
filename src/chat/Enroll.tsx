@@ -10,7 +10,7 @@ import type { Agreement, Enrollment } from '../types';
 const points = [
   { icon: IcoRecord, tone: 'blue', title: '能帮你做什么', text: '查账户与流水、分析账单、理财建议，提议转账和缴费' },
   { icon: IcoDoc, tone: 'gold', title: '会读取的数据', text: '账户、流水、持仓、卡片与订阅，仅用于回答问题，发送给模型前脱敏' },
-  { icon: IcoLock, tone: 'coral', title: '资金操作须你在App确认', text: '需输入支付密码，较大金额还需人脸与短信验证' },
+  { icon: IcoLock, tone: 'coral', title: '资金操作须你在App确认', text: '需输入支付密码，较大金额还需人脸与模拟手机验证码' },
   { icon: IcoHelp, tone: 'orange', title: '回答可能有误', text: '以页面和服务端回单为准，理财建议不保证收益' },
   { icon: IcoShield, tone: 'blue', title: '可随时关闭', text: '「我的 → 安全中心」关闭后，App、飞书、微信均停止受理' },
 ] as const;

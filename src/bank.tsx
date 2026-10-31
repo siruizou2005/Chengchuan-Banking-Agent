@@ -4,7 +4,7 @@ import type { Snapshot, Transaction } from './types';
 export type BankContextValue = {
   data: Snapshot; busy: boolean; route: string; hidden: boolean;
   formError: { message: string; code: string } | null; clearFormError: () => void;
-  navigate: (route: string) => void; refresh: () => Promise<void>; toggleHidden: () => void;
+  navigate: (route: string) => void; navigatePage: (route: string) => void; refresh: () => Promise<void>; toggleHidden: () => void;
   askAgent: (text: string) => void;
   begin: (body: Record<string, unknown>) => Promise<void>;
   mutate: (path: string, body: unknown, success: string, method?: string) => Promise<boolean>;

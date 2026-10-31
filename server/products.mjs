@@ -24,13 +24,13 @@ export const CATEGORY_LABEL = Object.freeze({ deposit: '定期存款', money: '�
 
 const DEPOSIT_SOURCE = { source: '澄川银行挂牌利率（演示）', updatedAt: '2026-10-01T00:00:00.000Z' };
 export const DEPOSITS = Object.freeze([
-  { id: 'deposit-90', type: 'deposit', category: 'deposit', name: '安心存三个月', subtitle: '90天整存整取，支持提前支取', rate: 1.35, rateLabel: '年利率', days: 90, minimum: 5000, riskLevel: 0, risk: '存款', issuer: '澄川银行', purchasable: true, tags: ['50元起存', '到期可取'], description: '人民币整存整取定期存款，存期90天，支持提前支取。演示环境按本金结算，不计付利息。', ...DEPOSIT_SOURCE },
-  { id: 'deposit-365', type: 'deposit', category: 'deposit', name: '安心存一年期', subtitle: '365天整存整取，支持提前支取', rate: 1.65, rateLabel: '年利率', days: 365, minimum: 5000, riskLevel: 0, risk: '存款', issuer: '澄川银行', purchasable: true, tags: ['50元起存', '整存整取'], description: '人民币整存整取定期存款，存期一年，支持提前支取。演示环境按本金结算，不计付利息。', ...DEPOSIT_SOURCE },
+  { id: 'deposit-90', type: 'deposit', category: 'deposit', name: '安心存三个月', subtitle: '90天整存整取，支持提前支取', rate: 1.35, rateLabel: '年利率', days: 90, minimum: 5000, riskLevel: 0, risk: '存款', issuer: '澄川银行', purchasable: true, tags: ['50元起存', '到期可取'], description: '人民币整存整取定期存款，存期90天，支持提前支取。演示环境按年利率逐日计息，到期后停止计息；提前支取按实际持有天数计息，支取时随本金一并到账。', ...DEPOSIT_SOURCE },
+  { id: 'deposit-365', type: 'deposit', category: 'deposit', name: '安心存一年期', subtitle: '365天整存整取，支持提前支取', rate: 1.65, rateLabel: '年利率', days: 365, minimum: 5000, riskLevel: 0, risk: '存款', issuer: '澄川银行', purchasable: true, tags: ['50元起存', '整存整取'], description: '人民币整存整取定期存款，存期一年，支持提前支取。演示环境按年利率逐日计息，到期后停止计息；提前支取按实际持有天数计息，支取时随本金一并到账。', ...DEPOSIT_SOURCE },
 ]);
 // Retired demo products: no longer sold, kept so existing holdings still render and redeem.
 export const LEGACY_PRODUCTS = Object.freeze([
-  { id: 'wealth-flex', type: 'wealth', category: 'money', name: '澄享日日盈', subtitle: '现金管理类，每日可申赎', rate: 2.18, rateLabel: '成立以来年化', days: 0, minimum: 10000, riskLevel: 1, risk: 'R1 低风险', issuer: '澄川理财', purchasable: false, purchaseStatus: '已停售', tags: ['已停售'], description: '已停售的演示产品，持有份额按本金赎回。', source: '澄川银行演示数据', updatedAt: '2026-01-01T00:00:00.000Z' },
-  { id: 'wealth-180', type: 'wealth', category: 'bond', name: '澄享稳进180天', subtitle: '固定持有期，到期后可赎回', rate: 3.20, rateLabel: '业绩比较基准', days: 180, minimum: 100000, riskLevel: 2, risk: 'R2 中低风险', issuer: '澄川理财', purchasable: false, purchaseStatus: '已停售', tags: ['已停售'], description: '已停售的演示产品，持有180天后按本金赎回。', source: '澄川银行演示数据', updatedAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'wealth-flex', type: 'wealth', category: 'money', name: '澄享日日盈', subtitle: '现金管理类，每日可申赎', rate: 2.18, rateLabel: '成立以来年化', days: 0, minimum: 10000, riskLevel: 1, risk: 'R1 低风险', issuer: '澄川理财', purchasable: false, purchaseStatus: '已停售', tags: ['已停售'], description: '已停售的演示产品，按业绩比较基准逐日计算收益，赎回时随本金一并到账。', source: '澄川银行演示数据', updatedAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'wealth-180', type: 'wealth', category: 'bond', name: '澄享稳进180天', subtitle: '固定持有期，到期后可赎回', rate: 3.20, rateLabel: '业绩比较基准', days: 180, minimum: 100000, riskLevel: 2, risk: 'R2 中低风险', issuer: '澄川理财', purchasable: false, purchaseStatus: '已停售', tags: ['已停售'], description: '已停售的演示产品，持有180天后可赎回，按业绩比较基准逐日计算收益，赎回时随本金一并到账。', source: '澄川银行演示数据', updatedAt: '2026-01-01T00:00:00.000Z' },
 ]);
 
 export function migrateProducts(db) {
@@ -61,6 +61,9 @@ function purchaseLimit(status = '') {
 const yuanText = c => { const y = c / 100; return y >= 1e8 ? `${y / 1e8}亿元` : y >= 1e4 ? `${y / 1e4}万元` : `${y}元`; };
 // Bump when normalizeFund gains fields, so cached rows from an older build are refetched at once.
 export const FUND_SCHEMA = 2;
+const FUND_SETTLEMENT = '演示环境为模拟申购，按每日净值变动计算收益，赎回时随本金一并到账。';
+// Cached rows and the bundled snapshot predate daily earnings; keep their wording in step with the settlement rules.
+const currentWording = f => ({ ...f, description: String(f.description || '').replace('演示环境为模拟申购，按本金结算，不计算净值变动。', FUND_SETTLEMENT) });
 
 export function normalizeFund(d, fetchedAt) {
   const code = String(d.FCODE), cat = category(d.FTYPE), money = cat === 'money';
@@ -76,7 +79,7 @@ export function normalizeFund(d, fetchedAt) {
     minimum, fee: d.RATE || '0.00%', purchaseStatus: status, redeemStatus: d.SHZT || '未知', purchaseLimit: limit, purchasable, days: 0,
     subtitle: `${CATEGORY_LABEL[cat]} · ${d.JJGS}`,
     tags: [`${yuanText(minimum)}起购`, purchasable ? (limit ? `单日上限${yuanText(limit)}` : '开放申购') : '暂停申购'],
-    description: `${d.FTYPE}，基金管理人${d.JJGS}。业绩与净值来自${FUND_SOURCE}公开数据，仅供展示参考，过往业绩不代表未来表现。演示环境为模拟申购，按本金结算，不计算净值变动。`,
+    description: `${d.FTYPE}，基金管理人${d.JJGS}。业绩与净值来自${FUND_SOURCE}公开数据，仅供展示参考，过往业绩不代表未来表现。${FUND_SETTLEMENT}`,
     source: FUND_SOURCE, sourceUrl: `https://fund.eastmoney.com/${code}.html`, updatedAt: fetchedAt,
   };
 }
@@ -134,7 +137,7 @@ export async function fetchHistory(fetchImpl, product, range, timeoutMs) {
   const rows = (body?.Datas || []).map(r => ({ date: r.FSRQ, nav: num(r.DWJZ), acc: num(r.LJJZ) })).filter(r => r.date && r.acc !== null);
   if (rows.length < 2) throw new Error(`no history for ${product.code}`);
   const money = product.category === 'money', base = rows[0].acc;
-  return rows.map(r => ({ date: r.date, value: money ? r.acc : Math.round((r.acc / base - 1) * 10000) / 100, ...(money ? { perTenThousand: r.nav } : { nav: r.nav }) }));
+  return rows.map(r => ({ date: r.date, value: money ? r.acc : Math.round((r.acc / base - 1) * 10000) / 100, ...(money ? { perTenThousand: r.nav } : { nav: r.nav, acc: r.acc }) }));
 }
 // Index daily closes also come from Tencent: Eastmoney's kline host (push2his) resets about half
 // of all connections. Trading days per range:
@@ -181,7 +184,7 @@ export function createProductCatalog(bank, options = {}) {
     const rows = db.prepare('SELECT data FROM product_cache').all().map(r => JSON.parse(r.data));
     const byId = new Map(snapshot.funds.filter(f => codes.includes(f.code)).map(f => [f.id, f]));
     for (const row of rows) if (codes.includes(row.code)) byId.set(row.id, row);
-    funds = codes.map(code => byId.get(`fund-${code}`)).filter(Boolean);
+    funds = codes.map(code => byId.get(`fund-${code}`)).filter(Boolean).map(currentWording);
     const s = sync();
     market = s?.data ? JSON.parse(s.data) : snapshot.market || [];
   }
@@ -275,6 +278,7 @@ export function createProductCatalog(bank, options = {}) {
     if (!indexSymbol(code) || !KLINE_DAYS[range]) return null;
     return cachedSeries(`index-${code}`, range, { metric: '收盘点位', unit: '点', source: INDEX_SOURCE }, () => fetchIndexHistory(fetchImpl, code, range, timeoutMs), Math.min(ttlMs, 1800000));
   }
+  const cachedPoints = productId => { const row = db.prepare("SELECT data FROM product_history WHERE id=? AND range='1y'").get(productId); return row ? JSON.parse(row.data) : []; };
   const list = () => [...DEPOSITS, ...funds];
   const get = productId => list().find(p => p.id === productId);
   // Holdings keep a snapshot so a delisted or renamed fund still renders and redeems.
@@ -283,5 +287,5 @@ export function createProductCatalog(bank, options = {}) {
     const saved = h.product_snapshot ? JSON.parse(h.product_snapshot) : { id: h.product_id, type: 'wealth', name: h.product_id, risk: '', riskLevel: 0, days: 0 };
     return live || { ...saved, rate: null, rateLabel: '', minimum: 0, purchasable: false, purchaseStatus: '已下架', tags: [], subtitle: '产品数据已下架，仅保留持仓', description: '' };
   }
-  return { list, get, forHolding, meta, market: () => market, history, indexHistory, refresh, ensureFresh, ready, codes };
+  return { list, get, forHolding, meta, market: () => market, history, indexHistory, cachedPoints, refresh, ensureFresh, ready, codes };
 }

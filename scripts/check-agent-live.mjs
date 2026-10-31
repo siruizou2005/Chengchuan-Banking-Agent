@@ -73,7 +73,7 @@ try {
   assert.equal(verification.status, 200);
   const id = verification.data.id;
   assert.equal((await request('/verify/face', { id, skipped: true, reason: 'unavailable' })).status, 200);
-  const message = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1", user.id).body;
+  const message = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟手机验证码' ORDER BY rowid DESC LIMIT 1", user.id).body;
   const verified = await request('/verify/complete', { id, code: message.match(/验证码 (\d{6})/)[1] });
   assert.equal(verified.status, 200);
   assert.equal((await request(`/agent/actions/${red.id}/confirm`, { pin: '123456', verificationToken: verified.data.verificationToken })).data.status, 'completed');

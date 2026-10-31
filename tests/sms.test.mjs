@@ -15,14 +15,14 @@ async function regularFixture(t, provider) {
   return { ...f, user, call, action };
 }
 
-test('无适配器仍发模拟验证码，返回渠道并记录回退原因', async t => {
+test('无适配器仍发模拟手机验证码，返回渠道并记录回退原因', async t => {
   const f = await regularFixture(t);
   const r = await f.call('/verify/start', { actionId: f.action.id });
   assert.equal(r.status, 200);
   assert.equal(r.data.simulated, true);
   assert.equal(r.data.channel, 'simulated_sms');
   assert.equal(r.data.expiresIn, 300);
-  const body = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).body;
+  const body = f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟手机验证码'", f.user.id).body;
   const code = body.match(/验证码 (\d{6})/)[1];
   const v = f.bank.get('SELECT * FROM verifications WHERE id=?', r.data.id);
   assert.equal(v.code_hash, hash(code));
@@ -63,7 +63,7 @@ test('异步外部适配器接收注册手机号，真实渠道贯通验证码�
   assert.match(message.code, /^\d{6}$/);
   assert.equal(message.expiresIn, 300);
   assert.equal(message.verificationId, r.data.id);
-  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).n, 0);
+  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟手机验证码'", f.user.id).n, 0);
   assert.equal(f.bank.get('SELECT code_hash FROM verifications WHERE id=?', r.data.id).code_hash, hash(message.code));
   assert.equal((await f.call('/verify/face', { id: r.data.id, skipped: true, reason: 'unavailable' })).status, 200);
   const proof = await f.call('/verify/complete', { id: r.data.id, code: message.code });
@@ -95,7 +95,7 @@ test('发送失败不降级、不泄漏异常内容，新挑战不可用且旧�
   assert.equal(failed.used, 1);
   assert.equal((await f.call('/verify/face', { id: failed.id, skipped: true, reason: 'unavailable' })).status, 403);
   assert.equal((await f.call('/verify/face', { id: first.data.id, skipped: true, reason: 'unavailable' })).status, 200);
-  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟验证码'", f.user.id).n, 0);
+  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND title='模拟手机验证码'", f.user.id).n, 0);
   const audits = JSON.stringify(f.bank.all('SELECT * FROM audit WHERE user_id=?', f.user.id));
   assert.ok(audits.includes('verification.send_failed'));
   assert.ok(!audits.includes('private-key'));

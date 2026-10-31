@@ -28,7 +28,7 @@ async function fixture(t) {
     const intent = (await req('/verify/intent', { path, body })).data;
     if (!intent.required) return body;
     const v = (await req('/verify/start', { actionId: intent.actionId })).data;
-    const code = bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟验证码' ORDER BY rowid DESC LIMIT 1", alice.user.id).body.match(/验证码 (\d{6})/)[1];
+    const code = bank.get("SELECT body FROM notifications WHERE user_id=? AND title='模拟手机验证码' ORDER BY rowid DESC LIMIT 1", alice.user.id).body.match(/验证码 (\d{6})/)[1];
     await req('/verify/face', { id: v.id, skipped: true, reason: 'unavailable' });
     const result = (await req('/verify/complete', { id: v.id, code })).data;
     return { ...body, verificationActionId: intent.actionId, verificationToken: result.verificationToken };

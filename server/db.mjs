@@ -8,6 +8,7 @@ import { migrateReports } from './channels/reports-schema.mjs';
 import { redactIdentity } from './privacy.mjs';
 import { migratePersonalization } from './agent/personalization-schema.mjs';
 import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
+import { migrateEarnings } from './earnings.mjs';
 import { migrateRisk } from './risk/schema.mjs';
 import { migratePuma } from './puma/schema.mjs';
 import { mirrorAudit } from './puma/evidence.mjs';
@@ -169,12 +170,16 @@ export function createBank(path) {
   migrateReports(db);
   migratePersonalization(db);
   migrateProducts(db);
+  migrateEarnings(db);
   migrateRisk(db);
   migratePuma(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   // Assistant enrollment: every user starts disabled until they accept the current agreements themselves.
   for (const [column, ddl] of [['agent_enabled_at', 'TEXT'], ['agent_onboarding', "TEXT NOT NULL DEFAULT 'pending'"], ['agent_onboarding_state', "TEXT NOT NULL DEFAULT '{}'"]])
     if (!all('PRAGMA table_info(users)').some(c => c.name === column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} ${ddl}`);
+  if (!all('PRAGMA table_info(users)').some(c => c.name === 'home_modules')) db.exec('ALTER TABLE users ADD COLUMN home_modules TEXT');
+  // Avatars live apart from users, so ordinary user lookups never load image bytes.
+  db.exec('CREATE TABLE IF NOT EXISTS user_avatars (user_id TEXT PRIMARY KEY REFERENCES users(id), mime TEXT NOT NULL, data BLOB NOT NULL, updated_at TEXT NOT NULL)');
   db.exec(`CREATE TABLE IF NOT EXISTS agent_consents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), document TEXT NOT NULL, version TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT);
     CREATE INDEX IF NOT EXISTS agent_consents_user ON agent_consents(user_id,revoked_at);`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;

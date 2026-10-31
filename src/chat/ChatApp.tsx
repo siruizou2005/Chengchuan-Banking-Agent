@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, LoaderCircle, Plus, RotateCcw, Menu, Mic, Square, X, History } from 'lucide-react';
+import { Check, Copy, LoaderCircle, Plus, RotateCcw, Mic, Square, X, History } from 'lucide-react';
 import { ChatError, liveAdapter, initialMessages, type ChatAdapter, type Message } from './adapter';
 import { api, date } from '../api';
 import { useBank } from '../bank';
-import { Avatar, Empty, InlineError, Modal } from '../ui';
-import type { AgentSession, AgentSessionDetail, ChannelName, Enrollment, OnboardingState } from '../types';
+import { Empty, InlineError, Modal, UserAvatar } from '../ui';
+import type { AgentSession, AgentSessionDetail, ChannelName, Enrollment, OnboardingField, OnboardingState } from '../types';
 import { AgentMark } from '../AgentMark';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
@@ -27,7 +27,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
     }
     catch { setCopyError(true); }
   }
-  if (message.role === 'user') return <article className="msg user"><div className="bubble">{message.text}</div><Avatar size={34} /></article>;
+  if (message.role === 'user') return <article className="msg user"><div className="bubble">{message.text}</div><UserAvatar size={34} /></article>;
   return <article className="msg assistant" id={`msg-${message.id}`}>
     <span className="chat-avatar" aria-hidden="true"><AgentMark size={32} /></span>
     <div className="msg-body">
@@ -45,6 +45,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
   </article>;
 }
 
+const GUIDE_DONE = '首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？';
 const quickQuestions = ['转账', '分析本月账单', '有哪些订阅扣费', '推荐一个理财'];
 // 每个用户在本浏览器中最后打开的对话；服务端会校验归属，读写失败（隐私模式等）静默忽略。
 const sessionKey = (userId: string) => `bank-chat-session:${userId}`;
@@ -54,7 +55,7 @@ const currentSessionId = (messages: readonly Message[]) => [...messages].reverse
 
 // 智能助手页面：嵌入银行应用，使用当前登录用户。App 在切换标签时保持挂载，对话不会丢失。
 export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: ChatAdapter; request?: { id: number; text: string } | null }) {
-  const { data, refresh, logout, navigate } = useBank();
+  const { data, refresh, logout, route, navigatePage, toast } = useBank();
   const user = data.user;
   const [voiceEnabled, setVoiceEnabled] = useState(false), [recording, setRecording] = useState(false), [voiceBusy, setVoiceBusy] = useState(false), [transcribing, setTranscribing] = useState(false), [seconds, setSeconds] = useState(0), [level, setLevel] = useState(0);
   const recorder = useRef<Recording | null>(null), voiceAbort = useRef<AbortController | null>(null), voiceGeneration = useRef(0);
@@ -69,6 +70,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [guideBusy, setGuideBusy] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -122,6 +124,17 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     }).catch(() => {});
     return () => { alive = false; };
   }, [onboardingStatus]);
+  // Back from the questionnaire page: the server already moved the guide on, so pick up from its state.
+  const leftForRisk = useRef(false), activeTab = route.split('?')[0];
+  useEffect(() => {
+    if (activeTab !== 'assistant' || !leftForRisk.current) return;
+    leftForRisk.current = false;
+    api<Enrollment>('/agent/enrollment').then(e => {
+      const state = e.onboardingState;
+      setGuide(state.status === 'pending' ? state : null);
+      if (state.riskLevel > 0) say(`风险测评完成：${riskTag(state.riskLevel)}。${state.status === 'pending' && state.next ? `接下来是${ONBOARDING_LABEL[state.next]}，可以在下方选择，也可以直接告诉我。` : GUIDE_DONE}`);
+    }).catch(() => {});
+  }, [activeTab]);
   useEffect(() => () => { controller.current?.abort(); recorder.current?.cancel(); voiceAbort.current?.abort(); voiceGeneration.current++; }, []);
   // A new reply is read from its first line, so stop at its top instead of the bottom of the cards.
   // Jump instantly: smooth scrolling never runs while the tab is in the background.
@@ -158,11 +171,28 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   }
   // 卡片里完成的步骤（扫码绑定、风险测评）由服务端核实后推进，这里只补一句确认并引出下一项，不调用模型。
   function say(text: string) { shouldScroll.current = true; setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text }]); }
+  // Tapped options and card submissions save straight away: no model call, so the next question appears at once.
+  async function answerGuide(field: OnboardingField, value: string | undefined, label: string, skip = false) {
+    if (guideBusy || controller.current) return;
+    started.current = true; shouldScroll.current = true; setGuideBusy(true); setError(''); setNotice('');
+    const asked: Message = { id: crypto.randomUUID(), role: 'user', text: label, sessionId: sessionId || undefined };
+    setMessages(list => [...list, asked]);
+    try {
+      const result = await api<{ state: OnboardingState; reply: string; sessionId: string }>('/agent/onboarding/answer', 'POST', { field, value, label, skip, sessionId: sessionId || undefined });
+      setGuide(result.state);
+      setMessages(list => [...list, { id: crypto.randomUUID(), role: 'assistant', text: result.reply, sessionId: result.sessionId }]);
+      storeSession(user.id, result.sessionId);
+      void refresh().catch(() => {});
+    } catch (e) {
+      setMessages(list => list.filter(m => m.id !== asked.id));
+      toast((e as Error).message, true);
+    } finally { setGuideBusy(false); }
+  }
   async function advanceGuide(field: 'channels' | 'risk', text: string) {
     try {
       const state = await api<OnboardingState>('/agent/onboarding/advance', 'POST', { field });
       setGuide(state);
-      say(text + (state.status === 'pending' && state.next ? `接下来是${ONBOARDING_LABEL[state.next]}，可以在下方选择，也可以直接告诉我。` : '首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？'));
+      say(text + (state.status === 'pending' && state.next ? `接下来是${ONBOARDING_LABEL[state.next]}，可以在下方选择，也可以直接告诉我。` : GUIDE_DONE));
       await refresh();
     } catch (e) { setError((e as Error).message); }
   }
@@ -213,9 +243,9 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   }
   return <section className="assistant-page satin-assistant" aria-label="智能助手">
     <header className="chat-header">
-      <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button>
+      <div className="chat-header-side"><button className="icon-button" aria-label="对话历史" data-testid="chat-history" onClick={() => void openHistory()}><History size={22} strokeWidth={1.8} /></button></div>
       <div className="chat-title"><h1><AgentMark size={22} />智能助手</h1><span className={`chat-state${configured ? ' on' : ''}`}>{configured === null ? '连接中…' : configured ? '在线，7×24小时服务' : '服务暂不可用'}</span></div>
-      <div className="chat-header-actions"><button className="icon-button" aria-label="对话历史" onClick={() => void openHistory()}><History size={21} strokeWidth={1.8} /></button><button className="btn-text" onClick={reset}><Plus size={15} />新对话</button></div>
+      <div className="chat-header-side end"><button className="btn-text" onClick={reset}><Plus size={15} />新对话</button></div>
     </header>
     {historyOpen && <Modal title="对话历史" onClose={() => setHistoryOpen(false)}>
       <div className="session-list" role="list" aria-label="历史对话">
@@ -235,10 +265,10 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
         <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
-        {guiding && guide ? <OnboardingCard state={guide} busy={busy} configured={configured !== false} onSay={text => send(text)} onEnd={() => void endGuide()} onBound={channelBound} onContinue={() => void advanceGuide('channels', '')} onRiskDone={level => advanceGuide('risk', `风险测评完成：${riskTag(level)}。`)} />
+        {guiding && guide ? <OnboardingCard state={guide} busy={busy || guideBusy} onAnswer={(field, value, label) => void answerGuide(field, value, label)} onSkip={field => void answerGuide(field, undefined, `${ONBOARDING_LABEL[field]}这个问题跳过`, true)} onEnd={() => void endGuide()} onBound={channelBound} onContinue={() => void advanceGuide('channels', '')} onStartRisk={() => { leftForRisk.current = true; navigatePage('risk?from=onboarding'); }} />
         : messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">智能助手暂不可用，请稍后再试。你仍可通过底部导航办理业务。</div>}
-        <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />正在为您查询…</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>
+        <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />{guiding ? '正在回复…' : '正在为您查询…'}</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>
         {error && <div className="chat-error" role="alert">{error}{configured && <button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重试</button>}</div>}
         <div ref={bottom} className="scroll-anchor" />
       </div>

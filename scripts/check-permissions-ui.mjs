@@ -16,7 +16,7 @@ const plan=f.services.propose(user,'create_plan',{title:'浏览器暂停计划',
 f.services.confirm(user,plan.id,{pin:'123456'});
 const spend=f.services.propose(user,'propose_transfer',{recipient,amount:'600'});
 const v=f.services.verification.start(user,spend.id);f.services.verification.face(user,{id:v.id,skipped:true,reason:'unavailable'});
-const msg=f.bank.get("SELECT body FROM notifications WHERE title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1").body;
+const msg=f.bank.get("SELECT body FROM notifications WHERE title='模拟手机验证码' ORDER BY rowid DESC LIMIT 1").body;
 const token=f.services.verification.complete(user,{id:v.id,code:msg.match(/验证码 (\d{6})/)[1]}).verificationToken;
 f.services.confirm(user,spend.id,{pin:'123456',verificationToken:token});
 const query=f.services.propose(user,'list_subscriptions',{});
@@ -42,7 +42,7 @@ try{
  assert.equal(await card.getByText('已暂停 · 待补充验证',{exact:true}).count(),1);
  await card.getByRole('button',{name:'补充验证并恢复'}).click();await page.getByRole('button',{name:'开始验证并发送模拟短信'}).click();
  await page.getByRole('button',{name:'开启摄像头并采集'}).click();await page.getByRole('button',{name:'记录降级并继续短信验证'}).click();
- const latest=f.bank.get("SELECT body FROM notifications WHERE title='模拟短信验证码' ORDER BY rowid DESC LIMIT 1").body;
+ const latest=f.bank.get("SELECT body FROM notifications WHERE title='模拟手机验证码' ORDER BY rowid DESC LIMIT 1").body;
  await page.locator('input[name="code"]').fill(latest.match(/验证码 (\d{6})/)[1]);await page.getByRole('button',{name:'验证短信，继续支付密码'}).click();
  await page.locator('input[name="pin"]').fill('123456');await page.getByRole('button',{name:'确认执行',exact:true}).click();await card.getByText('已授权 · 待执行',{exact:true}).waitFor();
  assert.equal(f.bank.get("SELECT held FROM accounts WHERE user_id=?",user.id).held,70000);

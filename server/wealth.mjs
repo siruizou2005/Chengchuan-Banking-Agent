@@ -43,7 +43,7 @@ export function financeProfile(services, user, today = businessDate()) {
   const available = state.accounts.filter(a => a.status === 'active' && a.type !== 'system').reduce((n, a) => n + a.available, 0);
   const flows = monthlyFlows(services.bank, user.id, today);
   const holdings = { liquid: 0, stable: 0, growth: 0 };
-  for (const h of state.holdings) holdings[bucketOf(h.product)] += h.principal;
+  for (const h of state.holdings) holdings[bucketOf(h.product)] += h.value ?? h.principal;
   const next = state.holdings.filter(h => h.product.type === 'deposit' && h.unlock_at.slice(0, 10) >= today).sort((a, b) => a.unlock_at.localeCompare(b.unlock_at))[0];
   // Money-fund holdings are as liquid as the current account, so both count toward the emergency fund.
   const target = flows.spend * EMERGENCY_MONTHS, covered = available + holdings.liquid;
