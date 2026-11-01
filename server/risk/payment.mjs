@@ -38,5 +38,5 @@ export function createMockPaymentAdapter(bank, options = {}) {
     bank.run('UPDATE risk_mock_provider SET status=?,sequence=sequence+1 WHERE provider_key=?', status, key);
     return query(key);
   }
-  return { mode: 'mock', submit, verify, query, advance };
+  return { mode: 'mock', allowsSinglePin: true, submit, verify, query, advance };
 }

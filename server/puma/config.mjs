@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { requireThat } from '../errors.mjs';
 export const DEFAULT_PUMA_POLICY=JSON.parse(readFileSync(new URL('./policy.json',import.meta.url),'utf8'));
 export const MODES=['disabled','shadow','monitored_canary','enabled'];
+export const enforcing = mode => mode === 'enabled' || mode === 'monitored_canary';
 export function validatePumaPolicy(input={}) {
   const p={...DEFAULT_PUMA_POLICY,...input,flags:{...DEFAULT_PUMA_POLICY.flags,...input.flags},rules:{...DEFAULT_PUMA_POLICY.rules,...input.rules}};
   requireThat(Object.keys(input).every(k=>Object.hasOwn(DEFAULT_PUMA_POLICY,k)) && /^[\w.-]{1,80}$/.test(p.version) && p.livePaymentEnabled===false,'PUMA 配置无效或请求真实支付',503,'INVALID_PUMA_POLICY');

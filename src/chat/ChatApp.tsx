@@ -12,6 +12,7 @@ import { startRecording, transcribe, type Recording } from './voice';
 import { OnboardingCard, ONBOARDING_LABEL, ONBOARDING_OPENING, ONBOARDING_RESUME } from './OnboardingCard';
 import { CHANNEL_NAME } from './OnboardingSteps';
 import { riskTag } from '../products';
+import { bindGreeting, draftGreetingId, forgetGreeting, sessionGreeting } from './greetings';
 import './chat.css';
 
 const money = (cents: number) => (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -62,10 +63,11 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   const [configured, setConfigured] = useState<boolean | null>(null);
   const receivedRequest = useRef(0);
   // 开通后的首次引导：开场白固定显示，之后由助手对话引导；进度来自服务端。
-  const opening = () => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING : undefined;
+  const opening = (id?: string, fresh = false) => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING
+    : user.greeting ? sessionGreeting(user.id, id || draftGreetingId(user.id, fresh), user.greeting) : undefined;
   const [guide, setGuide] = useState<OnboardingState | null>(null);
   const guiding = data.agent?.onboarding === 'pending' && guide?.status === 'pending';
-  const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening()));
+  const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening(readStoredSession(user.id))));
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -80,6 +82,15 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   const [startedAt, setStartedAt] = useState(() => new Date());
   const [historyOpen, setHistoryOpen] = useState(false), [sessions, setSessions] = useState<AgentSession[] | null>(null), [historyError, setHistoryError] = useState(''), [historyBusy, setHistoryBusy] = useState(false), [pendingDelete, setPendingDelete] = useState('');
   const sessionId = currentSessionId(messages);
+  const previousConsent = useRef(user.greeting?.remember);
+  useEffect(() => {
+    const revoked = previousConsent.current && user.greeting?.remember === false;
+    previousConsent.current = user.greeting?.remember;
+    if (revoked && data.agent?.onboarding !== 'pending') {
+      const welcome = initialMessages(opening(sessionId))[0];
+      setMessages(list => list.map(message => message.welcome ? welcome : message));
+    }
+  }, [user.greeting?.remember]);
   useEffect(() => {
     let alive = true;
     api<{ configured: boolean; voice: boolean }>('/chat/status')
@@ -87,7 +98,9 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
       .catch(() => { if (alive) { setConfigured(false); setError('无法连接聊天服务，请刷新后重试。'); } });
     // 恢复本浏览器上次打开的对话；对话已删除或不属于当前用户时静默开始新对话。
     const stored = readStoredSession(user.id);
-    if (stored) restore(stored, false, true).catch(() => storeSession(user.id, ''));
+    if (stored) restore(stored, false, true).catch(() => {
+      if (alive && !started.current) { storeSession(user.id, ''); setMessages(initialMessages(opening(undefined, true))); }
+    });
     return () => { alive = false; };
   }, []);
   async function restore(id: string, scroll = true, onLoad = false) {
@@ -97,7 +110,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     const restored: Message[] = detail.messages.map(m => ({ id: crypto.randomUUID(), role: m.role, text: m.text, sessionId: id, ...(m.role === 'assistant' ? { events: m.events, trace: m.trace, runId: m.runId, asOf: m.at, sources: ['澄川银行服务端工具结果'] } : {}) }));
     shouldScroll.current = scroll;
     setBusy(false); setError(''); setNotice(detail.handover ? '本对话已转人工客服，如需继续办理请开始新对话' : ''); setDraft('');
-    setMessages([...initialMessages(opening()), ...restored]); setStartedAt(new Date(detail.messages[0]?.at || Date.now()));
+    setMessages([...initialMessages(opening(id)), ...restored]); setStartedAt(new Date(detail.messages[0]?.at || Date.now()));
     storeSession(user.id, id); setHistoryOpen(false);
   }
   async function openHistory() {
@@ -107,7 +120,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   async function removeSession(id: string) {
     if (pendingDelete !== id) { setPendingDelete(id); return; }
     setHistoryBusy(true); setHistoryError('');
-    try { await api(`/agent/sessions/${id}`, 'DELETE', {}); setSessions(list => (list || []).filter(s => s.id !== id)); setPendingDelete(''); if (id === sessionId) reset(); }
+    try { await api(`/agent/sessions/${id}`, 'DELETE', {}); forgetGreeting(user.id, id); setSessions(list => (list || []).filter(s => s.id !== id)); setPendingDelete(''); if (id === sessionId) reset(); }
     catch (e) { setHistoryError((e as Error).message); } finally { setHistoryBusy(false); }
   }
   // 引导状态随账户快照变化：开通后或在「个性化与记忆」重新开始时进入引导，完成后收起进度卡片。
@@ -152,7 +165,19 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
-      if (!active.signal.aborted) { const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' }; replyAnchor.current = reply.id; setMessages([...next, reply]); if (response.sessionId) storeSession(user.id, response.sessionId); const state = response.events?.find(e => e.type === 'onboarding')?.data; if (state) setGuide(state); await refresh(); }
+      if (!active.signal.aborted) {
+        const reply: Message = { ...response, id: crypto.randomUUID(), role: 'assistant' };
+        replyAnchor.current = reply.id; setMessages([...next, reply]);
+        if (response.sessionId) {
+          if (user.greeting && !currentSessionId(next) && data.agent?.onboarding !== 'pending') {
+            bindGreeting(user.id, draftGreetingId(user.id), response.sessionId, user.greeting.remember);
+          }
+          storeSession(user.id, response.sessionId);
+        }
+        const state = response.events?.find(e => e.type === 'onboarding')?.data;
+        if (state) setGuide(state);
+        await refresh();
+      }
     } catch (failure) {
       if (!active.signal.aborted) {
         setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
@@ -223,7 +248,8 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   function reset() {
     cancelVoice();
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
-    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : undefined)); setStartedAt(new Date());
+    started.current = true;
+    setBusy(false); setError(''); setNotice(''); setDraft(''); setMessages(initialMessages(guiding ? ONBOARDING_RESUME : opening(undefined, true))); setStartedAt(new Date());
     storeSession(user.id, '');
     scroller.current?.scrollTo({ top: 0 });
   }

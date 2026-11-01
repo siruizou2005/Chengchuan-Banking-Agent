@@ -2,6 +2,7 @@ import { id, now } from '../db.mjs';
 import { hash, requireThat } from '../errors.mjs';
 import { paramsDigest, actionParams } from '../authorization.mjs';
 import { decide } from '../agent/policy.mjs';
+import { enforcing } from '../puma/config.mjs';
 import { createMockPaymentAdapter } from './payment.mjs';
 
 const editable = ['RISK_CHECKED', 'AWAITING_APPROVAL', 'USER_APPROVED', 'HOLD_REVIEW', 'BLOCKED'];
@@ -9,6 +10,25 @@ const fields = ['sourceAccountRef', 'beneficiaryRef', 'amountMinor', 'currency',
 export function createRiskTransfers(bank, services, risk, options = {}) {
   const provider = options.adapter || createMockPaymentAdapter(bank, options.payment);
   requireThat(provider.mode === 'mock' && process.env.LIVE_PAYMENT_ENABLED !== 'true', '本版本仅支持模拟支付', 503, 'LIVE_PAYMENT_DISABLED');
+  const policy = services.puma?.policy;
+  const adaptive = enforcing(policy?.flags.risk_adaptive_auth);
+  function authPlan(user, d, e, session) {
+    const decision = decide(bank, user, 'propose_transfer', { amount: (d.amount_minor / 100).toFixed(2) });
+    const legacyStrong = e.finalAction === 'STEP_UP' || decision.level === 'red';
+    const reasons = [...e.reasonCodes];
+    if (decision.level === 'red') reasons.push('DAILY_THRESHOLD_EXCEEDED');
+    if (decision.amounts.total > user.daily_limit) reasons.push('DAILY_LIMIT');
+    if (!session?.trusted) reasons.push('BROWSER_ASSURANCE_REQUIRED');
+    if (provider.allowsSinglePin !== true) reasons.push('PROVIDER_STEP_UP');
+    let tier = 'L1';
+    if (e.finalAction === 'BLOCK' || decision.amounts.total > user.daily_limit) tier = 'L3';
+    else if (legacyStrong || e.finalAction === 'HOLD_REVIEW' || services.puma?.delegates.status(d).length) tier = 'L2';
+    else if (!legacyStrong && e.finalAction === 'ALLOW' && !e.reasonCodes.length && e.familiarPayee && e.adequateSample
+      && session?.trusted && provider.allowsSinglePin === true && (enforcing(policy?.flags.l0_single_password)
+        || !adaptive && policy?.flags.l0_single_password === 'shadow')
+      && services.verification.faceVerification.mode(user) === 'simulated_face' && e.modelStatus !== 'UNAVAILABLE') tier = 'L0';
+    return { tier, reasons, strong: adaptive ? tier !== 'L0' : legacyStrong, version: adaptive ? e.policyVersion + '/' + policy.version + '/adaptive' : e.policyVersion };
+  }
   function owned(user, draftId) {
     const d = bank.get('SELECT * FROM risk_drafts WHERE id=? AND user_id=?', draftId, user.id);
     if (!d) bank.audit(user.id, 'risk.access.denied', hash(String(draftId)));
@@ -55,9 +75,10 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       return e;
     });
   }
-  function view(user, draftId) {
+  function view(user, draftId, session) {
     const d = owned(user, draftId), p = JSON.parse(d.payload), row = bank.get('SELECT snapshot FROM risk_evaluations WHERE id=?', d.evaluation_id);
     const e = row ? JSON.parse(row.snapshot) : null;
+    const plan = adaptive && e ? authPlan(user, d, e, session) : null;
     // Reminders to check the payee only help before paying; they read as an unresolved warning afterwards.
     const finished = ['SETTLED', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(d.status), messages = [];
     if (!finished && e?.reasonCodes.includes('NEW_BENEFICIARY')) messages.push('这是首次向该收款账户付款，请独立核对收款信息。');
@@ -69,15 +90,16 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       paymentId: bank.get('SELECT id FROM risk_payments WHERE draft_id=?', d.id)?.id || null, updatedAt: d.updated_at,
       expiresAt: d.expires_at, simulation: true, confirmationUrl: `/#risk-transfer?id=${encodeURIComponent(d.id)}`,
       delegateApprovals: services.puma?.delegates.status(d) || [],
-      risk: e ? { action: e.finalAction, messages, offers: e.offers, evaluationId: e.evaluationId } : null };
+      risk: e ? { action: e.finalAction, messages, offers: e.offers, evaluationId: e.evaluationId,
+        ...(plan ? { tier: plan.tier, policyVersion: plan.version, reasonCodes: plan.reasons, expiresAt: e.expiresAt } : {}) } : null };
   }
-  function create(user, body) {
+  function create(user, body, session) {
     return bank.atomic(() => {
       const p = parseInput(user, body), draftId = id('RD'), at = now();
       bank.run('INSERT INTO risk_drafts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', draftId, user.id, p.sourceAccountRef, p.beneficiaryRef,
         JSON.stringify(p), p.amountMinor, p.currency, 1, digest(user.id, draftId, 1, p), 'RISK_CHECKED', null, at, at, new Date(Date.parse(at) + 900000).toISOString());
       const d = owned(user, draftId); services.puma?.delegates.sync(d); evaluate(user, d, 'DRAFT');
-      bank.audit(user.id, 'risk.draft.created', draftId, { version: 1 }); return view(user, draftId);
+      bank.audit(user.id, 'risk.draft.created', draftId, { version: 1 }); return view(user, draftId, session);
     });
   }
   function invalidate(d) {
@@ -86,7 +108,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     bank.run('UPDATE risk_approval_intents SET used_at=COALESCE(used_at,?) WHERE draft_id=?', now(), d.id);
     for (const i of intents) { bank.run('UPDATE verifications SET used=1 WHERE action_id=?', i.auth_action_id); bank.run("UPDATE agent_actions SET status='cancelled' WHERE id=? AND status='proposed'", i.auth_action_id); }
   }
-  function patch(user, draftId, body) {
+  function patch(user, draftId, body, session) {
     return bank.atomic(() => {
       const d = owned(user, draftId);
       requireThat(editable.includes(d.status), '该草稿不可修改', 409, 'DRAFT_STATE');
@@ -96,11 +118,12 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       invalidate(d); const next = version + 1;
       bank.run("UPDATE risk_drafts SET source_account_ref=?,beneficiary_ref=?,payload=?,amount_minor=?,version=?,payload_hash=?,status='RISK_CHECKED',updated_at=? WHERE id=? AND version=?",
         p.sourceAccountRef, p.beneficiaryRef, JSON.stringify(p), p.amountMinor, next, digest(user.id, d.id, next, p), now(), d.id, version);
-      evaluate(user, owned(user, d.id), 'DRAFT'); bank.audit(user.id, 'risk.draft.updated', d.id, { version: next }); return view(user, d.id);
+      services.puma?.delegates.sync(owned(user, d.id));
+      evaluate(user, owned(user, d.id), 'DRAFT'); bank.audit(user.id, 'risk.draft.updated', d.id, { version: next }); return view(user, d.id, session);
     });
   }
   function match(d, body) { requireThat(body.version === d.version && body.payloadHash === d.payload_hash, '草稿版本或内容已变化，请重新确认', 409, 'DRAFT_VERSION'); }
-  function intent(user, draftId, body) {
+  function intent(user, draftId, body, session) {
     requireThat(Object.keys(body).every(k => ['version', 'payloadHash'].includes(k)), '确认参数包含无效字段', 400, 'INVALID_APPROVAL');
     const d = owned(user, draftId); match(d, body);
     services.puma?.delegates.sync(d);
@@ -111,19 +134,24 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       requireThat(editable.includes(current.status) && !bank.get('SELECT id FROM risk_payments WHERE draft_id=?', d.id), '草稿状态已变化，请刷新', 409, 'DRAFT_STATE');
       invalidate(d);
       const challengeId = id('RC'), actionId = id('RISK_AUTH');
-      const level = e.finalAction === 'STEP_UP' || decide(bank, user, 'propose_transfer', { amount: (d.amount_minor / 100).toFixed(2) }).level === 'red' ? 'red' : 'yellow';
-      const p = JSON.parse(d.payload), args = { draftId: d.id, version: d.version, payloadHash: d.payload_hash, challengeId };
+      const plan = authPlan(user, d, e, session);
+      requireThat(!adaptive || plan.tier !== 'L3', '本笔转账超过账户限额', 409, 'DAILY_LIMIT');
+      const level = plan.strong ? 'red' : 'yellow';
+      const p = JSON.parse(d.payload), args = { draftId: d.id, version: d.version, payloadHash: d.payload_hash, challengeId,
+        ...(adaptive && plan.tier === 'L1' && provider.allowsSinglePin === true ? { smsOnly: true } : {}), ...(session ? { sessionRef: session.ref } : {}) };
       const expires = new Date(Math.min(Date.now() + 300000, Date.parse(d.expires_at))).toISOString();
       bank.run('INSERT INTO agent_actions(id,user_id,channel,tool,args,title,level,amount,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)', actionId, user.id, 'app', 'risk_transfer_approval', JSON.stringify(args),
         `模拟转账 ${(d.amount_minor / 100).toFixed(2)} CNY → ${p.beneficiaryName} ${p.beneficiaryMasked}`, level, 0, now(), expires, now());
       bank.run('UPDATE agent_actions SET params_digest=? WHERE id=?', paramsDigest(actionParams(bank.get('SELECT * FROM agent_actions WHERE id=?', actionId))), actionId);
-      bank.run('INSERT INTO risk_approval_intents VALUES(?,?,?,?,?,?,?,?,?,?,?)', challengeId, user.id, d.id, d.version, d.payload_hash, actionId, level, e.policyVersion, expires, null, now());
+      bank.run('INSERT INTO risk_approval_intents VALUES(?,?,?,?,?,?,?,?,?,?,?)', challengeId, user.id, d.id, d.version, d.payload_hash, actionId, level, plan.version, expires, null, now());
       bank.run("UPDATE risk_drafts SET status='AWAITING_APPROVAL' WHERE id=?", d.id);
-      bank.audit(user.id, 'risk.approval.intent', d.id, { challengeId, version: d.version, level });
-      return { challengeId, version: d.version, payloadHash: d.payload_hash, verificationActionId: level === 'red' ? actionId : null, expiresAt: expires, simulation: true, draft: view(user, d.id) };
+      bank.audit(user.id, 'risk.approval.intent', d.id, { challengeId, version: d.version, level,
+        ...(policy && policy.flags.risk_adaptive_auth !== 'disabled' ? { tier: plan.tier, mode: policy.flags.risk_adaptive_auth, reasons: plan.reasons, policyVersion: plan.version } : {}) });
+      return { challengeId, version: d.version, payloadHash: d.payload_hash, verificationActionId: level === 'red' ? actionId : null,
+        smsOnly: Boolean(args.smsOnly && services.verification.faceVerification.mode(user) === 'simulated_face'), expiresAt: expires, simulation: true, draft: view(user, d.id, session) };
     });
   }
-  function approve(user, draftId, body) {
+  function approve(user, draftId, body, session) {
     requireThat(Object.keys(body).every(k => ['challengeId', 'version', 'payloadHash', 'pin', 'verificationToken'].includes(k)), '批准只能使用绑定交易的认证凭证', 400, 'INVALID_APPROVAL');
     services.pin(user, body.pin); // Rate-limited existing authentication; no boolean/chat approval.
     return bank.atomic(() => {
@@ -132,8 +160,13 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       requireThat(typeof body.challengeId === 'string' && /^[\w-]{1,100}$/.test(body.challengeId), '批准挑战无效', 403, 'INVALID_CHALLENGE');
       const i = bank.get('SELECT * FROM risk_approval_intents WHERE id=? AND user_id=? AND draft_id=?', body.challengeId, user.id, d.id);
       requireThat(i && !i.used_at && i.expires_at > now() && i.version === d.version && i.payload_hash === d.payload_hash, '批准挑战已过期、已使用或不匹配', 403, 'INVALID_CHALLENGE');
+      const { sessionRef } = JSON.parse(bank.get('SELECT args FROM agent_actions WHERE id=?', i.auth_action_id).args);
+      requireThat(!sessionRef || sessionRef === session?.ref, '请在发起验证的登录会话中批准', 403, 'INVALID_CHALLENGE');
       let assertion = 'sandbox:pin';
-      if (i.required_level === 'red') { services.verification.consume(user, i.auth_action_id, body.verificationToken); assertion = 'sandbox:strong:' + hash(body.verificationToken); }
+      if (i.required_level === 'red') {
+        const factors = services.verification.consume(user, i.auth_action_id, body.verificationToken);
+        assertion = (factors.length === 1 ? 'sandbox:sms:' : 'sandbox:strong:') + hash(body.verificationToken);
+      }
       const approvalId = id('RP');
       bank.run('INSERT INTO risk_approvals VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', approvalId, user.id, d.id, d.version, d.payload_hash, i.id, assertion,
         Number(i.required_level === 'red'), i.policy_version, i.expires_at, null, null, now());
@@ -173,7 +206,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       risk.metric(d.user_id, d.id, d.evaluation_id, p.status);
     });
   }
-  function submit(user, draftId) {
+  function submit(user, draftId, session) {
     const d = owned(user, draftId);
     if (bank.get('SELECT id FROM risk_payments WHERE draft_id=?', d.id)) return view(user, d.id);
     requireThat(d.status === 'USER_APPROVED', '缺少用户交易批准', 403, 'APPROVAL_REQUIRED');
@@ -186,8 +219,10 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
       bank.run("UPDATE risk_drafts SET status='PRE_EXECUTION_CHECK' WHERE id=?", d.id);
       const a = bank.get('SELECT * FROM risk_approvals WHERE user_id=? AND draft_id=? AND version=? AND payload_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1', user.id, d.id, d.version, d.payload_hash, now());
       requireThat(a, '批准失效，请重新确认', 403, 'APPROVAL_REQUIRED');
-      const needsStrong = e.finalAction === 'STEP_UP' || decide(bank, user, 'propose_transfer', { amount: (d.amount_minor / 100).toFixed(2) }).level === 'red';
-      requireThat(a.policy_version === e.policyVersion && (!needsStrong || a.strong), '风险或策略已变化，请重新批准', 403, 'REAPPROVAL_REQUIRED');
+      const plan = authPlan(user, d, e, session);
+      requireThat(a.policy_version === plan.version && (!plan.strong || a.strong), '风险或策略已变化，请重新批准', 403, 'REAPPROVAL_REQUIRED');
+      requireThat(!a.auth_assertion_ref.startsWith('sandbox:sms:') || plan.tier !== 'L2' && services.verification.faceVerification.mode(user) === 'simulated_face',
+        '需要更强验证，请重新批准', 403, 'REAPPROVAL_REQUIRED');
       const stored = JSON.parse(d.payload), refreshed = parseInput(user, Object.fromEntries(fields.map(k => [k, stored[k]])));
       requireThat(digest(user.id, d.id, d.version, refreshed) === d.payload_hash, '收款信息已变化，请修改草稿后重新确认', 403, 'BENEFICIARY_CHANGED');
       // Reuse account permission, balance and configured daily limit checks.
