@@ -19,6 +19,8 @@ export function createVerification(bank, services, options, faceOptions) {
   async function start(user, actionId) {
     services.guard.assertOpen(user.id); const action=owned(user,actionId);
     faceVerification.assertIdentity(user);
+    const faceMode = faceVerification.mode(user);
+    const faceChannel = action.tool === 'risk_transfer_approval' && JSON.parse(action.args).smsOnly === true && faceMode === 'simulated_face' ? 'not_required' : faceMode;
     services.checkRate(`verify:${user.id}`);
     const code=String(randomInt(100000,1000000)), verificationId=id('V'), createdAt=now();
     const delivery=sms.forUser(user), detail={id:verificationId,channel:delivery.channel,...(delivery.reason?{reason:delivery.reason}:{})};
@@ -29,7 +31,7 @@ export function createVerification(bank, services, options, faceOptions) {
       delivery.reserve();
       run('INSERT INTO verifications(id,user_id,action_id,code_hash,expires_at,created_at) VALUES(?,?,?,?,?,?)', verificationId,user.id,actionId,hash(code),new Date(Date.parse(createdAt)+300000).toISOString(),createdAt);
       run("UPDATE verifications SET params_digest=?,revision=?,sms_channel=?,delivery_status='pending' WHERE id=?",paramsDigest(actionParams(action)),action.revision,delivery.channel,verificationId);
-      run('UPDATE verifications SET face_channel=? WHERE id=?',faceVerification.mode(user),verificationId);
+      run('UPDATE verifications SET face_channel=? WHERE id=?',faceChannel,verificationId);
     });
     // Network I/O must not run inside bank.atomic (SQLite transactions are synchronous).
     try {
@@ -58,7 +60,7 @@ export function createVerification(bank, services, options, faceOptions) {
       throw error;
     }
     // A simulated code is no secret: there is no real inbox, so the page shows it with a demo notice.
-    return { id:verificationId, expiresIn:300, simulated:delivery.simulated, channel:delivery.channel, faceChannel:faceVerification.mode(user), ...(delivery.target?{target:delivery.target}:{}), ...(delivery.showCode?{demoCode:code,reason:delivery.reason}:{}) };
+    return { id:verificationId, expiresIn:300, simulated:delivery.simulated, channel:delivery.channel, faceChannel, ...(delivery.target?{target:delivery.target}:{}), ...(delivery.showCode?{demoCode:code,reason:delivery.reason}:{}) };
   }
   function challenge(user, verificationId) {
     const v=get('SELECT * FROM verifications WHERE id=? AND user_id=?',verificationId,user.id);
@@ -76,7 +78,7 @@ export function createVerification(bank, services, options, faceOptions) {
   }
   function complete(user, {id:verificationId,code}) {
     services.checkRate(`verify:${user.id}`); const v=challenge(user,verificationId);
-    requireThat(['completed','skipped'].includes(v.face_status),'请先完成人脸验证步骤',403,'FACE_REQUIRED');
+    requireThat(v.face_channel==='not_required' || ['completed','skipped'].includes(v.face_status),'请先完成人脸验证步骤',403,'FACE_REQUIRED');
     faceVerification.assertPassed(v);
     requireThat(v.attempts<8,'验证码尝试已达上限',429,'RATE_LIMITED');
     if(typeof code!=='string' || !/^\d{6}$/.test(code) || hash(code)!==v.code_hash) {
@@ -98,7 +100,7 @@ export function createVerification(bank, services, options, faceOptions) {
     requireThat(v.params_digest===paramsDigest(actionParams(action)) && v.revision===action.revision,'验证令牌与参数版本不匹配',403,'INVALID_VERIFICATION');
     faceVerification.consume(v);
     run('UPDATE verifications SET used=1 WHERE id=?',v.id); audit(user.id,'verification.consumed',actionId,{channel:v.sms_channel,faceChannel:v.face_channel,faceSessionId:v.face_session_id});
-    return [v.sms_channel,v.face_channel==='tencent_face'?'tencent_face':v.face_status==='skipped'?'simulated_camera_fallback:'+v.face_reason:'simulated_face'];
+    return v.face_channel==='not_required' ? [v.sms_channel] : [v.sms_channel,v.face_channel==='tencent_face'?'tencent_face':v.face_status==='skipped'?'simulated_camera_fallback:'+v.face_reason:'simulated_face'];
   }
   return { start, face, complete, consume, faceVerification, delivery: sms };
 }

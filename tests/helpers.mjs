@@ -1,4 +1,17 @@
 import { createApp } from '../server/app.mjs';
+
+// Simulator history with seasonal variation, enough samples and a familiar beneficiary.
+export function familiarTransfers(userId, accountRef, payeeRef) {
+ const today = new Date(), rows = [];
+ for (let month = 1; month <= 12; month++) {
+   for (let n = 0; n < 3; n++) rows.push({
+     transaction_id: month + '-' + n, account_ref: accountRef, user_id: userId, currency: 'CNY', category: 'transfer',
+     occurred_at: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - month, 1, n)).toISOString(),
+     payee_ref: payeeRef, amount_minor: 2000 + 100 * month + n, status: 'SETTLED', direction: 'OUT',
+   });
+ }
+ return rows;
+}
 export const llm=(calls=[],text='请核对服务端卡片。')=>({choices:[{message:calls.length?{role:'assistant',content:null,tool_calls:calls.map(([name,args],i)=>({id:'call'+i,type:'function',function:{name,arguments:JSON.stringify(args)}}))}:{role:'assistant',content:text}}],usage:{total_tokens:12}});
 export async function fixture(t,options={}){
  const queue=options.responses||[];const requests=[];

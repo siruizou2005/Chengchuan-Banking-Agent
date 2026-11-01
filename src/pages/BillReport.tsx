@@ -9,15 +9,16 @@ import type { AgentEvent } from '../types';
 export function BillReport() {
   const { route, navigate } = useBank();
   const params = new URLSearchParams(route.split('?')[1] || ''), from = params.get('from') || '', to = params.get('to') || '';
+  const fromBills = params.get('origin') === 'bills';
   const [events, setEvents] = useState<AgentEvent[] | null>(null), [range, setRange] = useState({ from, to }), [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
     setEvents(null); setError('');
-    api<{ report: any; anomalies: any[] }>(`/ledger/report?${new URLSearchParams(from && to ? { from, to } : { preset: 'yesterday' })}`).then(r => {
+    api<{ report: any; anomalies: any[] }>(`/ledger/report?${new URLSearchParams({ ...(from && to ? { from, to } : { preset: 'yesterday' }), ...(fromBills ? { origin: 'bills' } : {}) })}`).then(r => {
       if (!cancelled) { setRange({ from: r.report.from, to: r.report.to }); setEvents([{ type: 'report', data: r.report }, { type: 'anomalies', data: r.anomalies }]); }
     }).catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [from, to]);
+  }, [from, to, fromBills]);
   return <div className="page">
     {events ? <EventCards events={events} /> : !error && <p role="status">正在读取账单…</p>}
     <InlineError message={error} />

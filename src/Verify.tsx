@@ -15,7 +15,7 @@ export function DemoCode({ delivery, registration = false }: { delivery: Deliver
   return <div className="demo-code"><small>演示验证码</small><b>{delivery.demoCode}</b><p>{delivery.reason === 'demo_email' ? '这只是演示：example.com 等演示邮箱收不到邮件，验证码直接显示在这里。登记真实邮箱的账户会收到真实的邮件验证码。' : '当前未接入邮件发送服务，验证码直接显示在这里，仅供演示。'}</p></div>;
 }
 
-export function Verify({ actionId, onVerified, onCancel }: { actionId: string; onVerified: (token: string) => void; onCancel: () => void }) {
+export function Verify({ actionId, onVerified, onCancel, smsOnly = false }: { actionId: string; onVerified: (token: string) => void; onCancel: () => void; smsOnly?: boolean }) {
   const { refresh } = useBank();
   const [id, setId] = useState(''), [step, setStep] = useState<'start' | 'face' | 'sms'>('start');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0);
@@ -35,7 +35,7 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
   }, []);
   async function start() {
     setBusy(true); setError('');
-    try { const result = await api<Delivery & { id: string; faceChannel: string }>('/verify/start', 'POST', { actionId }); if (!alive.current) return; setId(result.id); setDelivery(result); setFaceChannel(result.faceChannel); setStep('face'); await refresh(); }
+    try { const result = await api<Delivery & { id: string; faceChannel: string }>('/verify/start', 'POST', { actionId }); if (!alive.current) return; setId(result.id); setDelivery(result); setFaceChannel(result.faceChannel); setStep(result.faceChannel === 'not_required' ? 'sms' : 'face'); await refresh(); }
     catch (e) { setError((e as Error).message); } finally { if (alive.current) setBusy(false); }
   }
   async function camera() {
@@ -74,8 +74,8 @@ export function Verify({ actionId, onVerified, onCancel }: { actionId: string; o
     finally { if (alive.current) setBusy(false); }
   }
   return <Modal title="App 加强验证" onClose={onCancel}><div className="stack-form verify-flow">
-    <div className="verify-steps"><span className={step !== 'sms' ? 'active' : ''}>1 {faceChannel === 'tencent_face' ? '人脸核身' : '人脸演示'}</span><span className={step === 'sms' ? 'active' : ''}>2 {codeLabel}</span><span>3 支付密码</span></div>
-    <Notice>{faceChannel === 'tencent_face' ? '人脸核身将通过专用页面完成，本站不保存人脸照片。' : '摄像头仅采集本地画面摘要，不进行真实生物识别。'}{deliveryText(delivery)}</Notice>
+    <div className="verify-steps">{!smsOnly && <span className={step !== 'sms' ? 'active' : ''}>1 {faceChannel === 'tencent_face' ? '人脸核身' : '人脸演示'}</span>}<span className={step === 'sms' ? 'active' : ''}>{smsOnly ? 1 : 2} {codeLabel}</span><span>{smsOnly ? 2 : 3} 支付密码</span></div>
+    <Notice>{!smsOnly && (faceChannel === 'tencent_face' ? '人脸核身将通过专用页面完成，本站不保存人脸照片。' : '摄像头仅采集本地画面摘要，不进行真实生物识别。')}{deliveryText(delivery)}</Notice>
     {step === 'start' && identity?.required && <form className="stack-form" autoComplete="off" onSubmit={async e => {
       const form = e.currentTarget, fields = formValues(e); setBusy(true); setError('');
       try { const value = await api<IdentityProfile>('/verify/identity', 'POST', { realName: fields.realName, idNumber: fields.idNumber }); form.reset(); if (alive.current) setIdentity(value); }

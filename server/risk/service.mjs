@@ -57,6 +57,11 @@ export function createRiskService(bank, options = {}) {
         noise: rules.noise, fallbackRate: rules.fallbackRate, windowMinutes:rules.windowMinutes,
         balance: account ? { available: account.balance - account.held + (candidate.heldByThisPayment || 0), currency: 'CNY', asOf: at } : null });
       evaluation = evaluatePolicy(features, candidate, trusted, identity, policy, rules);
+      // Legacy payment and scheduled-plan callers cannot prove a trusted browser session.
+      if (options.adaptiveAuth && candidate?.legacy && ['ALLOW', 'WARN'].includes(evaluation.finalAction)) {
+        evaluation.finalAction = 'STEP_UP';
+        evaluation.reasonCodes.push('SESSION_ASSURANCE_REQUIRED');
+      }
       evaluation.policyVersion += '/' + hash(JSON.stringify({ policy, rules })).slice(0, 12);
     } catch { throw new BusinessError('暂时无法完成风险检查，请稍后重试', 503, 'RISK_UNAVAILABLE'); }
     const evaluationId = id('RE'), policyFactsHash = hash(JSON.stringify({ features, signals: evaluation.signals, candidate }));
@@ -65,6 +70,7 @@ export function createRiskService(bank, options = {}) {
     if(options.scamPredictor)try{sync(options.scamPredictor,user.id,candidate);}catch{modelStatus='UNAVAILABLE';bank.run('INSERT INTO puma_metrics(user_id,kind,value,created_at) VALUES(?,?,1,?)',user.id,'MODEL_UNAVAILABLE',at);}
     // Persist allowlisted, hashed evidence only. Neither DOB nor upstream text reaches logs/LLM.
     const safe = { ...evaluation, evidenceRefs: evaluation.evidenceRefs.map(hash), signals: undefined,
+      familiarPayee: features.newBeneficiary === false, adequateSample: features.sampleCount >= rules.minimumSamples,
       evaluationId, policyFactsHash, stage, evaluatedAt: at, latencyMs: Math.round(performance.now() - started), modelStatus,
       risk_decision_id:evaluationId, expiresAt:new Date(Date.parse(at)+300000).toISOString(),recheck_required:true,
       actions:[({ALLOW:'ALLOW',WARN:'NOTICE',STEP_UP:'STEP_UP',HOLD_REVIEW:'MANUAL_REVIEW',BLOCK:'REJECT'})[evaluation.finalAction]] };
@@ -146,7 +152,7 @@ export function createRiskService(bank, options = {}) {
     const target = bank.get('SELECT user_id FROM accounts WHERE number=?', body.recipientAccount);
     return evaluate(user, { sourceAccountRef: body.accountId || bank.get("SELECT id FROM accounts WHERE user_id=? AND type='debit' ORDER BY rowid LIMIT 1", user.id)?.id,
       beneficiaryRef: hash(body.recipientAccount), amountMinor: body.amountMinor, currency: 'CNY', category: 'transfer', ownAccount: target?.user_id === user.id,
-      heldByThisPayment: body.heldByThisPayment || 0 }, stage, resource);
+      legacy: true, heldByThisPayment: body.heldByThisPayment || 0 }, stage, resource);
   }
   return { evaluate, assertAllowed, flags, queue, review, appeal, fairness, metric, legacy, changePolicy, expire, rows };
 }

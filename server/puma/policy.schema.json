@@ -17,7 +17,10 @@
         "puma_scam_risk_shadow": { "enum": ["disabled", "shadow"] },
         "puma_age_protection": { "$ref": "#/$defs/mode" },
         "puma_delegate_approval": { "$ref": "#/$defs/mode" },
-        "puma_dynamic_policy": { "$ref": "#/$defs/mode" }
+        "puma_dynamic_policy": { "$ref": "#/$defs/mode" },
+        "risk_adaptive_auth": { "$ref": "#/$defs/mode" },
+        "l0_single_password": { "$ref": "#/$defs/mode" },
+        "greeting_personalization_v2": { "$ref": "#/$defs/mode" }
       }
     },
     "rules": {

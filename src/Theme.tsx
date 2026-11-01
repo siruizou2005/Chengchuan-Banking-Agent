@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
-export type Theme = 'home' | 'wealth' | 'assistant' | 'life' | 'profile';
+export type Theme = 'home' | 'wealth' | 'assistant' | 'life' | 'bills' | 'profile';
 const ThemeContext = createContext<Theme>('home');
 export const useTheme = () => useContext(ThemeContext);
 

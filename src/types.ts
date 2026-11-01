@@ -1,5 +1,5 @@
 export type HomeModule = 'bill_daily' | 'spend_tips' | 'recommend';
-export type User = { id: string; name: string; phone: string; email: string | null; dailyLimit: number; riskLevel: number; createdAt: string; nickname: string; avatarVersion: string | null; homeModules: HomeModule[] };
+export type User = { id: string; name: string; phone: string; email: string | null; dailyLimit: number; riskLevel: number; createdAt: string; nickname: string; greeting?: import('./chat/greetings').GreetingPreferences; avatarVersion: string | null; homeModules: HomeModule[] };
 export type Account = { id: string; number: string; name: string; balance: number; held: number; available: number; status: string; type?: string };
 export type Product = {
   id: string; type: string; name: string; subtitle: string; rate: number | null; rateLabel?: string; days: number; minimum: number; risk: string; riskLevel?: number; tags: string[]; description: string;
@@ -29,6 +29,7 @@ export type Ledger = { id: number; transaction_id: string; amount: number; balan
   kind?: string; tag?: string; bj_time?: string; txn_type?: string | null; bank_summary?: string | null; counterparty?: string | null; counterparty_account?: string | null;
   merchant?: string | null; platform?: string | null; channel?: string | null; memo?: string | null; time_precision?: string | null; source_bank?: string | null };
 export type Snapshot = {
+  adaptiveTransfers?: boolean;
   agentActions: AgentAction[]; agentPlans: AgentPlan[]; subscriptions: Subscription[];
   virtualCards: { id: string; number: string; card_limit: number; status: string }[];
   reservations: { id: string; amount: number; purpose: string; until_at: string }[];

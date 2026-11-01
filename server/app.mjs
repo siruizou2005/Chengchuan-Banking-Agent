@@ -4,6 +4,7 @@ import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
 import { createProductCatalog, holdingSnapshot } from './products.mjs';
 import { createEarnings } from './earnings.mjs';
 import { resolvePrincipal } from './agent/principal.mjs';
+import { enforcing } from './puma/config.mjs';
 import { wealthAdvice } from './wealth.mjs';
 import { normalizeEmail, validEmail, maskEmail } from './email.mjs';
 import { registerChat } from './chat.mjs';
@@ -33,6 +34,7 @@ import { createOnboarding } from './agent/onboarding.mjs';
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
 import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport } from './agent/analytics.mjs';
+import { billView } from './agent/bill-view.mjs';
 import { reportAnomalies } from './channels/reports.mjs';
 import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
@@ -290,8 +292,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }
   // Nickname is the preference confirmed in onboarding; the registered name stands in until then.
   function profileView(row) {
-    const nickname = services?.memory ? services.memory.profile(resolvePrincipal(bank, row, { channel: 'app' })).preferred_name : null;
-    return { ...publicUser(row), nickname: nickname || row.name, avatarVersion: get('SELECT updated_at FROM user_avatars WHERE user_id=?', row.id)?.updated_at || null, homeModules: homeModules(row.home_modules) };
+    const principal = resolvePrincipal(bank, row, { channel: 'app' });
+    const profile = services?.memory?.profile(principal) || {};
+    const remember = services?.memory?.enabled(principal) && services.puma.consents.allowed(row, 'data_read');
+    const greeting = enforcing(services?.puma?.policy.flags.greeting_personalization_v2)
+      ? { english: remember && profile.language ? profile.language === 'English' : undefined, concise: Boolean(remember && profile.answer_length === '简短'), remember } : undefined;
+    return { ...publicUser(row), nickname: profile.preferred_name || row.name, greeting, avatarVersion: get('SELECT updated_at FROM user_avatars WHERE user_id=?', row.id)?.updated_at || null, homeModules: homeModules(row.home_modules) };
   }
   function state(user) {
     const accounts = all('SELECT *,balance-held AS available FROM accounts WHERE user_id=?', user.id);
@@ -301,6 +307,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id).map(enrich);
     return {
       ...(services ? services.snapshot(user) : {}),
+      ...(enforcing(services?.puma?.policy.flags.risk_adaptive_auth) ? { adaptiveTransfers: true } : {}),
       user: profileView(get('SELECT * FROM users WHERE id=?', user.id)), accounts, holdings, earningsSummary: earnings.summary(user.id), ledger,
       products: catalog.list(), productMeta: catalog.meta(), market: catalog.market(),
       loans: all('SELECT * FROM loans WHERE user_id=? ORDER BY created_at DESC', user.id),
@@ -319,7 +326,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   services.contextAssembler = createContextAssembler(services.memory, services.memoryEvolution, {...options.context,memory:options.context?.memory||options.personalization?.budgets});
   services.inference = createInferenceManager(bank, options.inference);
   services.verification = createVerification(bank, services, options.sms, options.face);
-  services.risk = createRiskService(bank, {...options.risk,pumaRules:loadPumaPolicy(options.puma).rules});
+  const pumaPolicy = loadPumaPolicy(options.puma);
+  services.risk = createRiskService(bank, {...options.risk, pumaRules:pumaPolicy.rules, adaptiveAuth:enforcing(pumaPolicy.flags.risk_adaptive_auth)});
   services.puma = createPumaService(bank, services, options.puma);
   const riskTransfers = createRiskTransfers(bank, services, services.risk, options.risk);
   services.riskDrafts = riskTransfers.drafts;
@@ -327,7 +335,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('get', '/agent/control', '本人助手运行状态', (req,res) => res.json(services.agentControl.state(req.user)));
   route('post', '/agent/control/stop', '停止全部助手动作并撤销未执行授权', (req,res) => res.json(services.agentControl.stop(req.user)));
   route('post', '/agent/control/resume', '可信认证后恢复助手', (req,res) => res.json(services.agentControl.resume(req.user,req.body.pin)));
-  registerRiskRoutes(route, bank, services, services.risk, riskTransfers);
+  registerRiskRoutes(route, bank, services, services.risk, riskTransfers, Boolean(options.secureCookies));
   registerPumaRoutes(route, bank, services, riskTransfers);
   services.enrollment = createEnrollment(services, { agreements: options.agreements });
   services.onboarding = createOnboarding(services);
@@ -461,8 +469,12 @@ export function createApp(dbPath = ':memory:', options = {}) {
   }
   route('get', '/ledger', '收支流水，支持时段（preset/period/from/to，北京时间）、方向、类型、分类与关键字过滤', (req, res) => res.json(ledgerQuery(req.user, req.query).slice(0, 2000)));
   // Same statistics as the assistant's bill card and the scheduled Feishu/WeChat reports, so their numbers agree.
+  route('get', '/ledger/bills', '本人月度账单与只读消费洞察', (req, res) => {
+    res.set('Cache-Control', 'no-store').json(billView(bank, services, req.user, String(req.query.period || businessDate().slice(0, 7))));
+  });
   route('get', '/ledger/report', '账单报告与异常支出（preset/period/from/to，北京时间）', (req, res) => {
     const q = key => req.query[key] === undefined ? undefined : String(req.query[key]);
+    if (q('origin') === 'bills') requireThat(services.puma.consents.allowed(req.user, 'data_read'), '未获授权读取账单数据', 403, 'DATA_READ_DENIED');
     const range = resolveRange({ preset: q('preset'), period: q('period'), from: q('from'), to: q('to') }, businessDate()), rows = ledgerFor(bank, req.user.id);
     res.json({ report: billReport(rows, range), anomalies: reportAnomalies(rows, range) });
   });
