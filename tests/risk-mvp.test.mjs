@@ -280,3 +280,125 @@ test('migration/restart: signed pending payments reconcile once after reopening 
   assert.equal(app.services.accountFor(user).balance, balance - d.amountMinor);
   assert.equal(app.bank.get("SELECT COUNT(*) AS n FROM schema_migrations WHERE version='risk-mvp-v1'").n, 1);
 });
+
+const fact = (type, sourceRef, extra = {}) => ({ type, verified: true, sourceRef, occurredAt: new Date(Date.now() - 1000).toISOString(), expiresAt: '2099-01-01', ...extra });
+test('误报只解除同类型、同事件、同版本风险', async t => {
+  let events = [];
+  const f = await fixture(t, { risk: { signals: () => events } }), flow = createRiskTransfers(f.bank, f.services, f.services.risk);
+  const { createRiskService } = await import('../server/risk/service.mjs');
+  const who = f.bank.get('SELECT * FROM users WHERE id=?', f.bob.user.id), reviewer = createRiskService(f.bank, { reviewerIds: [who.id] });
+  const clear = (d, type) => { const flag = reviewer.flags(f.user).find(x => x.scope_ref === d.id && x.flag_type === type && x.status === 'OPEN'); reviewer.review(who, { flagId: flag.id, disposition: 'UNDER_REVIEW', rationale: '开始核实这笔付款' }); reviewer.review(who, { flagId: flag.id, disposition: 'FALSE_POSITIVE', rationale: '核实后判定为误报' }); };
+  const bind = d => ({ version: d.version, payloadHash: d.payloadHash });
+  const latest = () => JSON.parse(f.bank.get('SELECT snapshot FROM risk_evaluations ORDER BY rowid DESC LIMIT 1').snapshot);
+
+  events = [fact('CONFIRMED_FRAUD', 'provider-case')];
+  const fraud = flow.drafts.create(f.user, baseInput(f));
+  assert.equal(fraud.status, 'BLOCKED');
+  clear(fraud, 'NEW_OR_CHANGED_PAYEE'); clear(fraud, 'POTENTIAL_SCAM_SIGNAL');
+  assert.throws(() => flow.approvals.intent(f.user, fraud.id, bind(fraud)), { code: 'RISK_BLOCKED' });
+
+  events = [fact('SAFE_ACCOUNT_SCAM', 'scam-case')];
+  const held = flow.drafts.create(f.user, baseInput(f));
+  assert.equal(held.status, 'HOLD_REVIEW');
+  clear(held, 'NEW_OR_CHANGED_PAYEE');
+  assert.throws(() => flow.approvals.intent(f.user, held.id, bind(held)), { code: 'RISK_HOLD_REVIEW' });
+  clear(held, 'UNUSUAL_TRANSACTION');
+  assert.equal(flow.approvals.intent(f.user, held.id, bind(held)).draft.status, 'AWAITING_APPROVAL');
+
+  events = [fact('RAPID_MIGRATION', 'scam-case')];
+  flow.approvals.intent(f.user, held.id, bind(held));
+  assert.ok(latest().reasonCodes.includes('RAPID_MIGRATION'), 'another event type on the same source is still live');
+
+  events = [fact('SAFE_ACCOUNT_SCAM', 'scam-case')];
+  const edited = flow.drafts.patch(f.user, held.id, { version: held.version, amountMinor: 2000000 });
+  assert.equal(edited.status, 'HOLD_REVIEW', 'an edit is not what the reviewer examined');
+  const samePayload = flow.drafts.patch(f.user, held.id, { version: edited.version, amountMinor: held.amountMinor });
+  assert.equal(samePayload.status, 'HOLD_REVIEW', 'a review binds to one draft version');
+});
+test('旧路径被拦截仍保留评估和风险标记', async t => {
+  let events = [];
+  const f = await fixture(t, { risk: { signals: () => events } });
+  const count = table => f.bank.get(`SELECT COUNT(*) AS n FROM ${table}`).n;
+  const transfer = key => f.call('/transactions', { type: 'transfer', amount: '100', recipientName: '陈屿', recipientAccount: '6218808888000088096', bank: '澄川银行', idempotencyKey: key });
+  events = [fact('CONFIRMED_FRAUD', 'case-1')];
+  check(await f.propose('propose_transfer', { recipient: f.recipient, amount: '100' }), 409);
+  assert.equal(count('risk_evaluations'), 1); assert.equal(count('agent_actions'), 0);
+  assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM audit WHERE action='risk.evaluated'").n, 1);
+  const flags = check(await f.call('/v1/risk/flags'));
+  assert.ok(flags.length); check(await f.call('/v1/risk/appeals', { flagId: flags[0].id, rationale: '请核实这笔本人转账' }), 201);
+  check(await transfer('idem-risk-denied'), 409);
+  assert.equal(count('risk_evaluations'), 2); assert.equal(f.bank.get("SELECT COUNT(*) AS n FROM transactions WHERE idempotency_key='idem-risk-denied'").n, 0);
+  assert.equal(f.balance().held, 0);
+  events = [];
+  const pending = check(await transfer('idem-risk-later'), 201), before = count('risk_evaluations');
+  events = [fact('CONFIRMED_FRAUD', 'case-2')];
+  assert.equal(check(await f.call(`/transactions/${pending.id}/confirm`, { pin: '123456' })).status, 'failed');
+  assert.ok(count('risk_evaluations') > before);
+  assert.ok(check(await f.call('/v1/risk/flags')).some(x => x.scope_ref === pending.id));
+  assert.equal(f.balance().held, 0);
+});
+test('外部收款人历史与行内收款方流水、通知、附言', async t => {
+  const f = await fixture(t), flow = createRiskTransfers(f.bank, f.services, f.services.risk), { hash } = await import('../server/errors.mjs');
+  const payee = check(await f.call('/payees', { name: '外部收款人', number: '6222000011112222333', bank: '其他银行' }), 201);
+  const pay = async input => { const d = flow.drafts.create(f.user, { ...baseInput(f), ...input }), i = flow.approvals.intent(f.user, d.id, { version: d.version, payloadHash: d.payloadHash }); flow.approvals.approve(f.user, d.id, await proof(f, i)); return { first: d, paid: flow.executor.submit(f.user, d.id) }; };
+  const familiar = d => JSON.parse(f.bank.get('SELECT snapshot FROM risk_evaluations WHERE id=(SELECT evaluation_id FROM risk_drafts WHERE id=?)', d.id).snapshot).familiarPayee;
+  const external = await pay({ beneficiaryRef: payee.id, amountMinor: 5000 });
+  assert.equal(external.paid.status, 'SETTLED');
+  const stored = JSON.parse(f.bank.get('SELECT payload FROM transactions WHERE id=?', external.paid.paymentId).payload);
+  assert.equal(stored.recipientAccount, '****2333');
+  assert.equal(f.services.risk.rows(f.user.id).find(r => r.transaction_id === external.paid.paymentId).payee_ref, hash(payee.number));
+  const again = flow.drafts.create(f.user, { ...baseInput(f), beneficiaryRef: payee.id, amountMinor: 5000 });
+  assert.equal(familiar(again), true); assert.ok(!again.risk.messages.some(m => m.includes('首次')));
+
+  const before = f.bank.get('SELECT COUNT(*) AS n FROM notifications WHERE user_id=?', f.bob.user.id).n;
+  const internal = await pay({ amountMinor: 1200, memo: '聚餐' });
+  const ledger = user => f.bank.get('SELECT l.title FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.transaction_id=?', user, internal.paid.paymentId).title;
+  assert.equal(ledger(f.user.id), '模拟转账 · 陈屿 · 聚餐'); assert.equal(ledger(f.bob.user.id), '转账收入 · 林知夏 · 聚餐');
+  assert.equal(f.bank.get('SELECT COUNT(*) AS n FROM notifications WHERE user_id=?', f.bob.user.id).n, before + 1);
+  assert.match(f.bank.get("SELECT body FROM notifications WHERE user_id=? AND title='转账到账通知'", f.bob.user.id).body, /林知夏向您转入¥12\.00/);
+  assert.equal(JSON.parse(f.bank.get('SELECT payload FROM transactions WHERE id=?', internal.paid.paymentId).payload).note, '聚餐');
+});
+test('本行卡号不存在时拒绝草稿', async t => {
+  const f = await fixture(t);
+  const ghost = check(await f.call('/payees', { name: '不存在的人', number: '6218808888000099999', bank: '澄川银行' }), 201);
+  const draft = await f.call('/v1/transfers/drafts', { ...baseInput(f), beneficiaryRef: ghost.id });
+  assert.equal(draft.status, 404); assert.equal(draft.data.error.code, 'RECIPIENT_NOT_FOUND');
+  const legacy = await f.call('/transactions', { type: 'transfer', amount: '1', recipientName: '不存在的人', recipientAccount: '6218808888000099999', bank: '澄川银行', idempotencyKey: 'idem-ghost-1' });
+  assert.equal(legacy.status, draft.status); assert.equal(legacy.data.error.code, draft.data.error.code);
+  const elsewhere = check(await f.call('/payees', { name: '外部收款人', number: '6222000011112222333', bank: '其他银行' }), 201);
+  check(await f.call('/v1/transfers/drafts', { ...baseInput(f), beneficiaryRef: elsewhere.id }), 201);
+});
+test('同一来源保留最严重信号', () => {
+  const candidate = { amountMinor: 100, beneficiaryRef: 'old', ownAccount: true };
+  const run = events => evaluatePolicy(features(history, candidate), candidate, { at, events }, null, policy);
+  const event = (type, extra) => fact(type, 'case', { occurredAt: '2026-10-27T00:00:00Z', ...extra });
+  for (const events of [[event('NAME_MISMATCH'), event('CONFIRMED_FRAUD')], [event('CONFIRMED_FRAUD'), event('NAME_MISMATCH')]]) {
+    const e = run(events);
+    assert.equal(e.coreAction, 'BLOCK'); assert.deepEqual(e.evidenceRefs, ['case']);
+    assert.ok(e.reasonCodes.includes('CONFIRMED_FRAUD')); assert.ok(!e.reasonCodes.includes('NAME_MISMATCH'));
+  }
+  assert.equal(run([event('ATO_SEQUENCE'), event('ATO_SEQUENCE', { confirmed: true })]).coreAction, 'HOLD_REVIEW');
+  assert.equal(run([event('NEW_DEVICE'), event('SAFE_ACCOUNT_SCAM')]).coreAction, 'HOLD_REVIEW');
+  assert.equal(run([event('NEW_DEVICE'), event('NAME_MISMATCH')]).coreAction, 'WARN', 'aliases still count once');
+});
+test('申诉和复核缺 flagId 返回 400', async t => {
+  const f = await fixture(t), { createRiskService } = await import('../server/risk/service.mjs');
+  check(await f.call('/v1/risk/appeals', { rationale: '请核实这笔本人转账' }), 400);
+  check(await f.call('/v1/risk/appeals', { flagId: { a: 1 }, rationale: '请核实这笔本人转账' }), 400);
+  const reviewer = createRiskService(f.bank, { reviewerIds: [f.user.id] });
+  assert.throws(() => reviewer.review(f.user, { disposition: 'UNDER_REVIEW', rationale: '开始核实这笔付款' }), { code: 'INVALID_FLAG' });
+});
+test('真实订阅代扣计为周期性流水', async t => {
+  const f = await fixture(t);
+  f.bank.run("UPDATE subscriptions SET next_at=? WHERE user_id=? AND status='active'", '2026-01-01T00:00:00.000Z', f.user.id);
+  f.scheduler.runDue();
+  const charges = f.services.risk.rows(f.user.id).filter(r => f.bank.get("SELECT 1 AS hit FROM transactions WHERE id=? AND idempotency_key LIKE 'subscription:%'", r.transaction_id));
+  assert.ok(charges.length); assert.ok(charges.every(r => r.recurring));
+});
+test('基线不稳定提示只看本次类别', () => {
+  const varied = Array.from({ length: 9 }, (_, m) => Array.from({ length: 3 }, (_, d) => row(`v${m}-${d}`, `2026-${String(m + 1).padStart(2, '0')}-${String(d + 1).padStart(2, '0')}`, 10000 + m * 1500 + d * 70))).flat();
+  const rare = [...varied, row('wallet-once', '2026-03-02', 5000, { category: 'wallet' })];
+  assert.equal(features(rare, undefined).monthly.wallet.mad, 0);
+  assert.ok(!features(rare, undefined).notices.includes('BASELINE_UNSTABLE'));
+  assert.ok(features(rare, { amountMinor: 100, category: 'wallet' }).notices.includes('BASELINE_UNSTABLE'));
+});

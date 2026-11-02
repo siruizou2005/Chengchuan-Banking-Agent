@@ -1,18 +1,27 @@
 import { SPEND_CATEGORIES } from './billData';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { ShieldCheck, Copy, Download, Search, Plus, ScanLine, Upload } from 'lucide-react';
 import { useBank } from '../bank';
 import { ActionCard } from '../chat/cards';
 import type { AgentAction } from '../types';
-import { api, yuan, tail, date, formValues, statusLabel } from '../api';
+import { api, yuan, tail, date, formValues, masked, statusLabel } from '../api';
 import { AccountSelect, Amount, Empty, Field, Notice, PinField, Row, Card, Submit, Brand, Pill, Tabs, Avatar, CircleIcon } from '../ui';
 import { IcoIn, IcoOut, IcoSnow, IcoClock, IcoRecord, IcoQr, Logo } from '../icons';
 import type { Ledger } from '../types';
+import { beijingDay } from './homeData';
 
 export function Accounts() {
-  const { data, navigate, openModal, hidden, refresh, toast } = useBank();
-  async function propose(tool: string, args: Record<string, unknown>) { try { const action = await api<AgentAction>('/agent/actions', 'POST', { tool, args }); await refresh(); openModal('核对卡片操作', <ActionCard action={action} />); } catch (e) { toast((e as Error).message, true); } }
+  const { data, navigate, openModal, hidden, refresh, toast, mutate } = useBank();
+  // Every call creates a pending action on the server, so a double click must send only one.
+  const proposing = useRef(false);
+  async function propose(tool: string, args: Record<string, unknown>) {
+    if (proposing.current) return;
+    proposing.current = true;
+    try { const action = await api<AgentAction>('/agent/actions', 'POST', { tool, args }); await refresh(); openModal('核对卡片操作', <ActionCard action={action} />); }
+    catch (e) { toast((e as Error).message, true); }
+    finally { proposing.current = false; }
+  }
   return <div className="page">
     {data.accounts.map(a => <section className="card" key={a.id}>
       <div className={`debit-card${a.status === 'frozen' ? ' frozen' : ''}`}><span className="debit-head"><span>澄川卡</span><em>尾号 {tail(a.number)}</em>{a.status !== 'active' && <em>{a.status === 'lost' ? '已挂失' : '已冻结'}</em>}</span><strong className="debit-balance">{hidden ? '****' : yuan(a.balance)}</strong><span className="debit-caption">余额</span><span className="debit-mark" aria-hidden="true"><Logo size={150} watermark /></span></div>
@@ -24,12 +33,12 @@ export function Accounts() {
         <div><dt>持卡人</dt><dd>{data.user.name}</dd></div>
       </dl>
       <Row icon={IcoRecord} tone="blue" title="交易记录" onClick={() => navigate('ledger')} />
-      <Row icon={IcoSnow} tone="coral" title={a.status === 'lost' ? '解挂银行卡' : a.status === 'active' ? '冻结银行卡' : '解冻银行卡'} subtitle="状态变更由服务端分级验证" onClick={() => void propose('propose_card_action', { card: a.id, action: a.status === 'lost' ? 'unlost' : a.status === 'active' ? 'freeze' : 'unfreeze' })} />
-      {a.status !== 'lost' && <Row icon={IcoSnow} tone="red" title="挂失银行卡" subtitle="挂失后停止交易并释放待确认预留" onClick={() => void propose('propose_card_action', { card: a.id, action: 'report_lost' })} />}
+      <Row icon={IcoSnow} tone="coral" title={a.status === 'lost' ? '解挂银行卡' : a.status === 'active' ? '冻结银行卡' : '解冻银行卡'} subtitle="状态变更由服务端分级验证" onClick={() => void mutate(`/accounts/${a.id}`, { status: a.status === 'active' ? 'frozen' : 'active' }, a.status === 'lost' ? '银行卡已解挂' : a.status === 'active' ? '银行卡已冻结' : '银行卡已解冻', 'PATCH')} />
+      {a.status !== 'lost' && <Row icon={IcoSnow} tone="red" title="挂失银行卡" subtitle="挂失后停止交易并释放待确认预留" onClick={() => void mutate(`/accounts/${a.id}`, { status: 'lost' }, '银行卡已挂失', 'PATCH')} />}
     </section>)}
     <div className="pill-row"><Pill onClick={() => navigate('receive')}>收款码</Pill><Pill primary onClick={() => navigate('transfer')}>转账汇款</Pill></div>
-    <Card title="虚拟卡" action="申请" onAction={() => void propose('propose_virtual_card', { limit: '1000' })}>{data.virtualCards.map(c => <Row key={c.id} title={`虚拟卡 · ${tail(c.number)}`} subtitle={`限额 ¥${yuan(c.card_limit)} · ${c.status}`} />)}{!data.virtualCards.length && <Empty title="暂无虚拟卡" />}</Card>
-    <Card title="锁定与预授权资金">{data.reservations.map(r => <Row key={r.id} title={r.purpose} subtitle={`释放时间 ${date(r.until_at)}`} trailing={`¥${yuan(r.amount)}`} />)}{!data.reservations.length && <Empty title="暂无锁定资金" />}</Card>
+    <Card title="虚拟卡" action="申请" onAction={() => void propose('propose_virtual_card', { limit: '1000' })}>{data.virtualCards.map(c => <Row key={c.id} title={`虚拟卡 · ${tail(c.number)}`} subtitle={`限额 ${masked(hidden, `¥${yuan(c.card_limit)}`)} · ${c.status}`} />)}{!data.virtualCards.length && <Empty title="暂无虚拟卡" />}</Card>
+    <Card title="锁定与预授权资金">{data.reservations.map(r => <Row key={r.id} title={r.purpose} subtitle={`释放时间 ${date(r.until_at)}`} trailing={masked(hidden, `¥${yuan(r.amount)}`)} />)}{!data.reservations.length && <Empty title="暂无锁定资金" />}</Card>
     <Notice>演示环境账户，请勿填写真实银行卡资料。</Notice>
   </div>;
 }
@@ -67,12 +76,12 @@ export const KIND_LABEL: Record<string, string> = { consumption: '消费', refun
 const bjToday = (offset = 0) => new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 
 export function LedgerPage() {
-  const { data, openModal, route } = useBank();
+  const { data, openModal, route, hidden } = useBank();
   // Agent cards link here with their filters, e.g. #ledger?from=…&to=…&category=…&kind=spend.
   const [initial] = useState(() => new URLSearchParams(route.split('?')[1] || ''));
   const [mode, setMode] = useState(initial.get('from') && initial.get('to') ? 'custom' : 'last_30_days'), [month, setMonth] = useState(bjToday().slice(0, 7)), [from, setFrom] = useState(initial.get('from') || bjToday(-29)), [to, setTo] = useState(initial.get('to') || bjToday());
   const [direction, setDirection] = useState('all'), [category, setCategory] = useState(initial.get('category') || ''), [q, setQ] = useState(initial.get('q') || ''), [keyword, setKeyword] = useState(initial.get('q') || '');
-  const [extra, setExtra] = useState(() => Object.fromEntries(['kind', 'platform'].flatMap(k => initial.get(k) ? [[k, initial.get(k)!]] : [])) as Record<string, string>);
+  const [extra, setExtra] = useState(() => Object.fromEntries(['kind', 'platform', 'merchant'].flatMap(k => initial.get(k) ? [[k, initial.get(k)!]] : [])) as Record<string, string>);
   const [rows, setRows] = useState<Ledger[] | null>(null), [error, setError] = useState('');
   useEffect(() => { const timer = setTimeout(() => setKeyword(q.trim()), 300); return () => clearTimeout(timer); }, [q]);
   const params = new URLSearchParams(mode === 'month' ? { period: month } : mode === 'custom' ? { from, to } : { preset: mode });
@@ -86,23 +95,23 @@ export function LedgerPage() {
   const list = rows || [], counted = list.filter(l => l.kind !== 'opening');
   const income = counted.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0), expense = -counted.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0);
   const months: { key: string; rows: Ledger[] }[] = [];
-  for (const l of list) { const key = (l.bj_time || l.created_at).slice(0, 7); if (months.at(-1)?.key !== key) months.push({ key, rows: [] }); months.at(-1)!.rows.push(l); }
+  for (const l of list) { const key = (l.bj_time || beijingDay(new Date(l.created_at))).slice(0, 7); if (months.at(-1)?.key !== key) months.push({ key, rows: [] }); months.at(-1)!.rows.push(l); }
   const label = mode === 'month' ? month : mode === 'custom' ? '所选时段' : PERIODS.find(([id]) => id === mode)?.[1];
   function detail(l: Ledger) {
-    const fields: [string, string | null | undefined][] = [['交易编号', l.transaction_id], ['入账时间', `${l.bj_time}${l.time_precision === 'day' ? '（原对账单仅有日期）' : ''}`], ['交易账户', `储蓄卡（${tail(l.number)}）`], ['交易后余额', `¥${yuan(l.balance_after)}`], ['分类', l.tag], ['类型', KIND_LABEL[l.kind || '']], ['交易类型', l.txn_type], ['对方户名', l.counterparty], ['对方账号', l.counterparty_account], ['商户', l.merchant], ['支付平台', l.platform], ['渠道', l.channel], ['附言', l.memo], ['数据来源', l.source_bank ? `${l.source_bank}对账单导入` : '澄川银行电子回单']];
-    openModal('电子回单', <div className="receipt"><span className={`receipt-icon ${l.amount > 0 ? 'income' : ''}`}>{l.amount > 0 ? <IcoIn size={28} /> : <IcoOut size={28} />}</span><h3>{l.title}</h3><div className={`receipt-amount${l.amount > 0 ? ' income' : ''}`}>{l.amount > 0 ? '+' : '-'}{yuan(Math.abs(l.amount))}</div><span className="status completed">已入账</span><dl>{fields.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd className={k === '交易编号' ? 'mono' : undefined}>{v}</dd></Fragment>)}</dl></div>);
+    const fields: [string, string | null | undefined][] = [['交易编号', l.transaction_id], ['入账时间', `${l.bj_time}${l.time_precision === 'day' ? '（原对账单仅有日期）' : ''}`], ['交易账户', `储蓄卡（${tail(l.number)}）`], ['交易后余额', masked(hidden, `¥${yuan(l.balance_after)}`)], ['分类', l.tag], ['类型', KIND_LABEL[l.kind || '']], ['交易类型', l.txn_type], ['对方户名', l.counterparty], ['对方账号', l.counterparty_account], ['商户', l.merchant], ['支付平台', l.platform], ['渠道', l.channel], ['附言', l.memo], ['数据来源', l.source_bank ? `${l.source_bank}对账单导入` : '澄川银行电子回单']];
+    openModal('电子回单', <div className="receipt"><span className={`receipt-icon ${l.amount > 0 ? 'income' : ''}`}>{l.amount > 0 ? <IcoIn size={28} /> : <IcoOut size={28} />}</span><h3>{l.title}</h3><div className={`receipt-amount${l.amount > 0 ? ' income' : ''}`}>{masked(hidden, `${l.amount > 0 ? '+' : '-'}${yuan(Math.abs(l.amount))}`)}</div><span className="status completed">已入账</span><dl>{fields.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd className={k === '交易编号' ? 'mono' : undefined}>{v}</dd></Fragment>)}</dl></div>);
   }
   return <div className="page">
-    <section className="card split"><div><span>{label}收入</span><b className="income">+{yuan(income)}</b></div><div><span>{label}支出</span><b>-{yuan(expense)}</b></div></section>
+    <section className="card split"><div><span>{label}收入</span><b className="income">{masked(hidden, `+${yuan(income)}`)}</b></div><div><span>{label}支出</span><b>{masked(hidden, `${expense ? '-' : ''}${yuan(expense)}`)}</b></div></section>
     <div className="search-bar"><Search size={18} /><input aria-label="搜索交易" placeholder="搜索商户、对方、附言或编号" value={q} onChange={e => setQ(e.target.value)} /></div>
     <div className="chip-row" role="group" aria-label="时段">{PERIODS.map(([id, text]) => <button key={id} className={`chip${mode === id ? ' active' : ''}`} aria-pressed={mode === id} onClick={() => setMode(id)}>{text}</button>)}</div>
-    {Object.keys(extra).length > 0 && <div className="range-row"><span>{[extra.kind === 'spend' ? '仅看消费' : extra.kind ? KIND_LABEL[extra.kind] : '', extra.platform ? `支付平台：${extra.platform}` : ''].filter(Boolean).join(' · ')}</span><button className="btn-text" onClick={() => setExtra({})}>清除</button></div>}
+    {Object.keys(extra).length > 0 && <div className="range-row"><span>{[extra.kind === 'spend' ? '仅看消费' : extra.kind ? KIND_LABEL[extra.kind] : '', extra.platform ? `支付平台：${extra.platform}` : '', extra.merchant ? `商户：${extra.merchant}` : ''].filter(Boolean).join(' · ')}</span><button className="btn-text" onClick={() => setExtra({})}>清除</button></div>}
     {mode === 'month' && <div className="range-row"><input type="month" aria-label="选择月份" value={month} max={bjToday().slice(0, 7)} onChange={e => e.target.value && setMonth(e.target.value)} /></div>}
     {mode === 'custom' && <div className="range-row"><input type="date" aria-label="开始日期" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /><span>至</span><input type="date" aria-label="结束日期" value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></div>}
     <Card head={<Tabs items={[{ id: 'all', label: '全部' }, { id: 'income', label: '收入' }, { id: 'expense', label: '支出' }]} value={direction} onChange={setDirection} />} action={<select className="month-input" aria-label="筛选分类" value={category} onChange={e => setCategory(e.target.value)}><option value="">全部分类</option>{CATEGORY_GROUPS.map(([group, names]) => <optgroup key={group} label={group}>{names.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>)}</select>}>
       {months.map(m => { const inc = m.rows.filter(l => l.kind !== 'opening' && l.amount > 0).reduce((s, l) => s + l.amount, 0), out = -m.rows.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0); return <Fragment key={m.key}>
-        <div className="ledger-month"><b>{+m.key.slice(0, 4)}年{+m.key.slice(5, 7)}月</b><span>支出 ¥{yuan(out)} · 收入 ¥{yuan(inc)}</span></div>
-        {m.rows.map(l => <Row key={l.id} icon={l.amount > 0 ? IcoIn : IcoOut} tone={l.amount > 0 ? 'red' : 'blue'} title={l.title} subtitle={`${l.tag} · ${(l.bj_time || '').slice(5)}`} trailing={<b className={`amount${l.amount > 0 ? ' income' : ''}`}>{l.amount > 0 ? '+' : '-'}{yuan(Math.abs(l.amount))}</b>} trailingSub={`余额 ${yuan(l.balance_after)}`} onClick={() => detail(l)} chevron={false} />)}
+        <div className="ledger-month"><b>{+m.key.slice(0, 4)}年{+m.key.slice(5, 7)}月</b><span>支出 {masked(hidden, `¥${yuan(out)}`)} · 收入 {masked(hidden, `¥${yuan(inc)}`)}</span></div>
+        {m.rows.map(l => <Row key={l.id} icon={l.amount > 0 ? IcoIn : IcoOut} tone={l.amount > 0 ? 'red' : 'blue'} title={l.title} subtitle={`${l.tag} · ${(l.bj_time || '').slice(5)}`} trailing={<b className={`amount${l.amount > 0 ? ' income' : ''}`}>{masked(hidden, `${l.amount > 0 ? '+' : '-'}${yuan(Math.abs(l.amount))}`)}</b>} trailingSub={`余额 ${masked(hidden, yuan(l.balance_after))}`} onClick={() => detail(l)} chevron={false} />)}
       </Fragment>; })}
       {rows && list.length === 0 && <Empty title={error || '该时段没有符合条件的交易'} />}
       {!rows && <Empty title="正在加载交易记录" />}
@@ -112,12 +121,12 @@ export function LedgerPage() {
 }
 
 export function Transactions() {
-  const { data, showTransaction } = useBank();
+  const { data, showTransaction, hidden } = useBank();
   const [filter, setFilter] = useState('all');
   const rows = data.transactions.filter(t => filter === 'all' || t.status === filter);
   return <div className="page">
     <Card head={<Tabs grow items={[{ id: 'all', label: '全部' }, { id: 'pending', label: '待确认' }, { id: 'completed', label: '已完成' }, { id: 'failed', label: '失败' }]} value={filter} onChange={setFilter} />}>
-      {rows.map(t => <Row key={t.id} icon={t.status === 'pending' ? IcoClock : IcoRecord} tone={t.status === 'pending' ? 'orange' : t.status === 'completed' ? 'blue' : 'gray'} title={t.title} subtitle={date(t.created_at)} trailing={<b className="amount">¥{yuan(t.amount)}</b>} trailingSub={<span className={`status ${t.status}`}>{statusLabel[t.status]}</span>} onClick={() => showTransaction(t)} chevron={false} />)}
+      {rows.map(t => <Row key={t.id} icon={t.status === 'pending' ? IcoClock : IcoRecord} tone={t.status === 'pending' ? 'orange' : t.status === 'completed' ? 'blue' : 'gray'} title={t.title} subtitle={date(t.created_at)} trailing={<b className="amount">{masked(hidden, `¥${yuan(t.amount)}`)}</b>} trailingSub={<span className={`status ${t.status}`}>{statusLabel[t.status]}</span>} onClick={() => showTransaction(t)} chevron={false} />)}
       {!rows.length && <Empty />}
     </Card>
   </div>;

@@ -16,7 +16,7 @@ export interface ChatAdapter {
 }
 
 export class ChatError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 
 export const liveAdapter: ChatAdapter = {
@@ -30,12 +30,17 @@ export const liveAdapter: ChatAdapter = {
       size += message.text.length;
     }
     while (history[0]?.role === 'assistant') history.shift();
-    const response = await fetch('/api/agent/chat', {
-      method: 'POST', credentials: 'same-origin', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, messageId: messages.filter(m => m.role === 'user').at(-1)?.id, expectedUserId: userId, sessionId: [...messages].reverse().find(m => m.sessionId)?.sessionId }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new ChatError(data.error?.message || '回复暂时未能送达，请重试。', response.status);
+    let response: Response;
+    try {
+      response = await fetch('/api/agent/chat', {
+        method: 'POST', credentials: 'same-origin', signal,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, messageId: messages.filter(m => m.role === 'user').at(-1)?.id, expectedUserId: userId, sessionId: [...messages].reverse().find(m => m.sessionId)?.sessionId }),
+      });
+    } catch (failure) { if (signal.aborted) throw failure; throw new Error('网络连接失败，请重试'); }
+    // A gateway error page is not the bank's answer, so it stays a plain Error: the outcome is unknown.
+    const data = await response.json().catch(() => undefined);
+    if (data === undefined) throw new Error('回复暂时未能送达，请重试。');
+    if (!response.ok) throw new ChatError(data.error?.message || '回复暂时未能送达，请重试。', response.status, data.error?.code);
     return data;
   },
 };

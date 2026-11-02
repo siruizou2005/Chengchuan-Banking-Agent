@@ -1,4 +1,4 @@
-import { billReport, enrich, ledgerFor, merchantKey, resolveRange, selectLedger, spendingStats } from './analytics.mjs';
+import { billReport, EARLIEST_DATE, enrich, ledgerFor, merchantKey, resolveRange, selectLedger, spendingStats } from './analytics.mjs';
 import { resolvePrincipal } from './principal.mjs';
 import { businessDate } from './policy.mjs';
 import { requireThat } from '../errors.mjs';
@@ -24,7 +24,7 @@ export function billView(bank, services, user, period) {
     ? resolveRange({ from: report.previous.from, to: report.previous.to }, today) : null;
   const previous = previousRange && billReport(rows, previousRange);
   const start = new Date(Date.UTC(+period.slice(0, 4), +period.slice(5) - 6, 1)).toISOString().slice(0, 10);
-  const months = spendingStats(rows, resolveRange({ from: start, to: range.to }, today), { by: 'month' });
+  const months = spendingStats(rows, resolveRange({ from: start < EARLIEST_DATE ? EARLIEST_DATE : start, to: range.to }, today), { by: 'month' });
   const monthly = Array.from({ length: 6 }, (_, i) => {
     const key = new Date(Date.UTC(+period.slice(0, 4), +period.slice(5) - 6 + i, 1)).toISOString().slice(0, 7);
     const bucket = months.buckets.find(b => b.key === key);

@@ -3,9 +3,11 @@ import { id } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
 import { enqueueExecution } from '../agent/execution.mjs';
 import { bindingFor, assertLease, resultLink, wechatResultText } from './wechat-state.mjs';
+import { channelRefusal } from './refusal.mjs';
 import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
 
-const commandPattern=/^(帮助|help|解绑|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const commandPattern=/^(帮助|help|解绑|(?:开始)?新对话|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const CLOCK_SKEW_MS=60000;
 export function createWeChatInbox(services,router,delivery,options={}) {
   const {bank}=services,crypto=router.crypto,owner=randomUUID(),active=new Map(),ttl=options.executionLeaseMs||60000;
   const origin=options.publicOrigin??process.env.PUBLIC_ORIGIN??'',maxPending=options.maxPending||Number(process.env.WECHAT_MAX_PENDING_PER_USER)||3;
@@ -16,21 +18,21 @@ export function createWeChatInbox(services,router,delivery,options={}) {
     const acks=[];
     const accepted=bank.atomic(()=>{
       assertPoll();bindingFor(bank,binding);
-      const accepted=[];
+      const accepted=[],quarantine=reason=>bank.run('INSERT OR IGNORE INTO wechat_quarantine(binding_id,binding_generation,reason,batch_digest,created_at) VALUES(?,?,?,?,?)',binding.id,binding.binding_generation,reason,createHash('sha256').update(String(data.get_updates_buf||binding.cursor)).digest('hex'),Date.now());
       for(const message of data.msgs||[]) {
         if(message.message_type!==1||message.group_id||message.from_user_id!==binding.external_id)continue;
+        // A re-scan resets the cursor, so the platform may hand back what was sent before this authorization. Values
+        // that are not millisecond timestamps prove nothing and must not cost a real message.
+        if(message.create_time_ms>1e12&&binding.authorized_at&&message.create_time_ms<binding.authorized_at-CLOCK_SKEW_MS){quarantine('BEFORE_AUTHORIZATION');continue;}
         const upstreamId=message.message_id??message.msg_id;
-        if(!upstreamId||(typeof upstreamId==='number'&&!Number.isSafeInteger(upstreamId))) {
-          const digest=createHash('sha256').update(String(data.get_updates_buf||binding.cursor)).digest('hex');
-          bank.run("INSERT OR IGNORE INTO wechat_quarantine(binding_id,binding_generation,reason,batch_digest,created_at) VALUES(?,?,'MISSING_STABLE_MESSAGE_ID',?,?)",binding.id,binding.binding_generation,digest,Date.now());continue;
-        }
+        if(!upstreamId||(typeof upstreamId==='number'&&!Number.isSafeInteger(upstreamId))){quarantine('MISSING_STABLE_MESSAGE_ID');continue;}
         if(bank.get('SELECT 1 FROM wechat_inbox WHERE binding_id=? AND binding_generation=? AND upstream_message_id=?',binding.id,binding.binding_generation,String(upstreamId)))continue;
         const text=(message.item_list||[]).filter(i=>i.type===1&&typeof i.text_item?.text==='string').map(i=>i.text_item.text).join('\n');
         const isCommand=commandPattern.test(text.trim()),requestId=id('WXREQ'),time=Date.now();
         const context=typeof message.context_token==='string'&&message.context_token?crypto.encrypt(message.context_token):null;
         if(context)bank.run('UPDATE channel_bindings SET context_token=?,context_updated_at=? WHERE id=?',context,time,binding.id);
         const count=bank.get("SELECT count(*) AS n FROM wechat_inbox WHERE user_id=? AND status IN ('queued','running') AND is_command=0",binding.user_id).n;
-        const reason=!text||text.length>6000?'仅支持不超过6000字的文字消息，请用文字描述需求。':process.env.AGENT_DISABLED==='true'&&!isCommand?'智能助手暂不可用，请在App办理。':!isCommand&&!services.enrollment.enabled(binding.user_id)?IM_NOT_ENABLED_REPLY:!isCommand&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':null;
+        const reason=!text.trim()||text.length>6000?'仅支持不超过6000字的文字消息，请用文字描述需求。':isCommand?null:process.env.AGENT_DISABLED==='true'?'智能助手暂不可用，请在App办理。':!services.enrollment.enabled(binding.user_id)?IM_NOT_ENABLED_REPLY:channelRefusal(bank,binding)||(count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':null);
         bank.run(`INSERT INTO wechat_inbox(id,binding_id,binding_session_id,binding_generation,user_id,upstream_message_id,upstream_created_at,input_cipher,context_token_cipher,status,is_command,received_at,queue_deadline,run_id)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,binding.id,binding.binding_session_id,binding.binding_generation,binding.user_id,String(upstreamId),Number.isFinite(message.create_time_ms)?message.create_time_ms:null,crypto.encrypt(text.slice(0,6000)),context,reason?'failed':'queued',isCommand?1:0,time,time+(options.queueMs||30000),id('RUN'));
         if(reason){bank.run('UPDATE wechat_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);delivery.enqueue(binding,{requestId,kind:'error',body:reason,context});}
@@ -49,12 +51,12 @@ export function createWeChatInbox(services,router,delivery,options={}) {
   async function acknowledge(binding,acks) {
     await typing?.start(binding,acks.at(-1).plain).catch(()=>false);
   }
-  function complete(row,result,error=null) {
+  function complete(row,result,error=null,reply=null) {
     bank.atomic(()=>{
       assertLease(bank,'wechat_inbox',row,owner);const binding=bindingFor(bank,row);
       requireThat(bank.run("UPDATE wechat_inbox SET status=?,finished_at=?,result_json=?,safe_error_code=? WHERE id=? AND status='running' AND lease_epoch=?",error?'failed':'completed',Date.now(),JSON.stringify(result),error?.code||null,row.id,row.lease_epoch).changes,'请求已结束',409,'WORKER_FENCED');
       delivery.cancelFeedback(row.id);
-      const body=error?'这次未能完成处理。已生成的操作可在App查看；查询可以稍后重试。\n'+resultLink(origin,row.id):row.is_command?result.text:wechatResultText(result,row.id,origin,bank);
+      const body=reply||(error?'这次未能完成处理。已生成的操作可在App查看；查询可以稍后重试。\n'+resultLink(origin,row.id):row.is_command?result.text:wechatResultText(result,row.id,origin,bank));
       delivery.enqueue(binding,{requestId:row.id,kind:error?'error':row.is_command?'command':'final',body,context:row.context_token_cipher});
     });
   }
@@ -83,7 +85,7 @@ export function createWeChatInbox(services,router,delivery,options={}) {
   }
   async function execute(row,abort){
     const heartbeat=setInterval(()=>{
-      try{bindingFor(bank,row);const n=bank.run("UPDATE wechat_inbox SET lease_until=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_until>?",Date.now()+ttl,row.id,owner,row.lease_epoch,Date.now()).changes;if(!n)abort.abort();}catch{abort.abort();}
+      try{if(channelRefusal(bank,bindingFor(bank,row))){abort.abort();return;}const n=bank.run("UPDATE wechat_inbox SET lease_until=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_until>?",Date.now()+ttl,row.id,owner,row.lease_epoch,Date.now()).changes;if(!n)abort.abort();}catch{abort.abort();}
     },Math.max(10,Math.floor(ttl/3)));heartbeat.unref?.();
     try{
       const binding=bindingFor(bank,row),text=crypto.decrypt(row.input_cipher);
@@ -94,7 +96,7 @@ export function createWeChatInbox(services,router,delivery,options={}) {
     }catch(error){
       const current=bank.get('SELECT * FROM wechat_inbox WHERE id=?',row.id);
       if(current?.status==='running'&&current.lease_epoch===row.lease_epoch) {
-        try{complete(row,{text:error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:'这次处理未完成，已有操作请在App查看。',events:[]},error);}catch{
+        try{const reply=error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:channelRefusal(bank,bindingFor(bank,row));complete(row,{text:reply||'这次处理未完成，已有操作请在App查看。',events:[]},error,reply);}catch{
           bank.run("UPDATE wechat_inbox SET status='interrupted',finished_at=?,safe_error_code=?,lease_epoch=lease_epoch+1 WHERE id=? AND status='running' AND lease_epoch=?",Date.now(),error.code||'REQUEST_INTERRUPTED',row.id,row.lease_epoch);delivery.cancelFeedback(row.id);
         }
       }

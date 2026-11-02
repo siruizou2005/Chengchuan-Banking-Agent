@@ -19,10 +19,12 @@ export function registerRiskRoutes(route, bank, services, risk, transfers, secur
     amountMinor: { type: 'integer', minimum: 1, maximum: 1000000000 }, currency: { type: 'string', enum: ['CNY'] }, memo: { type: 'string', maxLength: 100 } } };
   const bindingSchema = { additionalProperties: false, required: ['version', 'payloadHash'], properties: {
     version: { type: 'integer', minimum: 1 }, payloadHash: { type: 'string', pattern: '^[a-f0-9]{64}$' } } };
+  // Counts rejected requests per route, not per path: a success is not abuse, and probing new ids must not mint new counters.
   const limited = handler => (req, res) => {
-    const key = `risk:${req.user.id}:${req.path}`;
-    services.checkRate(key); services.badAttempt(key);
+    const key = `risk:${req.user.id}:${req.method} ${req.route.path}`;
+    services.checkRate(key);
     try { return handler(req, res); } catch (error) {
+      if (error.status < 500) services.badAttempt(key);
       if (['INVALID_PIN', 'INVALID_VERIFICATION', 'VERIFICATION_REQUIRED'].includes(error.code)) {
         const d = bank.get('SELECT id,evaluation_id FROM risk_drafts WHERE id=? AND user_id=?', req.params.id || '', req.user.id);
         if (d) risk.metric(req.user.id, d.id, d.evaluation_id, 'AUTH_FAILURE');

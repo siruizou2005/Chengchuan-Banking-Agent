@@ -5,6 +5,9 @@ import { X } from 'lucide-react';
 // authorization logic, or API calls. Only the home workspace opts into this.
 export const InlinePresentation = createContext(false);
 export const useInlinePresentation = () => useContext(InlinePresentation);
+// True while the surrounding page stays mounted but hidden. A native modal under a hidden parent
+// shows nothing yet still makes the rest of the document inert.
+export const HiddenSlot = createContext(false);
 export function InlineSurface({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const id = useId(), heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {

@@ -26,6 +26,9 @@ export function detectSignals(f, candidate, trusted = {}, config = {}) {
   }
   return [...result,...additionalSignals(f,candidate,trusted,config)];
 }
+// What one trusted event raises on its own; an own-account candidate skips every transaction feature.
+export const eventSignals = (event, at) => detectSignals({}, { ownAccount: true }, { at, events: [event] });
+export const flagTypeOf = s => s.group === 'beneficiary_change' ? 'NEW_OR_CHANGED_PAYEE' : s.group === 'account_security_change' ? 'ACCOUNT_SECURITY_ALERT' : s.severity === 'block' ? 'POTENTIAL_SCAM_SIGNAL' : 'UNUSUAL_TRANSACTION';
 export function coreDecision(signals) {
   if (signals.some(s => s.severity === 'block')) return 'BLOCK';
   if (signals.some(s => s.severity === 'severe')) return 'HOLD_REVIEW';
@@ -35,8 +38,10 @@ export function coreDecision(signals) {
   return groups.size >= 2 ? 'STEP_UP' : signals.length ? 'WARN' : 'ALLOW';
 }
 export function evaluatePolicy(features, candidate, trusted, identity, agePolicy, rules) {
-  const raw = detectSignals(features, candidate, trusted, rules), seen = new Set();
-  const signals = raw.filter(s => { if (seen.has(s.evidenceRef)) return false; seen.add(s.evidenceRef); return true; });
+  // Aliases of one source count once, and the gravest of them speaks for it: arrival order must not hide a block.
+  const rank = { mild: 0, moderate: 1, severe: 2, block: 3 }, gravest = new Map();
+  for (const s of detectSignals(features, candidate, trusted, rules)) if (!gravest.has(s.evidenceRef) || rank[s.severity] > rank[gravest.get(s.evidenceRef).severity]) gravest.set(s.evidenceRef, s);
+  const signals = [...gravest.values()];
   const coreAction = coreDecision(signals), age = applyAgePolicy(coreAction, signals, identity, trusted.at, agePolicy);
   return { coreAction, ...age, policyVersion: `${RISK_VERSION}/${age.agePolicyVersion}/${age.ageMode}`,
     reasonCodes: [...signals.map(s => s.code), ...features.notices, ...(features.balance === null ? ['UNKNOWN_FEATURE'] : []), ...(age.ageEffect === 'STEP_UP' ? ['AGE_STEP_UP_APPLIED'] : [])],

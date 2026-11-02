@@ -1,11 +1,12 @@
 import { requireThat } from '../errors.mjs';
 import { eventsText } from './router.mjs';
 
-export function bindingFor(bank,row,{auth=true}={}) {
+// A frozen account does not break the connection: intake keeps running and each message is refused (see refusal.mjs).
+export function bindingFor(bank,row) {
   const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND channel='wechat' AND status='active'",row.binding_id||row.id);
   const generation=row.binding_generation,session=row.binding_session_id;
   requireThat(binding&&binding.binding_generation===generation&&binding.binding_session_id===session,'微信绑定已失效',409,'BINDING_FENCED');
-  if(auth)requireThat(binding.auth_state==='valid'&&!bank.get("SELECT 1 FROM accounts WHERE user_id=? AND type='debit' AND status<>'active'",binding.user_id),'请回App重新认证微信连接',403,'CHANNEL_REAUTH_REQUIRED');
+  requireThat(binding.auth_state==='valid','请回App重新认证微信连接',403,'CHANNEL_REAUTH_REQUIRED');
   return binding;
 }
 export function assertLease(bank,table,row,owner,time=Date.now()) {

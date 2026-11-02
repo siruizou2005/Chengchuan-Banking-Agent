@@ -14,7 +14,7 @@ import { migratePuma } from './puma/schema.mjs';
 import { migrateMerchantCategories } from './agent/category-schema.mjs';
 import { migrateHiddenSpend } from './agent/hidden-spend-schema.mjs';
 import { mirrorAudit } from './puma/evidence.mjs';
-import { DEMO_EMAILS } from './demo-users.mjs';
+import { DEMO_EMAILS, demoUserCheck } from './demo-users.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -43,6 +43,8 @@ function resetToDemoAccounts(db) {
     for (const { name } of triggers) db.exec(`DROP TRIGGER "${name}"`);
     for (const name of tables) db.exec(`DELETE FROM "${name}"`);
     for (const { sql } of triggers) db.exec(sql);
+    // The payees it recorded were just deleted, so a later reset has to create them again.
+    db.prepare("DELETE FROM schema_migrations WHERE version='demo-payees-v1'").run();
     db.prepare('INSERT INTO schema_migrations VALUES(?,?)').run('demo-accounts-v3', now());
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; } finally { db.exec('PRAGMA foreign_keys=ON'); }
@@ -154,6 +156,7 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
     ['verifications','face_session_id','TEXT'],
     ['verifications','face_reference','TEXT'],
     ['channel_bindings','transport','TEXT'],
+    ['subscriptions','billing_day','INTEGER'],
     ...LEDGER_DETAIL.map(column=>['ledger',column,'TEXT']),
   ]) if (!all(`PRAGMA table_info(${table})`).some(c=>c.name===column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   db.exec(`
@@ -207,14 +210,20 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
     CREATE TABLE IF NOT EXISTS email_codes (id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);`);
   for (const [phone, email] of Object.entries(DEMO_EMAILS)) run('UPDATE users SET email=? WHERE phone=? AND email IS NULL', email, phone);
-  let depth = 0;
+  let depth = 0, afterEnd = [];
   function atomic(fn) {
     const savepoint = `bank_${depth++}`;
     db.exec(depth === 1 ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
     try { const result = fn(); if (result?.then) throw new TypeError('Database transactions must be synchronous'); db.exec(depth === 1 ? 'COMMIT' : `RELEASE ${savepoint}`); return result; }
     catch (error) { db.exec(depth === 1 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`); throw error; }
-    finally { depth--; }
+    finally {
+      depth--;
+      // Runs once the outcome is final; a failed follow-up write must not replace the caller's result or error.
+      if (!depth) for (const task of afterEnd.splice(0)) try { task(); } catch (error) { console.error('Deferred bank write failed:', redactIdentity(error.message)); }
+    }
   }
+  // For records that must outlive a rollback of the surrounding transaction. Outside a transaction there is nothing to wait for.
+  const afterTransaction = task => { if (depth) afterEnd.push(task); };
   function audit(user, action, resource = '', detail = {}) { const at=now(); run('INSERT INTO audit(user_id,action,resource_id,detail,created_at) VALUES(?,?,?,?,?)', user, action, redactIdentity(resource), JSON.stringify(redactIdentity(detail)), at); mirrorAudit(db,user,action,resource,detail,at); }
   function notify(user, title, body) { run('INSERT INTO notifications(id,user_id,title,body,created_at) VALUES(?,?,?,?,?)', id('N'), user, title, body, now()); }
   function post(tx, from, to, amount, title, category, date = now(), detail = {}) {
@@ -279,7 +288,8 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
   // Statements imported from other banks: renamed holders, simulated card numbers, masked counterparty accounts.
   // Rows start with a back-computed opening balance, so balance_after reproduces the source statement.
   const imported = JSON.parse(readFileSync(new URL(`./seed/${accounts === 'demo' ? 'demo-accounts' : 'fixture-statements'}.json`, import.meta.url), 'utf8'));
-  const missing = imported.users.filter(s => !get('SELECT id FROM users WHERE phone=?', s.phone));
+  // The card identifies an imported account too: an older database may hold it under a previous demo phone number.
+  const missing = imported.users.filter(s => !get('SELECT id FROM users WHERE phone=?', s.phone) && !get('SELECT id FROM accounts WHERE number=?', s.card));
   for (const s of missing) {
     atomic(() => {
       const userId = newUser(s.phone, s.name, 'Bank123456', '123456', s.card, 0);
@@ -294,10 +304,11 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
       audit(userId, 'statement.imported', account, { sourceBank: s.source_bank, period: s.period, rows: s.rows.length });
     });
   }
-  // The two demo accounts can pay each other straight away.
-  if (accounts === 'demo' && missing.length === imported.users.length) atomic(() => {
-    const [first, second] = imported.users.map(s => ({ ...s, id: get('SELECT id FROM users WHERE phone=?', s.phone).id }));
-    for (const [from, to] of [[first, second], [second, first]]) run('INSERT INTO payees(id,user_id,name,number,bank) VALUES(?,?,?,?,?)', id('P'), from.id, to.name, to.card, '澄川银行');
+  // The demo accounts can pay each other straight away. Every pair is checked, so an interrupted first import catches up on the next start; the marker then keeps a payee the customer removed from coming back.
+  if (accounts === 'demo' && !get("SELECT version FROM schema_migrations WHERE version='demo-payees-v1'")) atomic(() => {
+    const owners = imported.users.map(s => ({ ...s, id: get('SELECT user_id AS id FROM accounts WHERE number=?', s.card).id }));
+    for (const from of owners) for (const to of owners) if (from !== to) run('INSERT OR IGNORE INTO payees(id,user_id,name,number,bank) VALUES(?,?,?,?,?)', id('P'), from.id, to.name, to.card, '澄川银行');
+    run('INSERT INTO schema_migrations VALUES(?,?)', 'demo-payees-v1', now());
   });
   if (!get("SELECT version FROM schema_migrations WHERE version='permissions-v2'")) atomic(()=>{
     for(const a of all("SELECT * FROM agent_actions WHERE status IN ('confirmed','executing')")) {
@@ -317,5 +328,5 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
     for(const t of all("SELECT * FROM transactions WHERE status='completed' AND completed_at IS NULL"))audit(t.user_id,'transaction.legacy_completion_proxy',t.id,{source:'updated_at',limitation:'历史记录无独立完成时间；累计以原updated_at兼容，不回填精确完成时间'});
     run('INSERT INTO schema_migrations VALUES(?,?)','permissions-v2',now());
   });
-  return { db, get, all, run, atomic, audit, notify, post, newUser };
+  return { db, get, all, run, atomic, afterTransaction, audit, notify, post, newUser, isDemoUser: demoUserCheck(accounts) };
 }

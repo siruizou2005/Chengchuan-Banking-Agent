@@ -75,8 +75,9 @@ export function feishuTyping(client) {
 export function createFeishuHandler(router,client,onError=()=>{},owner,binding,botAccountId) {
  return data=>{
   const message=data.message,sender=data.sender?.sender_id?.open_id;
-  if(!message||message.chat_type!=='p2p'||message.message_type!=='text'||data.sender?.sender_type==='app'||!sender||(owner&&sender!==owner))return {};
-  let text;try{text=JSON.parse(message.content).text;}catch{return {};}
+  if(!message||message.chat_type!=='p2p'||data.sender?.sender_type==='app'||!sender||(owner&&sender!==owner))return {};
+  // Anything but text reaches the pipeline empty, which answers it instead of staying silent.
+  let text='';if(message.message_type==='text')try{text=JSON.parse(message.content).text;}catch{return {};}
   const input={channel:'feishu',externalId:sender,messageId:message.message_id,text,binding,botAccountId};
   // Persist before acknowledging; the model and delivery run independently of the dispatcher.
   if(router.acceptFeishu?.(input,binding?undefined:(b,body,options)=>sendFeishuMessage(client,b,body,options)))return {};

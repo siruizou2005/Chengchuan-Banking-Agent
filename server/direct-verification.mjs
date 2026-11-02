@@ -7,6 +7,7 @@ export function registerDirectVerification(route,services) {
  const {bank,authorization}=services;
  const fresh=user=>bank.get('SELECT * FROM users WHERE id=?',user.id);
  function inspect(user,path,body) {
+  requireThat(typeof path==='string','不支持的业务确认入口',400,'INVALID_INTENT');
   user=fresh(user);let tool,args,title,resource,transaction;
   if(/^\/transactions\/[A-Za-z0-9]+\/confirm$/.test(path)) {
    transaction=bank.get('SELECT * FROM transactions WHERE id=? AND user_id=?',path.split('/')[2],user.id);requireThat(transaction,'交易不存在',404,'NOT_FOUND');
@@ -48,7 +49,7 @@ export function registerDirectVerification(route,services) {
  function consume(user,path,body) {
   const check=inspect(user,path,body);let action,factors=['explicit_confirmation','pin'];
   if(check.decision.level==='red') {
-   action=bank.get("SELECT * FROM agent_actions WHERE id=? AND user_id=? AND tool='direct_operation' AND status='proposed' AND expires_at>?",body.verificationActionId||'',user.id,now());
+   action=bank.get("SELECT * FROM agent_actions WHERE id=? AND user_id=? AND tool='direct_operation' AND status='proposed' AND expires_at>?",typeof body.verificationActionId==='string'?body.verificationActionId:'',user.id,now());
    if(!action||JSON.parse(action.args).digest!==check.digest){const error=new BusinessError('此操作需先完成App加强验证',403,'VERIFICATION_REQUIRED');error.decision=check.decision;throw error;}
    factors.push(...services.verification.consume(user,action.id,body.verificationToken));
   }else action=create(user,path,check);

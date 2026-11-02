@@ -3,8 +3,8 @@ import { BusinessError, requireThat } from '../errors.mjs';
 import { assertPrincipal } from './principal.mjs';
 
 const positive = (value, fallback) => Number.isFinite(Number(value))&&Number(value)>0?Math.floor(Number(value)):fallback;
-export function inferenceCost(usage={}) {
-  const count=n=>Number.isInteger(n)&&n>=0?n:null,input=count(usage.prompt_tokens),output=count(usage.completion_tokens);
+export function inferenceCost(usage) {
+  const count=n=>Number.isInteger(n)&&n>=0?n:null,input=count(usage?.prompt_tokens),output=count(usage?.completion_tokens);
   const inputRate=Number(process.env.INFERENCE_INPUT_PRICE_PER_MILLION),outputRate=Number(process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION);
   return input!==null&&output!==null&&process.env.INFERENCE_INPUT_PRICE_PER_MILLION?.trim()&&process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION?.trim()&&Number.isFinite(inputRate)&&Number.isFinite(outputRate)&&inputRate>=0&&outputRate>=0?(input*inputRate+output*outputRate)/1e6:null;
 }
@@ -54,7 +54,7 @@ export function createInferenceManager(bank, options={}) {
         return requestProvider(providerFetch,config,payload,controller.signal);
       })(),cancelled]);
       assertAuthorized();
-      requireThat(data?.choices?.[0]?.message&&(typeof data.choices[0].message.content==='string'||Array.isArray(data.choices[0].message.tool_calls)),'模型服务返回为空，请重试',502,'EMPTY_RESPONSE');
+      requireThat(data?.choices?.[0]?.message&&(typeof data.choices[0].message.content==='string'||Array.isArray(data.choices[0].message.content)||Array.isArray(data.choices[0].message.tool_calls)),'模型服务返回为空，请重试',502,'EMPTY_RESPONSE');
       const usage=data.usage||{},count=n=>Number.isInteger(n)&&n>=0?n:null;
       const input=count(usage.prompt_tokens),output=count(usage.completion_tokens);
       const cost=trigger==='voice'?null:inferenceCost(usage);

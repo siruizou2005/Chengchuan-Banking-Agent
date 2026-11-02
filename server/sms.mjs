@@ -1,4 +1,3 @@
-import { isDemoUser } from './demo-users.mjs';
 import { isReservedEmail, maskEmail } from './email.mjs';
 import { hash, requireThat } from './errors.mjs';
 
@@ -57,8 +56,8 @@ export function createSmsDelivery(bank, { provider, email: emailProvider, limits
       const notify = (code, actionTitle) => bank.notify(user.id, SIMULATED_CODE_TITLE, `【澄川银行】模拟手机验证码 ${code}，用于：${actionTitle}。5分钟内有效。请勿发送给聊天助手或他人。`);
       // Enhanced verification is a simulated phone code; email is only used to prove an address at registration.
       if (user.email && isReservedEmail(user.email)) return simulated('demo_email', notify);
-      if (provider && !isDemoUser(user)) return real(provider, user.phone, 'phone');
-      return simulated(isDemoUser(user) ? 'demo_account' : !user.email ? 'no_email' : 'provider_not_configured', notify);
+      if (provider && !bank.isDemoUser(user)) return real(provider, user.phone, 'phone');
+      return simulated(bank.isDemoUser(user) ? 'demo_account' : !user.email ? 'no_email' : 'provider_not_configured', notify);
     },
   };
 }

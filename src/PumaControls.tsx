@@ -16,7 +16,7 @@ export function PumaControls() {
     setControl(c);setRelations(r);setConfirmations(a);setEnabled(['enabled','monitored_canary'].includes(p.flags.puma_delegate_approval));
   }
   useEffect(()=>{void load().catch(e=>setError(e.message));},[data.user.id]);
-  async function act(work:()=>Promise<unknown>,message:string) { setBusy(true);setError('');try{await work();setNotice(message);await load();await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);} }
+  async function act(work:()=>Promise<unknown>,message:string) { setBusy(true);setError('');try{await work();setNotice(message);await load().catch(()=>{});await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);} }
   return <Card title="助手控制与共同保护"><div className="stack-form">
     <InlineError message={error}/>{notice&&<Notice>{notice}</Notice>}
     <p aria-live="polite">{control?.stopped?'助手已停止':'可随时停止助手，撤销尚未执行的助手授权。已提交的交易仍按支付结果显示。'}</p>

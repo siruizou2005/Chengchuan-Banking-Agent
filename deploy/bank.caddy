@@ -9,14 +9,19 @@ bank.siruizou.com {
 	}
 	# 语音转文字上传 WAV（最长60秒约1.9MB，服务端上限8MB），其余请求保持128KB。
 	# GitHub push webhook 由独立的 socket 激活服务接收（deploy/webhook.mjs），载荷可能超过 128KB。
+	# 飞书事件是加密的，长消息可能超过 128KB；要放行到应用层才能回复“消息太长”，上限与服务端一致。
 	@voice path /api/voice/transcribe
 	@hook path /_deploy/github
-	@other not path /api/voice/transcribe /_deploy/github
+	@feishu path /api/channels/feishu/events/*
+	@other not path /api/voice/transcribe /_deploy/github /api/channels/feishu/events/*
 	request_body @voice {
 		max_size 8MB
 	}
 	request_body @hook {
 		max_size 1MB
+	}
+	request_body @feishu {
+		max_size 256KB
 	}
 	request_body @other {
 		max_size 128KB

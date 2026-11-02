@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers.mjs';
-import { billReport, classifyRow, enrich, ledgerFor, resolveRange } from '../server/agent/analytics.mjs';
+import { billReport, classifyRow, enrich, ledgerFor, resolveRange, sendableKey } from '../server/agent/analytics.mjs';
 
 // Beijing 03:00 on 2026-11-02 and the minute before it.
 const DUE = '2026-11-01T19:00:00.000Z', BEFORE = '2026-11-01T18:59:00.000Z';
@@ -155,17 +155,17 @@ test('调度：03:00 才到期，每天只跑一次，失败每 30 分钟重试�
   await run(DUE);
   let row = runRow('2026-11-02');
   assert.equal(row.status, 'failed'); assert.equal(row.error_code, 'PROVIDER_BALANCE'); assert.equal(row.attempts, 1); assert.equal(row.batches, 1);
-  assert.equal(row.next_at, minutes(DUE, 30));
+  assert.ok(row.next_at >= minutes(DUE, 30) && row.next_at < minutes(DUE, 31), row.next_at);
   assert.equal(f.bank.get("SELECT COUNT(*) n FROM merchant_categories WHERE status='classified'").n, 1);
   assert.equal(run(minutes(DUE, 29)), undefined);
   failing = 1;
-  await run(minutes(DUE, 30));
+  await run(minutes(DUE, 31));
   assert.equal(runRow('2026-11-02').attempts, 2);
-  await run(minutes(DUE, 60));
+  await run(minutes(DUE, 62));
   row = runRow('2026-11-02');
   assert.equal(row.attempts, 3); assert.equal(row.status, 'failed');
   const calls = requests.length;
-  assert.equal(run(minutes(DUE, 90)), undefined);
+  assert.equal(run(minutes(DUE, 95)), undefined);
   assert.equal(requests.length, calls);
   // Provider errors do not count against merchants, so the next day starts clean.
   failing = 0;
@@ -253,4 +253,102 @@ test('手动修改的边界：别人的流水、非消费流水、非法分类�
   assert.equal(entries.find(r => r.id === platform.id).tag_source, 'user');
   f.services.puma.consents.update(f.user, { scope: 'data_read', granted: false });
   assert.equal((await f.call(path(spend.id), { category: '食品' }, 'PUT')).status, 403);
+});
+
+test('调度：重试时也遵守关闭开关和缺配置，不发商户名也不占次数', async t => {
+  let fail = true, key = 'test';
+  const { f, pay, run, runRow, requests } = await setup(t, { extra: { config: () => ({ apiKey: key, baseUrl: 'https://llm.test/v1', model: 'deepseek-test' }) }, respond: names => fail ? { ok: false, status: 500, json: async () => ({}) } : reply(names.map((_, i) => ({ i, category: '食品' }))) });
+  pay('消费 · 开关商户');
+  await run(DUE);
+  assert.equal(runRow('2026-11-02').status, 'failed');
+  const sent = requests.length;
+  fail = false;
+  process.env.AGENT_DISABLED = 'true';
+  t.after(() => { delete process.env.AGENT_DISABLED; });
+  assert.equal(run(minutes(DUE, 31)), undefined);
+  assert.equal(requests.length, sent);
+  let row = runRow('2026-11-02');
+  assert.deepEqual([row.status, row.error_code, row.attempts, row.next_at], ['skipped', 'AGENT_DISABLED', 1, null]);
+  delete process.env.AGENT_DISABLED;
+  // An interrupted run on a later day retries through the same path.
+  f.bank.run("INSERT INTO merchant_category_runs(business_date,status,attempts,lease_until,started_at) VALUES('2026-11-03','running',1,?,?)", minutes(DUE, 1000), minutes(DUE, 1000));
+  key = '';
+  assert.equal(run(minutes(DUE, 1440)), undefined);
+  row = runRow('2026-11-03');
+  assert.deepEqual([row.status, row.error_code, row.attempts], ['skipped', 'NOT_CONFIGURED', 1]);
+  assert.equal(requests.length, sent);
+});
+
+test('调度：批大小无效时用默认值，不会对模型无限发空请求', async t => {
+  for (const batchSize of [-5, 0.5, 'x']) {
+    const { pay, run, runRow, requests } = await setup(t, { extra: { batchSize } });
+    pay('消费 · 批量商户甲'); pay('消费 · 批量商户乙');
+    await run(DUE);
+    assert.equal(requests.length, 1, String(batchSize));
+    assert.deepEqual(requests[0].names.sort(), ['批量商户乙', '批量商户甲'].sort());
+    assert.equal(runRow('2026-11-02').status, 'succeeded');
+  }
+});
+
+test('调度：usage 为 null 不算失败，结果被截断时保留已完成的条目，重试时间从失败时算起', async t => {
+  const { pay, run, runRow, cached, requests } = await setup(t, { respond: (names, n) => n === 1
+    ? { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { role: 'assistant', content: `{"items":[{"i":${names.indexOf('截断商户甲')},"category":"食品"},{"i":1,"cat` } }], usage: null }) }
+    : reply([]) });
+  pay('消费 · 截断商户甲'); pay('消费 · 截断商户乙');
+  await run(DUE);
+  const row = runRow('2026-11-02');
+  assert.equal(row.status, 'succeeded');
+  assert.equal(row.classified, 1);
+  assert.equal(row.cost, null);
+  assert.equal(cached('截断商户甲').tag, '食品');
+  assert.equal(cached('截断商户乙').status, 'pending');
+  assert.equal(requests.length, 1);
+});
+
+test('分类修改：单笔修改时全额退款跟着走，恢复时一起恢复，部分退款和别的商户不动', async t => {
+  const { f, account, pay } = await setup(t);
+  const entry = title => ledgerFor(f.bank, f.user.id).map(enrich).find(r => r.title === title);
+  const detail = { txn_type: '消费', merchant: '某某数码配件专营' };
+  pay('消费 · 配件', detail, 5000);
+  f.bank.post('MC-R1', 'system', account, 5000, '退款 · 配件全额', 'income', '2026-10-16T02:00:00.000Z', { ...detail, txn_type: '退款' });
+  f.bank.post('MC-R2', 'system', account, 1000, '退款 · 配件部分', 'income', '2026-10-16T03:00:00.000Z', { ...detail, txn_type: '退款' });
+  f.bank.post('MC-R3', 'system', account, 5000, '退款 · 别的商户', 'income', '2026-10-16T04:00:00.000Z', { txn_type: '退款', merchant: '另一家专营店铺' });
+  const charge = entry('消费 · 配件');
+  assert.equal((await f.call(`/ledger/${charge.id}/category`, { category: '衣着' }, 'PUT')).status, 200);
+  assert.equal(entry('退款 · 配件全额').tag, '衣着');
+  assert.notEqual(entry('退款 · 配件部分').tag, '衣着');
+  assert.notEqual(entry('退款 · 别的商户').tag, '衣着');
+  assert.equal((await f.call(`/ledger/${charge.id}/category`, {}, 'DELETE')).status, 200);
+  assert.notEqual(entry('退款 · 配件全额').tag, '衣着');
+  assert.equal(f.bank.get('SELECT COUNT(*) n FROM ledger_category_overrides WHERE user_id=?', f.user.id).n, 0);
+});
+
+test('商户键：通用备注和支付机构不算商户，不会被发给模型，也不能按商户改分类', async t => {
+  const { f, pay, run, sent } = await setup(t);
+  pay('消费 · 扫码甲', { txn_type: '消费', merchant: '扫二维码付款' });
+  pay('消费 · 平台甲', { txn_type: '消费', merchant: '美团平台商户' });
+  pay('消费 · 处理方', { txn_type: '消费', merchant: '财付通支付科技有限公司' });
+  pay('消费 · 正常商户', { txn_type: '消费', merchant: '某某文创专营店' });
+  await run(DUE);
+  assert.deepEqual(sent(), ['某某文创专营店']);
+  const scan = ledgerFor(f.bank, f.user.id).map(enrich).find(r => r.title === '消费 · 扫码甲');
+  const result = await f.call(`/ledger/${scan.id}/category`, { category: '食品', applyToMerchant: true }, 'PUT');
+  assert.equal(result.data.error.code, 'MERCHANT_REQUIRED');
+});
+
+test('sendableKey：手机号、卡号和各种写法的姓名都不发送，正常商户名可以发送', () => {
+  for (const key of ['13800138000', '138-0013-8000', '138 0013 8000', '6222 0212 3456 7890', '王小明', '欧阳晓明', 'ZHANG SAN', 'Zhang San', '阿卜杜·热合曼', '给王小明的医药费', '***明', 'a@b.cn', null, ''])
+    assert.equal(sendableKey(key), false, key);
+  for (const key of ['瑞幸咖啡', '滴滴出行科技有限公司', 'Apple Store', 'KFC', '上海全家便利店'])
+    assert.equal(sendableKey(key), true, key);
+});
+
+test('分类规则：店名里的地点和“交通银行”不算依据，真正的学校和交通不受影响', () => {
+  const tag = name => classifyRow({ title: '消费 · ' + name, amount: -100, category: 'payment', txn_type: '消费', merchant: name }).tag;
+  assert.equal(tag('九九风味西南财经大学店'), '其他消费');
+  assert.equal(tag('学校门口小卖部'), '其他消费');
+  assert.equal(tag('交通银行信用卡中心'), '其他消费');
+  assert.equal(tag('西南财经大学'), '教育文娱');
+  assert.equal(tag('北京交通一卡通'), '交通通信');
+  assert.equal(tag('同济大学嘉定游泳馆'), '教育文娱');
 });

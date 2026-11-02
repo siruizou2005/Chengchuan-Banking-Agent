@@ -7,12 +7,13 @@ import type { Ledger } from '../types';
 import { aggregateFlow, beijingDay, flowRange, smoothPath } from './homeData';
 
 export function HomeCashFlow() {
-  const { data, hidden, navigate } = useBank();
+  const { data, hidden, navigate } = useBank(), latest = data.ledger[0]?.id;
   const [months, setMonths] = useState(6), [retry, setRetry] = useState(0);
   const [state, setState] = useState<{ rows: Ledger[]; loading: boolean; error: string }>({ rows: [], loading: true, error: '' });
   const [selected, setSelected] = useState<number | null>(null);
   const id = useId().replace(/:/g, '');
   const today = beijingDay(), { from, to } = flowRange(months, today);
+  // Reload when the range changes or a new ledger row lands; the 30s snapshot refresh alone must not reset the chart.
   useEffect(() => {
     let live = true;
     setState({ rows: [], loading: true, error: '' }); setSelected(null);
@@ -24,7 +25,7 @@ export function HomeCashFlow() {
         : { rows, loading: false, error: '' });
     }).catch(e => live && setState({ rows: [], loading: false, error: (e as Error).message || '收支数据暂时无法加载' }));
     return () => { live = false; };
-  }, [data, from, to, retry]);
+  }, [latest, from, to, retry]);
   const points = aggregateFlow(state.rows, from, to, months === 1);
   const hasData = points.some(p => p.count > 0);
   const totals = points.reduce((sum, p) => ({ income: sum.income + p.income, expense: sum.expense + p.expense }), { income: 0, expense: 0 });

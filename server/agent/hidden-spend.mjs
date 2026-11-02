@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { id, now } from '../db.mjs';
-import { requireThat } from '../errors.mjs';
+import { BusinessError, requireThat } from '../errors.mjs';
 import { loadChatConfig } from '../chat.mjs';
 import { merchantKey, platformOf, selectLedger, sendableKey } from './analytics.mjs';
 import { billLedger } from './bill-view.mjs';
@@ -9,7 +9,9 @@ import { resolvePrincipal } from './principal.mjs';
 
 // Bump to re-analyze every cached month, for example after changing the prompt.
 const PROMPT_VERSION = 1;
-const MAX_ROWS = 1000, MAX_FINDINGS = 12;
+// Beyond this a month no longer fits the input budget or an answer that lists its rows, so the call would be paid for and fail.
+const MAX_ROWS = 400, MAX_FINDINGS = 12;
+const TOO_LARGE = '该月流水过多，暂时无法分析';
 const GROUPS = { auto_renew: '自动续费与周期扣款', frequent_small: '小额高频', fee: '手续费与附加费', other: '其他易忽视支出' };
 const SYSTEM_PROMPT = `你是银行账单分析助手，帮用户找出某个月的「隐形消费」：金额不显眼、容易被忽视、却在持续花钱的支出。
 输入是这个月的消费流水，按商户分组：
@@ -35,11 +37,13 @@ const SYSTEM_PROMPT = `你是银行账单分析助手，帮用户找出某个月
 const groupKey = r => merchantKey(r) || r.tag;
 const isCharge = r => r.kind === 'consumption' && r.amount < 0;
 // Written text is shown even while amounts are hidden, so a sentence carrying money is dropped rather than shown.
-const MONEY = /[¥￥]\s*\d|\d\s*(?:元|块|%|％)|[一二两三四五六七八九十百千万]\s*(?:元|块)/;
+const MONEY = /[¥￥$]\s*\d|\d\s*(?:多|余|来|几)?\s*(?:元|块|毛|角|%|美元|美金|港币|港元|欧元|日元|英镑)|[一二两三四五六七八九十百千万几]\s*(?:多|余|来)?\s*(?:元|块)|百分之|(?:rmb|cny|usd|hkd|eur|jpy|gbp)\s*\d|\d\s*(?:rmb|cny|usd|hkd|eur|jpy|gbp)\b/i;
+// Merchant names reach the model, so its text can echo a number or link planted in one. The page presents this text as the bank's, so such a sentence goes too.
+const CONTACT = /https?:|www\.|\.(?:com|cn|net|org)\b|\d[\d\s-]{5,}\d|\b[48]00\b|\*{2,}|致电|拨打|来电|热线|客服电话|加微信|微信号|链接|点击|验证码|密码/i;
 function clean(text, limit) {
   if (typeof text !== 'string') return '';
-  const value = redact(text).replace(/\s+/g, ' ').trim();
-  return MONEY.test(value) || unsupportedSuccess(value) ? '' : value.slice(0, limit);
+  const value = redact(text).replace(/\s+/g, ' ').trim(), plain = value.normalize('NFKC');
+  return MONEY.test(plain) || CONTACT.test(plain) || unsupportedSuccess(value) ? '' : value.slice(0, limit);
 }
 
 // Only per-merchant facts leave the bank: no identity, account number or balance, and no name that could be a person's.
@@ -71,9 +75,10 @@ function findingTitle(rows) {
 }
 
 // The model only points at rows. Every amount, share and name on the page is worked out here from the ledger.
-function toResult(content, spend, period) {
+function toResult(choice, spend, period) {
   let parsed;
-  try { parsed = JSON.parse(content); } catch { parsed = null; }
+  // An answer cut off at the token limit would understate the month even if what arrived happened to parse.
+  try { parsed = choice.finish_reason === 'length' ? null : JSON.parse(choice.message.content); } catch { parsed = null; }
   requireThat(Array.isArray(parsed?.findings), '分析结果无效，请重新分析', 502, 'HIDDEN_ANALYSIS_INVALID');
   const used = new Set(), byType = new Map();
   for (const finding of parsed.findings.slice(0, MAX_FINDINGS)) {
@@ -85,6 +90,8 @@ function toResult(content, spend, period) {
     if (!byType.has(finding.type)) byType.set(finding.type, []);
     byType.get(finding.type).push({ title: findingTitle(rows), reason: clean(finding.reason, 80), amount: rows.reduce((sum, r) => sum - r.amount, 0), ids: rows.map(r => r.id) });
   }
+  // Findings that all point at nothing are a bad answer. Stored as an empty result, they would read as "nothing found" until the ledger changes.
+  requireThat(byType.size || !parsed.findings.length, '分析结果无效，请重新分析', 502, 'HIDDEN_ANALYSIS_INVALID');
   const groups = Object.keys(GROUPS).filter(type => byType.has(type)).map(type => {
     const findings = byType.get(type).sort((a, b) => b.amount - a.amount);
     return { type, name: GROUPS[type], amount: findings.reduce((sum, f) => sum + f.amount, 0), findings };
@@ -115,8 +122,8 @@ export function createHiddenSpend(services, options = {}) {
       body: { model: config.model, stream: false, temperature: 0, max_tokens: 2200, response_format: { type: 'json_object' },
         ...(config.model.startsWith('deepseek-') ? { thinking: { type: 'disabled' } } : {}),
         messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify(input) }] },
-    });
-    const result = toResult(data.choices[0].message.content, spend, period);
+    }).catch(error => { throw error.code === 'INFERENCE_INPUT_LIMIT' ? new BusinessError(TOO_LARGE, 422, 'HIDDEN_ANALYSIS_TOO_LARGE') : error; });
+    const result = toResult(data.choices[0], spend, period);
     run(`INSERT INTO hidden_spend_analyses(user_id,period,fingerprint,result,model,created_at) VALUES(?,?,?,?,?,?)
       ON CONFLICT(user_id,period) DO UPDATE SET fingerprint=excluded.fingerprint,result=excluded.result,model=excluded.model,created_at=excluded.created_at`,
       user.id, period, fingerprint, JSON.stringify(result), config.model, result.analyzed_at);
@@ -129,9 +136,10 @@ export function createHiddenSpend(services, options = {}) {
     // Newest first in the ledger; the model reads a month more easily from its start.
     const spend = selectLedger(history, range).filter(isCharge).reverse();
     if (!spend.length) return { period, total: 0, summary: '', tips: [], groups: [] };
-    requireThat(spend.length <= MAX_ROWS, '该月流水过多，暂时无法分析', 422, 'HIDDEN_ANALYSIS_TOO_LARGE');
+    requireThat(spend.length <= MAX_ROWS, TOO_LARGE, 422, 'HIDDEN_ANALYSIS_TOO_LARGE');
     const input = modelInput(history, spend, range);
-    const fingerprint = createHash('sha256').update(JSON.stringify([PROMPT_VERSION, spend.map(r => r.id), input])).digest('hex');
+    // Ledger facts only. The range end moves every day of an unfinished month and labels move with category edits, and neither should buy another analysis.
+    const fingerprint = createHash('sha256').update(JSON.stringify([PROMPT_VERSION, spend.map(r => r.id), input.merchants.map(({ label, ...facts }) => facts)])).digest('hex');
     const stored = get('SELECT result FROM hidden_spend_analyses WHERE user_id=? AND period=? AND fingerprint=?', user.id, period, fingerprint);
     if (stored) return JSON.parse(stored.result);
     // Not tied to the page's connection: leaving mid-way keeps the paid answer for the next visit.

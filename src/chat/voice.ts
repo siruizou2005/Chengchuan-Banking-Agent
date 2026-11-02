@@ -20,4 +20,11 @@ export async function startRecording(onSeconds: (seconds: number) => void, onLim
   function cleanup() { ended = true; clearInterval(timer); source.disconnect(); processor.disconnect(); mute.disconnect(); stream.getTracks().forEach(t => t.stop()); void context.close(); }
   return { async stop() { if (ended) throw new Error('录音已停止'); cleanup(); const samples = new Float32Array(length); let offset = 0; for (const chunk of chunks) { samples.set(chunk, offset); offset += chunk.length; } return encodeWav(samples, context.sampleRate); }, cancel() { if (!ended) cleanup(); chunks.length = 0; } };
 }
-export async function transcribe(audio: Blob, signal: AbortSignal): Promise<string> { const response = await fetch('/api/voice/transcribe', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'audio/wav' }, body: audio, signal }); const data = await response.json(); if (!response.ok) throw new Error(data.error?.message || '语音识别失败'); return data.text; }
+export async function transcribe(audio: Blob, signal: AbortSignal): Promise<string> {
+  let response: Response;
+  try { response = await fetch('/api/voice/transcribe', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'audio/wav' }, body: audio, signal }); }
+  catch (failure) { if (signal.aborted) throw failure; throw new Error('语音识别失败'); }
+  const data = await response.json().catch(() => undefined);
+  if (!response.ok || data === undefined) throw new Error(data?.error?.message || '语音识别失败');
+  return data.text;
+}

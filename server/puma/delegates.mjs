@@ -9,8 +9,8 @@ export function createDelegateRegistry(bank,services,policy,options={}) {
   function register(user,body) {
     requireThat(enabled(),'共同保护功能尚未启用',409,'DELEGATE_DISABLED');
     services.pin(user,body.pin);
-    if(body.delegatePhone){requireThat(/^\d{11}$/.test(body.delegatePhone),'联系电话无效',400,'INVALID_DELEGATE');body={...body,delegateUserId:bank.get('SELECT id FROM users WHERE phone=?',body.delegatePhone)?.id};}
-    requireThat(Object.keys(body).every(k=>['delegatePhone','delegateUserId','role','minAmountMinor','expiresAt','jurisdiction','pin'].includes(k))&&DELEGATE_ROLES.includes(body.role)&&body.delegateUserId!==user.id&&bank.get('SELECT id FROM users WHERE id=?',body.delegateUserId||''),'保护关系无效',400,'INVALID_DELEGATE');
+    if(body.delegatePhone){requireThat(typeof body.delegatePhone==='string'&&/^\d{11}$/.test(body.delegatePhone),'联系电话无效',400,'INVALID_DELEGATE');body={...body,delegateUserId:bank.get('SELECT id FROM users WHERE phone=?',body.delegatePhone)?.id};}
+    requireThat(Object.keys(body).every(k=>['delegatePhone','delegateUserId','role','minAmountMinor','expiresAt','jurisdiction','pin'].includes(k))&&DELEGATE_ROLES.includes(body.role)&&body.delegateUserId!==user.id&&typeof body.delegateUserId==='string'&&bank.get('SELECT id FROM users WHERE id=?',body.delegateUserId),'保护关系无效',400,'INVALID_DELEGATE');
     requireThat(Number.isSafeInteger(body.minAmountMinor)&&body.minAmountMinor>=0&&Number.isFinite(Date.parse(body.expiresAt))&&Date.parse(body.expiresAt)>Date.now()&&Date.parse(body.expiresAt)<=Date.now()+366*86400000,'保护范围或期限无效',400,'INVALID_DELEGATE');
     requireThat(body.jurisdiction===undefined||typeof body.jurisdiction==='string'&&/^[A-Z-]{2,20}$/.test(body.jurisdiction),'司法辖区无效',400,'INVALID_DELEGATE');
     return bank.atomic(()=>{
@@ -28,6 +28,8 @@ export function createDelegateRegistry(bank,services,policy,options={}) {
       requireThat(r.role!=='LEGAL_GUARDIAN','法定权限须独立法律审核',403,'LEGAL_REVIEW_REQUIRED');
       bank.run("UPDATE puma_delegates SET identity_status='VERIFIED',version=version+1 WHERE id=?",r.id);
       bank.run("UPDATE puma_delegate_requirements SET status='CONFLICT' WHERE delegate_id=?",r.id);
+      // Drafts already waiting on this relationship get a challenge bound to the new version right away.
+      for(const d of bank.all("SELECT DISTINCT d.* FROM risk_drafts d JOIN puma_delegate_requirements c ON c.draft_id=d.id AND c.draft_version=d.version WHERE c.delegate_id=? AND d.status IN ('RISK_CHECKED','AWAITING_APPROVAL','USER_APPROVED')",r.id))sync(d);
       audit(r.user_id,'verified',r.id);return {id:r.id,status:'VERIFIED'};
     });
   }
@@ -71,7 +73,9 @@ export function createDelegateRegistry(bank,services,policy,options={}) {
   }
   function status(d) {
     const payload=JSON.parse(d.payload);
-    return bank.all('SELECT * FROM puma_delegate_requirements WHERE draft_id=? AND draft_version=?',d.id,d.version).map(c=>{
+    // Each relationship change adds a row; only the newest speaks for the delegate, or a superseded CONFLICT would block the draft forever.
+    return bank.all(`SELECT c.* FROM puma_delegate_requirements c WHERE c.draft_id=? AND c.draft_version=? AND c.delegate_version=(SELECT MAX(x.delegate_version)
+      FROM puma_delegate_requirements x WHERE x.draft_id=c.draft_id AND x.draft_version=c.draft_version AND x.delegate_id=c.delegate_id)`,d.id,d.version).map(c=>{
       const r=bank.get('SELECT * FROM puma_delegates WHERE id=?',c.delegate_id);
       const state=c.expires_at<=now()?'EXPIRED':!r||r.revoked_at||r.version!==c.delegate_version||conflict(r,payload)?'CONFLICT':c.status;
       return {id:c.id,delegateId:c.delegate_id,status:state,digest:c.digest,expiresAt:c.expires_at};
@@ -93,7 +97,7 @@ export function createDelegateRegistry(bank,services,policy,options={}) {
   }
   function incoming(user) {
     return bank.all(`SELECT c.*,d.payload,d.status AS draft_status FROM puma_delegate_requirements c JOIN puma_delegates r ON r.id=c.delegate_id
-      JOIN risk_drafts d ON d.id=c.draft_id WHERE r.delegate_user_id=? AND c.draft_version=d.version ORDER BY c.created_at DESC LIMIT 50`,user.id)
+      JOIN risk_drafts d ON d.id=c.draft_id WHERE r.delegate_user_id=? AND r.identity_status='VERIFIED' AND r.revoked_at IS NULL AND r.expires_at>? AND c.delegate_version=r.version AND c.draft_version=d.version ORDER BY c.created_at DESC LIMIT 50`,user.id,now())
       .map(c=>{const p=JSON.parse(c.payload),d=bank.get('SELECT * FROM risk_drafts WHERE id=?',c.draft_id);return {...status(d).find(s=>s.id===c.id),draftStatus:c.draft_status,amountMinor:p.amountMinor,currency:p.currency,beneficiaryName:p.beneficiaryName,beneficiaryMasked:p.beneficiaryMasked,institution:p.institution,feeMinor:p.feeMinor,memo:p.memo};});
   }
   function assertLegacy(user,amount) {

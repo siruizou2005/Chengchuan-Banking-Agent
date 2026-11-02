@@ -8,6 +8,7 @@ import type { AgentSession, AgentSessionDetail, ChannelName, Enrollment, Onboard
 import { AgentMark } from '../AgentMark';
 import { Markdown } from './Markdown';
 import { ActionCard, EventCards, DecisionTrace, LockedCard } from './cards';
+import { messagesForRetry, withNewMessageId } from './retry';
 import { startRecording, transcribe, type Recording } from './voice';
 import { OnboardingCard, ONBOARDING_LABEL, ONBOARDING_OPENING, ONBOARDING_RESUME } from './OnboardingCard';
 import { CHANNEL_NAME } from './OnboardingSteps';
@@ -36,7 +37,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
       <div className="bubble">
         <Markdown text={message.text} />
         {message.overview && <div className="overview"><div><small>可用余额</small><strong>¥{money(message.overview.available)}</strong></div><div><small>最近流水</small><strong>{message.overview.recentEntries} 笔</strong></div></div>}
-        {message.sources && <p className="data-note">数据来源：{message.sources.join('、')}{message.asOf && `，${new Date(message.asOf).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 更新`}</p>}
+        {message.sources && <p className="data-note">数据来源：{message.sources.join('、')}{message.asOf && `，${new Date(message.asOf).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })} 更新`}</p>}
         {message.truncated && <p className="data-note">回复已达长度上限，可以请助手继续说。</p>}
       </div>
       {message.events && <EventCards events={message.events} onAsk={onAsk} />}
@@ -47,6 +48,7 @@ function MessageBubble({ message, userName, onAsk }: { message: Message; userNam
 }
 
 const GUIDE_DONE = '首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？';
+const ALREADY_ACCEPTED = '这条消息已提交过，可能仍在处理或已中断。为避免重复办理不再重发，请在对话历史或操作列表查看结果；确需重办请重新输入发送。';
 const quickQuestions = ['转账', '分析本月账单', '有哪些订阅扣费', '推荐一个理财'];
 // 每个用户在本浏览器中最后打开的对话；服务端会校验归属，读写失败（隐私模式等）静默忽略。
 const sessionKey = (userId: string) => `bank-chat-session:${userId}`;
@@ -55,13 +57,12 @@ const storeSession = (userId: string, id: string) => { try { if (id) localStorag
 const currentSessionId = (messages: readonly Message[]) => [...messages].reverse().find(m => m.sessionId)?.sessionId || '';
 
 // 智能助手页面：嵌入银行应用，使用当前登录用户。App 在切换标签时保持挂载，对话不会丢失。
-export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: ChatAdapter; request?: { id: number; text: string } | null }) {
-  const { data, refresh, logout, route, navigatePage, toast } = useBank();
+export default function ChatApp({ adapter = liveAdapter, request, onRequestTaken }: { adapter?: ChatAdapter; request?: { id: number; text: string } | null; onRequestTaken?: () => void }) {
+  const { data, refresh, route, navigatePage, toast } = useBank();
   const user = data.user;
   const [voiceEnabled, setVoiceEnabled] = useState(false), [recording, setRecording] = useState(false), [voiceBusy, setVoiceBusy] = useState(false), [transcribing, setTranscribing] = useState(false), [seconds, setSeconds] = useState(0), [level, setLevel] = useState(0);
   const recorder = useRef<Recording | null>(null), voiceAbort = useRef<AbortController | null>(null), voiceGeneration = useRef(0);
   const [configured, setConfigured] = useState<boolean | null>(null);
-  const receivedRequest = useRef(0);
   // 开通后的首次引导：开场白固定显示，之后由助手对话引导；进度来自服务端。
   const opening = (id?: string, fresh = false) => data.agent?.onboarding === 'pending' ? ONBOARDING_OPENING
     : user.greeting ? sessionGreeting(user.id, id || draftGreetingId(user.id, fresh), user.greeting) : undefined;
@@ -70,7 +71,9 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   const [messages, setMessages] = useState<Message[]>(() => initialMessages(opening(readStoredSession(user.id))));
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, showError] = useState(''), [retry, setRetry] = useState<Message[] | null>(null);
+  // Only a failed reply can be resent; the other errors in this panel have nothing to retry.
+  const setError = (text: string) => { showError(text); setRetry(null); };
   const [notice, setNotice] = useState('');
   const [guideBusy, setGuideBusy] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -162,7 +165,7 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
   async function requestReply(next: Message[]) {
     if (controller.current) return;
     const active = new AbortController(); controller.current = active;
-    setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
+    setMessages(next); setBusy(true); setError(''); setNotice(''); shouldScroll.current = true;
     try {
       const response = await adapter.reply(next, active.signal, user.id);
       if (!active.signal.aborted) {
@@ -180,9 +183,10 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
       }
     } catch (failure) {
       if (!active.signal.aborted) {
-        setError(failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。');
-        // 401：会话过期，回到登录页；409：其他标签页切换了账户，同步银行数据（新用户会得到新的对话）。
-        if (failure instanceof ChatError && [401, 409].includes(failure.status)) void refresh().catch(() => logout());
+        const resend = messagesForRetry(next, failure as ChatError, () => crypto.randomUUID());
+        setError(!resend ? ALREADY_ACCEPTED : failure instanceof Error ? failure.message : '回复暂时未能送达，请重试。'); setRetry(resend);
+        // 401: the session expired, and the refresh returns to login. 409: another tab switched accounts, so sync (the new user gets a new conversation).
+        if (failure instanceof ChatError && [401, 409].includes(failure.status)) void refresh();
       }
     } finally {
       if (controller.current === active) { controller.current = null; setBusy(false); }
@@ -237,14 +241,15 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     } catch (e) { setError((e as Error).message); }
   }
   useEffect(() => {
-    if (!request || request.id === receivedRequest.current || configured === null || busy) return;
-    receivedRequest.current = request.id;
+    if (!request || configured === null || busy) return;
+    onRequestTaken?.(); // One-shot: a later remount of this page must not send it again.
     started.current = true; // Do not let a late session restoration overwrite this request.
     if (configured && data.agent?.onboarding !== 'pending') send(request.text);
     else if (configured) setDraft(request.text);
     else { setDraft(request.text); setError('智能助手暂未配置，已保留你的问题。请稍后重试。'); }
   }, [request, configured, busy]);
-  function stop() { controller.current?.abort(); controller.current = null; setBusy(false); setNotice('已停止回复'); }
+  // Stopping ends this attempt: the server aborts the turn when the connection closes, and if it had just finished, a rerun adds at most a pending card.
+  function stop() { controller.current?.abort(); controller.current = null; setBusy(false); setNotice('已停止回复'); setRetry(withNewMessageId(messages, () => crypto.randomUUID())); }
   function reset() {
     cancelVoice();
     controller.current?.abort(); controller.current = null; shouldScroll.current = false;
@@ -287,15 +292,15 @@ export default function ChatApp({ adapter = liveAdapter, request }: { adapter?: 
     </Modal>}
     <div ref={scroller} className="chat-scroll" role="log" aria-label="对话记录">
       <div className="chat-inner">
-        {data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() && <LockedCard message={`锁定至 ${new Date(data.agentLockedUntil).toLocaleTimeString('zh-CN')}`} />}
+        {data.agentLockedUntil && data.agentLockedUntil > new Date().toISOString() && <LockedCard message={`锁定至 ${new Date(data.agentLockedUntil).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}`} />}
         {data.agentActions.filter(a => ['proposed', 'confirmed', 'awaiting_verification'].includes(a.status) && !messages.some(m => m.events?.some(e => e.data?.id === a.id))).map(a => <ActionCard key={a.id} action={a} />)}
-        <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+        <div className="chat-time">{startedAt.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
         <div className="chat-messages">{messages.map(message => <MessageBubble key={message.id} message={message} userName={user.name} onAsk={text => send(text)} />)}</div>
         {guiding && guide ? <OnboardingCard state={guide} busy={busy || guideBusy} onAnswer={(field, value, label) => void answerGuide(field, value, label)} onSkip={field => void answerGuide(field, undefined, `${ONBOARDING_LABEL[field]}这个问题跳过`, true)} onEnd={() => void endGuide()} onBound={channelBound} onContinue={() => void advanceGuide('channels', '')} onStartRisk={() => { leftForRisk.current = true; navigatePage('risk?from=onboarding'); }} />
         : messages.length === 1 && <div className="chat-chips" aria-label="常见问题">{quickQuestions.map(text => <button key={text} disabled={!configured} onClick={() => send(text)}>{text}</button>)}</div>}
         {configured === false && !error && <div className="chat-error" role="alert">智能助手暂不可用，请稍后再试。你仍可通过底部导航办理业务。</div>}
-        <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />{guiding ? '正在回复…' : '正在为您查询…'}</div>}{notice && <div className="chat-hint">{notice}<button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重新生成</button></div>}</div>
-        {error && <div className="chat-error" role="alert">{error}{configured && <button onClick={() => void requestReply(messages)}><RotateCcw size={13} />重试</button>}</div>}
+        <div role="status" aria-live="polite">{busy && <div className="chat-hint"><LoaderCircle size={15} className="spin" />{guiding ? '正在回复…' : '正在为您查询…'}</div>}{notice && <div className="chat-hint">{notice}{retry && <button onClick={() => void requestReply(retry)}><RotateCcw size={13} />重新生成</button>}</div>}</div>
+        {error && <div className="chat-error" role="alert">{error}{configured && retry && <button onClick={() => void requestReply(retry)}><RotateCcw size={13} />重试</button>}</div>}
         <div ref={bottom} className="scroll-anchor" />
       </div>
     </div>

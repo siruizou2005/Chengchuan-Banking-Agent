@@ -45,7 +45,8 @@ export function Bills({ page }: { page: string }) {
     let active = true;
     api<BillData>('/ledger/bills?period=' + encodeURIComponent(month)).then(bill => {
       if (active) { setResult({ month, bill }); setFirstMonth(bill.first_month); }
-    }).catch(e => { if (active) setResult({ month, error: e.message || '账单暂时无法读取' }); });
+    // A failed background refetch keeps the bill on screen; the next snapshot tries again.
+    }).catch(e => { if (active) setResult(current => current?.month === month && current.bill ? current : { month, error: e.message || '账单暂时无法读取' }); });
     return () => { active = false; };
   }, [month, data, retry, page]);
   useLayoutEffect(() => {

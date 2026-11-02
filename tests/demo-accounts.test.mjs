@@ -8,7 +8,7 @@ import { createBank } from '../server/db.mjs';
 import { createApp } from '../server/app.mjs';
 import { billReport, classifyRow, enrich, ledgerFor, resolveRange } from '../server/agent/analytics.mjs';
 import { accrue } from '../server/earnings.mjs';
-import { PSEUDONYMS } from '../scripts/build-demo-accounts.mjs';
+import { maskIdentifiers, maskPersonalMerchants, maskPrivateTransfers, PSEUDONYMS } from '../scripts/build-demo-accounts.mjs';
 
 const ZOU = '18662995523', WANQI = '15040147842';
 const tempDb = t => { const dir = mkdtempSync(join(tmpdir(), 'demo-accounts-')); t.after(() => rmSync(dir, { recursive: true, force: true })); return join(dir, 'bank.sqlite'); };
@@ -28,6 +28,23 @@ test('演示模式只有邹瑞和万奇，流水与余额逐笔一致', t => {
   assert.equal(bank.get('SELECT SUM(amount) AS value FROM ledger').value, 0);
   assert.match(user(bank, ZOU).email, /@example\.com$/); assert.match(user(bank, WANQI).email, /@example\.com$/);
   assert.deepEqual(bank.all('SELECT name FROM payees WHERE user_id=?', user(bank, ZOU).id).map(p => p.name), ['万奇']);
+});
+
+test('演示账户互为收款人：缺失时按账户对补齐，重启幂等，客户删除后不再恢复', t => {
+  const path = tempDb(t), open = () => createBank(path, { accounts: 'demo' });
+  let bank = open();
+  const payees = () => bank.all('SELECT user_id,number FROM payees ORDER BY user_id').map(p => p.user_id + p.number), complete = payees();
+  assert.equal(complete.length, 2);
+  // What an interrupted first import used to leave behind: both accounts present, payees never created.
+  bank.run('DELETE FROM payees'); bank.run("DELETE FROM schema_migrations WHERE version='demo-payees-v1'"); bank.db.close();
+  bank = open(); assert.deepEqual(payees(), complete); bank.db.close();
+  bank = open(); assert.deepEqual(payees(), complete);
+  // Only the missing direction is added.
+  bank.run('DELETE FROM payees WHERE user_id=?', user(bank, ZOU).id); bank.run("DELETE FROM schema_migrations WHERE version='demo-payees-v1'"); bank.db.close();
+  bank = open(); assert.deepEqual(payees(), complete);
+  // Once in place, a payee the customer removes stays removed.
+  bank.run('DELETE FROM payees WHERE user_id=?', user(bank, ZOU).id); bank.db.close();
+  bank = open(); assert.equal(payees().length, 1); bank.db.close();
 });
 
 test('演示数据的日期：邹瑞对账单到 11 月 1 日，万奇整体后移 31 天，没有未来流水', t => {
@@ -76,11 +93,14 @@ test('种子文件不含真实卡号、手机号和姓名，对方账号都已�
   const windows = new Set();
   for (const size of [2, 3, 8, 11, 19]) for (let i = 0; i + size <= text.length; i++) windows.add(text.slice(i, i + size));
   assert.deepEqual([...windows].filter(window => SECRETS.has(fingerprint(window))), []);
-  const { columns, users } = JSON.parse(text), account = columns.indexOf('counterparty_account');
-  assert.ok(users.flatMap(u => u.rows).every(row => !/\d{9,}/.test(row[account] || '')));
+  const { columns, users } = JSON.parse(text), rows = users.flatMap(u => u.rows);
+  for (const field of ['counterparty_account', 'title', 'merchant', 'memo', 'counterparty']) {
+    const at = columns.indexOf(field);
+    assert.deepEqual(rows.filter(row => /\d{7,}/.test(row[at] || '')).length, 0, field);
+  }
 });
 
-test('私人转账对象都是化名且账号全遮，公司和学校保持原名', () => {
+test('私人转账对象和个人收款码都是化名且账号全遮，公司和学校保持原名', () => {
   const { columns, users } = JSON.parse(readFileSync(new URL('../server/seed/demo-accounts.json', import.meta.url), 'utf8'));
   const at = name => columns.indexOf(name), rows = users.flatMap(u => u.rows);
   const transfers = rows.filter(row => ['转入', '转出'].includes(row[at('txn_type')]) && /^[一-龥]{2,4}$/.test(row[at('counterparty')] || ''));
@@ -93,8 +113,50 @@ test('私人转账对象都是化名且账号全遮，公司和学校保持原�
   }
   assert.ok(new Set(people.map(row => row[at('counterparty')])).size === 9);
   assert.ok(rows.some(row => row[at('counterparty')] === '西南财经大学'));
+  const vendors = rows.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]]))).filter(row => classifyRow({ ...row, id: 0 }).tag === '个人收款码');
+  assert.ok(vendors.length >= 150);
+  for (const row of vendors) {
+    assert.ok(PSEUDONYMS.includes(row.merchant), row.merchant);
+    assert.ok(row.title.includes(row.merchant));
+    if (row.counterparty === row.merchant) assert.equal(row.counterparty_account, '****');
+  }
+  assert.ok(new Set(vendors.map(row => row.merchant)).size > 100);
   // Transfers between the two demo accounts keep their names.
   assert.ok(rows.some(row => row[at('txn_type')] === '转出' && row[at('counterparty')] === '万奇'));
+});
+
+test('种子打码规则：姓名只在本行或独立出现时替换，机构和品牌不动，重复执行结果不变', () => {
+  const columns = ['title', 'txn_type', 'counterparty', 'counterparty_account', 'merchant', 'memo'];
+  const row = (title, txn_type, counterparty, counterparty_account, merchant, memo) => [title, txn_type, counterparty, counterparty_account, merchant, memo];
+  const users = [{ name: '邹瑞', rows: [
+    row('消费 · 王小龙', '消费', '王小龙', '6222020012345678', '王小龙', null),
+    row('消费 · 支付宝-淘宝-陈默', '消费', '支付宝（中国）网络技术有限公司', '1234****5678', '陈默', '支付宝-淘宝-陈默'),
+    row('消费 · 陈默 · 小陈默店', '消费', null, null, '小陈默店', '陈默店铺 陈默'),
+    row('转账 · 同济大学', '转出', '同济大学', '6222020012345678', '同济大学', null),
+    row('消费 · 小红书', '消费', '小红书', null, '小红书', null),
+    row('消费 · 邹瑞', '消费', '邹瑞', null, '邹瑞', null),
+    row('转账 · 赵四', '转出', '赵四', '12345678', '赵四', '赵四还款 流水1234567'),
+  ] }];
+  maskIdentifiers(users, columns);
+  maskPrivateTransfers(users, columns);
+  maskPersonalMerchants(users, columns);
+  const once = JSON.stringify(users), rows = users[0].rows, at = name => columns.indexOf(name);
+  assert.ok(PSEUDONYMS.includes(rows[0][at('merchant')])); assert.equal(rows[0][at('counterparty_account')], '****');
+  assert.equal(rows[0][at('title')], '消费 · ' + rows[0][at('merchant')]);
+  const alias = rows[1][at('merchant')];
+  assert.ok(PSEUDONYMS.includes(alias)); assert.equal(rows[1][at('memo')], '支付宝-淘宝-' + alias);
+  // A processor's account is not the person's, so it keeps its mask.
+  assert.equal(rows[1][at('counterparty_account')], '1234****5678');
+  // A two-character name inside a longer word is left alone; standing alone it is replaced.
+  assert.equal(rows[2][at('merchant')], '小陈默店'); assert.equal(rows[2][at('memo')], '陈默店铺 ' + alias); assert.equal(rows[2][at('title')], `消费 · ${alias} · 小陈默店`);
+  assert.equal(rows[3][at('counterparty')], '同济大学');
+  assert.equal(rows[4][at('merchant')], '小红书');
+  assert.equal(rows[5][at('merchant')], '邹瑞');
+  assert.ok(PSEUDONYMS.includes(rows[6][at('counterparty')])); assert.equal(rows[6][at('counterparty_account')], '****');
+  assert.equal(rows[6][at('memo')], rows[6][at('counterparty')] + '还款 流水12****67');
+  assert.equal(rows[3][at('counterparty_account')], '6222****5678');
+  maskIdentifiers(users, columns); maskPrivateTransfers(users, columns); maskPersonalMerchants(users, columns);
+  assert.equal(JSON.stringify(users), once);
 });
 
 test('新增的流水类型归入正确类型', () => {

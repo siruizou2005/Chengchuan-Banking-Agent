@@ -143,3 +143,13 @@ test('智能助手推荐理财调用wealth_advice，一轮一张卡片，IM有�
   assert.match(text, /【配置建议·R3 中风险】/); assert.match(text, /稳健\d+%：/);
   assert.ok(compactAdvice(advice).plan.length > 0);
 });
+
+test('下一到期日按北京时间：UTC 跨日的定期显示北京日期，到期当天仍算未到期', t => {
+  const { services, bank, user } = app(t), u = user('13800138000');
+  bank.run('DELETE FROM holdings WHERE user_id=?', u.id);
+  // 2026-12-31 17:00 UTC is 2027-01-01 01:00 in Beijing.
+  bank.run("INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at) VALUES('HNEXT',?,'deposit-90',100000,'2026-10-02T17:00:00.000Z','2026-12-31T17:00:00.000Z')", u.id);
+  assert.equal(financeProfile(services, u, TODAY).holdings.nextMaturity.date, '2027-01-01');
+  assert.equal(financeProfile(services, u, '2027-01-01').holdings.nextMaturity.date, '2027-01-01');
+  assert.equal(financeProfile(services, u, '2027-01-02').holdings.nextMaturity, null);
+});

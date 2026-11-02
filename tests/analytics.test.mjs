@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createBank } from '../server/db.mjs';
 import { createApp } from '../server/app.mjs';
 import { executeTool } from '../server/agent/tools.mjs';
+import { fixture } from './helpers.mjs';
 import { classifyRow, enrich, ledgerFor, selectLedger, resolveRange, billReport, compactReport, spendingStats, compactStats, detectAnomalies, PRESETS, STATS_LABEL } from '../server/agent/analytics.mjs';
 
 const today = '2026-10-01';
@@ -128,3 +129,50 @@ test('get_ledger 工具裁剪到4096字节以内并支持分类与时段', async
   const stats = await executeTool(services, user, 'spending_stats', { by: 'category', period: '2026-09' }); // The imported statements end on 2026-10-01, so a relative period would run out of data.
   assert.equal(stats.event.type, 'stats'); assert.ok(stats.data.buckets.length > 3);
 });
+
+test('单日报告与前一天比较，即使是每月 1 号；当月视图仍按月同期比较', () => {
+  const row = (date, amount) => ({ id: date, title: '消费 · 超市', amount, category: 'payment', created_at: `${date}T04:00:00.000Z`, balance_after: 0 });
+  const rows = [row('2026-11-01', -1000), row('2026-10-31', -500), row('2026-10-01', -300), row('2026-09-30', -100)].map(r => r);
+  const day = billReport(rows, resolveRange({ period: '2026-11-01' }, '2026-11-02'));
+  assert.deepEqual([day.previous.from, day.previous.to, day.previous.consumption], ['2026-10-31', '2026-10-31', 500]);
+  const month = billReport(rows, resolveRange({ period: '2026-11' }, '2026-11-01'));
+  assert.deepEqual([month.previous.from, month.previous.to, month.previous.consumption], ['2026-10-01', '2026-10-01', 300]);
+});
+
+test('商户下钻：精确筛选的笔数等于按商户分组的笔数', t => {
+  const { zou, wanjin, wanqi } = imported(t);
+  const range = resolveRange({ period: '2026' }, today);
+  for (const rows of [zou, wanjin, wanqi]) {
+    const all = rows.map(enrich), { buckets } = spendingStats(rows, range, { by: 'merchant' });
+    assert.ok(buckets.length > 0);
+    for (const b of buckets) assert.equal(selectLedger(all, { ...range, kind: 'spend', merchant: b.key }).length, b.count, b.key);
+  }
+  // Rows with no merchant are grouped under their tag, and a shared prefix must not match another merchant.
+  const row = (id, title, extra) => ({ id, title, amount: -1000, balance_after: 0, category: 'payment', created_at: '2026-09-15T04:00:00.000Z', ...extra });
+  const made = [row(1, '消费', { txn_type: '消费', platform: '支付宝' }), row(2, '消费', { txn_type: '消费', platform: '支付宝' }), row(3, '消费', { txn_type: '消费', merchant: '老乡鸡' }), row(4, '消费', { txn_type: '消费', merchant: '老乡鸡快餐' })];
+  const september = resolveRange({ period: '2026-09' }, today), enriched = made.map(enrich);
+  assert.deepEqual(spendingStats(made, september, { by: 'merchant' }).buckets.map(b => [b.key, b.count]).sort(), [['支付宝支出', 2], ['老乡鸡', 1], ['老乡鸡快餐', 1]]);
+  assert.deepEqual(selectLedger(enriched, { ...september, merchant: '支付宝支出' }).map(r => r.id), [1, 2]);
+  assert.deepEqual(selectLedger(enriched, { ...september, merchant: '老乡鸡' }).map(r => r.id), [3]);
+  assert.equal(selectLedger(enriched, { ...september, keyword: '老乡鸡' }).length, 2);
+});
+
+test('商户下钻：接口与导出按 merchant 精确筛选', async t => {
+  const f = await fixture(t);
+  for (const [i, merchant] of ['肯德基', '肯德基宅急送'].entries()) {
+    const tx = await f.req('/transactions', { type: 'payment', billType: 'merchant', merchant, amount: '10' }, f.alice.token, 'POST', { 'Idempotency-Key': `merchant-drill-${i}` });
+    assert.equal(tx.status, 201);
+    assert.equal((await f.call(`/transactions/${tx.data.id}/confirm`, { pin: '123456' })).data.status, 'completed');
+  }
+  const range = resolveRange({ preset: 'today' });
+  const bucket = spendingStats(ledgerFor(f.bank, f.user.id), range, { by: 'merchant' }).buckets.find(b => b.key.endsWith('肯德基'));
+  const query = new URLSearchParams({ from: range.from, to: range.to, kind: 'spend', merchant: bucket.key });
+  const rows = (await f.call(`/ledger?${query}`)).data;
+  assert.equal(rows.length, bucket.count);
+  assert.equal(rows.length, 1);
+  assert.equal((await f.call(`/ledger?${new URLSearchParams({ from: range.from, to: range.to, q: '肯德基' })}`)).data.length, 2);
+  const headers = { Authorization: `Bearer ${f.alice.token}` };
+  const csv = await (await fetch(`${f.url}/ledger/export?${query}`, { headers })).text();
+  assert.equal(csv.trim().split('\r\n').length, 2);
+});
+

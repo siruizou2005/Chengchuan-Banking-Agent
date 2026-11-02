@@ -43,11 +43,14 @@ export function createEnrollment(services,options={}) {
  // Clearing removes what the assistant learned and the visible conversations; audit rows and decision traces stay.
  function clear(user) {
   const p=resolvePrincipal(bank,user,{channel:'app'}),scope=[p.tenant_id,p.user_id];
-  for(const row of services.memory.list(p))if(['active','candidate','expired'].includes(row.status))services.memory.remove(p,row.memory_id);
-  // Removing a candidate records a rejection; a full reset should not keep blocking those suggestions.
+  services.memory.clearAll(p);
+  // Earlier rejections go too: a full reset should not keep blocking those suggestions.
   for(const table of ['memory_rejections','memory_evidence','behavior_hypotheses','behavior_events','memory_module_summaries','user_memory_modules','memory_module_suggestions'])run(`DELETE FROM ${table} WHERE tenant_id=? AND user_id=?`,...scope);
   run("UPDATE agent_sessions SET archived=CASE WHEN channel='app' THEN 1 ELSE archived END,history='[]',task_context='{}' WHERE user_id=?",user.id);
   run('DELETE FROM hidden_spend_analyses WHERE user_id=?',user.id);
+  // Decision traces stay as the record of what the assistant did; what the customer said and was told does not.
+  run("UPDATE agent_runs SET input='',output='',events='[]' WHERE user_id=?",user.id);
+  channels.clearRecords(user.id);
   services.memory.invalidate(p,{reason:'assistant_data_cleared'});
   run("UPDATE users SET agent_onboarding='pending',agent_onboarding_state='{}' WHERE id=?",user.id);
  }
@@ -63,10 +66,11 @@ export function createEnrollment(services,options={}) {
    // Proposals from conversations die with the assistant; mandates the user already confirmed keep running.
    const pending=all("SELECT id FROM agent_actions WHERE user_id=? AND session_id IS NOT NULL AND status IN ('proposed','awaiting_verification')",user.id);
    for(const a of pending)services.cancel(user,a.id);
+   const cancelled=pending.length+services.cancelConversationDrafts(user.id);
    const unbound=unbindChannels?channels.revokeAll(user):0;
    if(clearData)clear(user);
-   audit(user.id,'agent.disabled','',{unbindChannels,clearData,cancelledActions:pending.length,unboundChannels:unbound});
-   return {...status(user.id),cancelledActions:pending.length,unboundChannels:unbound};
+   audit(user.id,'agent.disabled','',{unbindChannels,clearData,cancelledActions:cancelled,unboundChannels:unbound});
+   return {...status(user.id),cancelledActions:cancelled,unboundChannels:unbound};
   });
  }
  return {status,enabled,available,assertEnabled,document,enable,disable,attachChannels:value=>{channels=value;}};

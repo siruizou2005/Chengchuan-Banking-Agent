@@ -67,3 +67,12 @@ test('启动后空闲不设唤醒定时器；限流重试按到期时间自动�
   // Only the day-later purge of the request text remains scheduled.
   await until(()=>w.nextWake()>Date.now()+23*3600000);assert.equal(f.state.sent.length,2);
 });
+
+test('微信：App确认结果不等下一次长轮询就转发，停止收新消息时也能发出',async t=>{
+  t.after(()=>{delete process.env.WECHAT_ACCEPT_NEW_MESSAGES;});
+  const f=await wechatFixture(t,{wechat:{feedback:false,accepting:undefined}});await f.bind();await f.receive('你好','hello');await f.channels.wechat.drain();
+  process.env.WECHAT_ACCEPT_NEW_MESSAGES='false';
+  const action=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'12.34'},{channel:'wechat',sessionId:f.binding().binding_session_id});f.services.confirm(f.user,action.id,{pin:'123456'});
+  await until(()=>f.state.sent.some(s=>/操作完成/.test(s.msg.item_list[0].text_item.text)));
+  assert.equal(f.bank.get('SELECT status FROM channel_outbox').status,'forwarded');
+});

@@ -4,7 +4,7 @@ import { createConsentService } from './consent.mjs';
 import { createPumaMemory } from './memory.mjs';
 import { createPumaModels } from './models.mjs';
 import { createDelegateRegistry } from './delegates.mjs';
-import { requireThat } from '../errors.mjs';
+import { requireThat, BusinessError } from '../errors.mjs';
 import { id, now } from '../db.mjs';
 
 export function createPumaService(bank,services,options={}) {
@@ -38,7 +38,7 @@ export function registerPumaRoutes(route,bank,services,transfers) {
   });
   route('post','/internal/puma/review-feedback','有证据的独立复核结论',(req,res)=>{
     services.risk.queue(req.user);
-    const body=req.body,flag=bank.get('SELECT * FROM risk_flags WHERE id=?',body.flagId);
+    const body=req.body,flag=typeof body.flagId==='string'&&bank.get('SELECT * FROM risk_flags WHERE id=?',body.flagId);
     requireThat(flag&&['CONFIRMED_FRAUD','CONFIRMED_LEGITIMATE','INCONCLUSIVE'].includes(body.outcome)&&Array.isArray(body.evidenceIds)&&body.evidenceIds.length>0,'审核结论或证据无效',400,'INVALID_REVIEW_FEEDBACK');
     p.evidence.references(flag.user_id,body.evidenceIds);
     bank.atomic(()=>{
@@ -58,8 +58,14 @@ export function registerPumaRoutes(route,bank,services,transfers) {
   route('post','/v1/puma/delegate-approvals/:id/confirm','交易绑定共同确认',(req,res)=>{
     const result=p.delegates.confirm(req.user,req.params.id,req.body);
     const owner=bank.get('SELECT * FROM users WHERE id=?',result.ownerId),d=transfers.drafts.view(owner,result.draftId);
-    if(result.status==='APPROVED'&&d.status==='USER_APPROVED')transfers.executor.submit(owner,d.id);
-    res.json({status:result.status});
+    let submitted=false;
+    // The delegate's decision stands on its own. A failed submission concerns the owner's approval, funds or risk, so it goes to the owner and is not disclosed here.
+    if(result.status==='APPROVED'&&d.status==='USER_APPROVED')try{submitted=Boolean(transfers.executor.submit(owner,d.id).paymentId);}catch(error){
+      if(!(error instanceof BusinessError))throw error;
+      bank.audit(owner.id,'puma.delegate.submit_deferred',d.id,{code:error.code});
+      bank.notify(owner.id,'共同确认已完成，付款尚未提交',`${error.message}。可在转账草稿中查看并处理。`);
+    }
+    res.json({status:result.status,submitted});
   });
   route('get','/internal/puma/metrics','受控 PUMA 运行指标',(req,res)=>{services.risk.queue(req.user);res.json(bank.all('SELECT kind,COUNT(*) count,AVG(value) mean,MAX(value) max FROM puma_metrics GROUP BY kind'));});
 }

@@ -189,3 +189,115 @@ test('PUMA reviewed labels require role, explicit outcome and owned evidence; ca
  assert.equal(check(await f.call('/v1/puma/risk-flags')).find(r=>r.id===flag.id).review_outcome,'CONFIRMED_LEGITIMATE');
  assert.throws(()=>f.bank.run('DELETE FROM puma_feedback'),/immutable/);
 });
+
+// Reviews through a reviewer who is neither payer nor payee, the way a deployment configures RISK_REVIEWER_IDS.
+async function confirmFraud(f,who,flag){
+ f.services.risk.review(who.user,{flagId:flag.id,disposition:'UNDER_REVIEW',rationale:'受害人报案，开始核实'});
+ const evidenceIds=JSON.parse(f.bank.get('SELECT evidence_ids FROM puma_risk_links WHERE flag_id=?',flag.id).evidence_ids),nextReviewAt=new Date(Date.now()+30*86400000).toISOString();
+ check(await f.req('/internal/puma/review-feedback',{flagId:flag.id,outcome:'CONFIRMED_FRAUD',evidenceIds,rationale:'证据确认收款人为诈骗账户',nextReviewAt},who.token));
+ return nextReviewAt;
+}
+
+test('确认欺诈后拦截收款人，与初始严重度无关',async t=>{
+ const f=await fixture(t),who=await third(f);
+ f.services.risk=createRiskService(f.bank,{reviewerIds:[who.user.id]});
+ const d=f.services.riskDrafts.create(f.user,input(f)),flag=f.services.risk.flags(f.user).find(x=>x.scope_ref===d.id);
+ assert.equal(d.risk.action,'WARN');assert.equal(f.bank.get('SELECT severity FROM puma_risk_links WHERE flag_id=?',flag.id).severity,'LOW');
+ await confirmFraud(f,who,flag);
+ assert.equal(f.services.riskDrafts.create(f.user,input(f)).status,'BLOCKED');
+ const other=check(await f.call('/payees',{name:'其他收款人',number:'6222000011114444555',bank:'其他银行'}),201);
+ assert.notEqual(f.services.riskDrafts.create(f.user,{...input(f),beneficiaryRef:other.id}).status,'BLOCKED');
+});
+
+test('后续升级暂缓时收款人关联也升级',async t=>{
+ let events=[];
+ const f=await fixture(t,{risk:{signals:()=>events}}),flow=createRiskTransfers(f.bank,f.services,f.services.risk);
+ const d=flow.drafts.create(f.user,input(f)),flag=f.services.risk.flags(f.user).find(x=>x.scope_ref===d.id);
+ assert.equal(f.bank.get('SELECT severity FROM puma_risk_links WHERE flag_id=?',flag.id).severity,'LOW');
+ events=[{type:'SAFE_ACCOUNT_SCAM',verified:true,sourceRef:'case-1',occurredAt:now(),expiresAt:expiry()}];
+ assert.throws(()=>flow.approvals.intent(f.user,d.id,binding(d)),{code:'RISK_HOLD_REVIEW'});
+ assert.equal(f.bank.get('SELECT severity FROM puma_risk_links WHERE flag_id=?',flag.id).severity,'HIGH');
+});
+
+test('换收款人后风险标记跟随新收款人',async t=>{
+ const f=await fixture(t),flow=createRiskTransfers(f.bank,f.services,f.services.risk);
+ const other=check(await f.call('/payees',{name:'其他收款人',number:'6222000011114444555',bank:'其他银行'}),201);
+ const d=flow.drafts.create(f.user,input(f)),edited=flow.drafts.patch(f.user,d.id,{version:d.version,beneficiaryRef:other.id});
+ const subjects=f.bank.all('SELECT l.subject_ref FROM risk_flags f JOIN puma_risk_links l ON l.flag_id=f.id WHERE f.scope_ref=?',d.id).map(r=>r.subject_ref);
+ assert.equal(edited.beneficiaryName,'其他收款人');assert.equal(new Set(subjects).size,2);
+});
+
+test('已确认风险到复核时间仍生效并回到队列',async t=>{
+ const f=await fixture(t),who=await third(f);
+ f.services.risk=createRiskService(f.bank,{reviewerIds:[who.user.id]});
+ const d=f.services.riskDrafts.create(f.user,input(f)),flag=f.services.risk.flags(f.user).find(x=>x.scope_ref===d.id);
+ const expiresAt=id=>f.bank.get('SELECT expires_at,status FROM risk_flags WHERE id=?',id);
+ const nextReviewAt=await confirmFraud(f,who,flag);
+ assert.equal(expiresAt(flag.id).expires_at,nextReviewAt);
+ assert.ok(!f.services.risk.queue(who.user).some(x=>x.id===flag.id),'not due yet');
+ f.bank.run("UPDATE risk_flags SET expires_at='2020-01-01T00:00:00.000Z' WHERE id=?",flag.id);
+ f.services.risk.expire();assert.equal(expiresAt(flag.id).status,'CONFIRMED');
+ assert.equal(f.services.riskDrafts.create(f.user,input(f)).status,'BLOCKED');
+ assert.ok(f.services.risk.queue(who.user).some(x=>x.id===flag.id),'due for review');
+ f.services.risk.review(who.user,{flagId:flag.id,disposition:'UNDER_REVIEW',rationale:'到期重新核实收款人'});
+ assert.ok(expiresAt(flag.id).expires_at>now(),'reopening must survive the expiry sweep');
+ f.services.risk.expire();assert.equal(expiresAt(flag.id).status,'UNDER_REVIEW');
+ assert.equal(f.services.riskDrafts.create(f.user,input(f)).status,'BLOCKED');
+ f.services.risk.review(who.user,{flagId:flag.id,disposition:'FALSE_POSITIVE',rationale:'核实后确认收款人正常'});
+ assert.notEqual(f.services.riskDrafts.create(f.user,input(f)).status,'BLOCKED');
+});
+
+test('撤销、到期、未验证的关系看不到明细',async t=>{
+ const f=await fixture(t,options),who=await third(f);
+ const r=check(await f.call('/v1/puma/delegates',{delegateUserId:who.user.id,role:'VOLUNTARY_CO_APPROVER',minAmountMinor:0,expiresAt:expiry(),pin:'123456'}),201);
+ const d=f.services.riskDrafts.create(f.user,{...input(f),memo:'家庭开支'});
+ const incoming=async()=>check(await f.req('/v1/puma/delegate-approvals',undefined,who.token));
+ assert.deepEqual(await incoming(),[],'unverified');
+ check(await f.req(`/v1/puma/delegates/${r.id}/verify`,{pin:'123456'},who.token));
+ assert.deepEqual((await incoming()).map(c=>[c.status,c.memo]),[['REQUESTED','家庭开支']]);
+ const until=f.bank.get('SELECT expires_at FROM puma_delegates WHERE id=?',r.id).expires_at;
+ f.bank.run("UPDATE puma_delegates SET expires_at='2020-01-01' WHERE id=?",r.id);
+ assert.deepEqual(await incoming(),[],'expired');
+ f.bank.run('UPDATE puma_delegates SET expires_at=? WHERE id=?',until,r.id);
+ check(await f.call(`/v1/puma/delegates/${r.id}/revoke`,{pin:'123456'}));
+ assert.deepEqual(await incoming(),[],'revoked');
+ f.services.riskDrafts.patch(f.user,d.id,{version:d.version,amountMinor:88800,memo:'撤销后修改'});
+ assert.deepEqual(await incoming(),[],'revoked, then edited');
+});
+
+test('草稿后才验证关系，新挑战确认后可提交',async t=>{
+ const f=await fixture(t,options),who=await third(f);
+ const r=check(await f.call('/v1/puma/delegates',{delegateUserId:who.user.id,role:'VOLUNTARY_CO_APPROVER',minAmountMinor:0,expiresAt:expiry(),pin:'123456'}),201);
+ const flow=createRiskTransfers(f.bank,f.services,f.services.risk),d=flow.drafts.create(f.user,input(f));
+ const incoming=async()=>check(await f.req('/v1/puma/delegate-approvals',undefined,who.token));
+ const decide=c=>f.req(`/v1/puma/delegate-approvals/${c.id}/confirm`,{digest:c.digest,decision:'APPROVED',pin:'123456'},who.token);
+ const verify=()=>f.req(`/v1/puma/delegates/${r.id}/verify`,{pin:'123456'},who.token);
+ check(await verify());
+ check(await decide((await incoming())[0]));
+ check(await verify());
+ const renewed=await incoming();assert.deepEqual(renewed.map(c=>c.status),['REQUESTED'],'a repeated verify voids the earlier decision');
+ await approve(f,flow,d);assert.equal(flow.executor.submit(f.user,d.id).status,'USER_APPROVED');
+ assert.deepEqual(flow.drafts.view(f.user,d.id).delegateApprovals.map(c=>c.status),['REQUESTED']);
+ check(await decide(renewed[0]));
+ assert.equal(flow.drafts.view(f.user,d.id).status,'SETTLED');
+});
+
+test('批准过期时共同确认仍成功并提醒主用户',async t=>{
+ const f=await fixture(t,options),who=await third(f);await relationship(f,who);
+ const flow=createRiskTransfers(f.bank,f.services,f.services.risk),d=flow.drafts.create(f.user,input(f));
+ await approve(f,flow,d);
+ f.bank.run("UPDATE risk_approvals SET expires_at='2020-01-01' WHERE draft_id=?",d.id);
+ const c=check(await f.req('/v1/puma/delegate-approvals',undefined,who.token))[0];
+ assert.deepEqual(check(await f.req(`/v1/puma/delegate-approvals/${c.id}/confirm`,{digest:c.digest,decision:'APPROVED',pin:'123456'},who.token)),{status:'APPROVED',submitted:false});
+ assert.equal(f.bank.get('SELECT status FROM puma_delegate_requirements WHERE id=?',c.id).status,'APPROVED');
+ assert.equal(flow.drafts.view(f.user,d.id).status,'USER_APPROVED');
+ assert.ok(f.bank.get("SELECT id FROM notifications WHERE user_id=? AND title='共同确认已完成，付款尚未提交'",f.user.id));
+ await approve(f,flow,d);
+ assert.equal(flow.executor.submit(f.user,d.id).status,'SETTLED');
+});
+
+test('诈骗模型关闭后不输出分数',async t=>{
+ const f=await fixture(t,{puma:{policy:{flags:{puma_scam_risk_shadow:'disabled'}}}});
+ const {scam}=check(await f.call('/v1/puma/context',{taskScope:'对方让我转到安全账户'}));
+ assert.equal(scam.status,'DISABLED');assert.deepEqual(scam.predictions,[]);
+});

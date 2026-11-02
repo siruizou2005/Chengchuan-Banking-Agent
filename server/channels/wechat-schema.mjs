@@ -67,11 +67,6 @@ export function migrateWeChat(db) {
       UPDATE channel_bindings SET auth_state='reauth_required', reauth_required_at=unixepoch()*1000,
         last_error_code='CREDENTIALS_CHANGED' WHERE user_id=NEW.id AND channel='wechat' AND status='active';
     END;
-    CREATE TRIGGER IF NOT EXISTS wechat_account_suspended AFTER UPDATE OF status ON accounts
-    WHEN NEW.type='debit' AND NEW.status <> 'active' AND NEW.status <> OLD.status
-    BEGIN
-      UPDATE channel_bindings SET auth_state='suspended', last_error_code='ACCOUNT_UNAVAILABLE'
-        WHERE user_id=NEW.user_id AND channel='wechat' AND status='active';
-    END;
+    DROP TRIGGER IF EXISTS wechat_account_suspended;
   `);
 }

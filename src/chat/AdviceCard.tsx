@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AgentMark } from '../AgentMark';
 import { ChevronRight, RefreshCw } from 'lucide-react';
 import { api } from '../api';
@@ -33,14 +33,24 @@ export function AdviceCard({ initial, onAsk }: { initial: Advice; onAsk?: (text:
   const [custom, setCustom] = useState<number | null>(initial.params.amount !== initial.params.suggestedAmount ? initial.params.amount : null);
   const [draft, setDraft] = useState(String(Math.round(initial.params.amount / 100)));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  // Leaving the amount field commits it, so disabling the chips during that request would swallow the click that caused the blur.
+  // They stay live: the newest request wins, and a chosen horizon holds until its answer arrives.
+  const newest = useRef(0), pickedHorizon = useRef<string | undefined>(undefined);
   async function load(next: { horizon?: string | null; amount?: number | null } = {}) {
-    const horizon = next.horizon !== undefined ? next.horizon : advice.params.horizonSource === 'emergency' ? null : advice.params.horizon;
+    if (next.horizon) pickedHorizon.current = next.horizon;
+    const horizon = next.horizon !== undefined ? next.horizon : pickedHorizon.current ?? (advice.params.horizonSource === 'emergency' ? null : advice.params.horizon);
     const amount = next.amount !== undefined ? next.amount : custom;
     const qs = new URLSearchParams({ ...(horizon ? { horizon } : {}), ...(amount ? { amount: (amount / 100).toFixed(2) } : {}) });
+    const request = ++newest.current;
     setBusy(true); setError('');
-    try { const data = await api<Advice>(`/wealth/advice?${qs}`); setAdvice(data); if (amount === null || amount === undefined) setDraft(String(Math.round(data.params.amount / 100))); }
-    catch (e) { setError(e instanceof Error ? e.message : '暂时无法生成，请稍后再试'); }
-    finally { setBusy(false); }
+    try {
+      const data = await api<Advice>(`/wealth/advice?${qs}`);
+      if (request !== newest.current) return;
+      pickedHorizon.current = undefined; setAdvice(data);
+      if (amount === null || amount === undefined) setDraft(String(Math.round(data.params.amount / 100)));
+    }
+    catch (e) { if (request === newest.current) setError(e instanceof Error ? e.message : '暂时无法生成，请稍后再试'); }
+    finally { if (request === newest.current) setBusy(false); }
   }
   function commitAmount(value: number | null) {
     setCustom(value); if (value !== null) setDraft(String(Math.round(value / 100)));
@@ -65,11 +75,11 @@ export function AdviceCard({ initial, onAsk }: { initial: Advice; onAsk?: (text:
 
     {choosing && <div className="advice-choose">
       <div className="advice-q"><strong>这笔钱多久会用到？</strong>{advice.params.horizonSource === 'assessment' && <small>已按风险测评中的投资期限预选</small>}</div>
-      <div className="chip-row">{HORIZONS.map(h => <button key={h.id} type="button" className={`chip${advice.params.horizon === h.id ? ' active' : ''}`} disabled={busy} onClick={() => load({ horizon: h.id })}>{h.label}</button>)}</div>
+      <div className="chip-row">{HORIZONS.map(h => <button key={h.id} type="button" className={`chip${advice.params.horizon === h.id ? ' active' : ''}`} onClick={() => load({ horizon: h.id })}>{h.label}</button>)}</div>
       <div className="advice-q"><strong>打算投入多少？</strong></div>
       <form className="advice-amount" onSubmit={ev => { ev.preventDefault(); const v = Math.round(Number(draft) * 100); if (v > 0) commitAmount(v); }}>
         <label><span>¥</span><input inputMode="numeric" value={draft} onChange={ev => setDraft(ev.target.value.replace(/[^\d]/g, ''))} onBlur={() => { const v = Math.round(Number(draft) * 100); if (v > 0 && v !== advice.params.amount) commitAmount(v); }} aria-label="投入金额（元）" /></label>
-        <div className="chip-row">{[1000000, 5000000].map(v => <button key={v} type="button" className="chip" disabled={busy} onClick={() => commitAmount(v)}>{v / 1000000}万</button>)}<button type="button" className={`chip${custom === null ? ' active' : ''}`} disabled={busy} onClick={() => commitAmount(null)}>按建议 {money(advice.params.suggestedAmount)}</button></div>
+        <div className="chip-row">{[1000000, 5000000].map(v => <button key={v} type="button" className="chip" onClick={() => commitAmount(v)}>{v / 1000000}万</button>)}<button type="button" className={`chip${custom === null ? ' active' : ''}`} onClick={() => commitAmount(null)}>按建议 {money(advice.params.suggestedAmount)}</button></div>
       </form>
     </div>}
     {advice.warnings.map(w => <p key={w} className="advice-warning">{w}</p>)}

@@ -141,3 +141,47 @@ test('微信隔离异常消息、绑定失效期间拒绝新工具及泄漏',asy
   f.bank.run("UPDATE users SET pin_hash='replaced' WHERE id=?",f.user.id);assert.equal(f.binding().auth_state,'reauth_required');
   await assert.rejects(f.channels.wechat.pollOnce(f.binding()),e=>e.code==='CHANNEL_REAUTH_REQUIRED');assert.equal(f.requests.length,0);
 });
+
+test('微信：助手停止或授权失效时消息入库、游标前进并回复原因，命令可用，恢复后不执行旧消息',async t=>{
+  const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();
+  const texts=()=>f.state.sent.map(s=>s.msg.item_list[0].text_item.text),status=id=>f.bank.get('SELECT status FROM wechat_inbox WHERE upstream_message_id=?',id)?.status;
+  assert.equal((await f.call('/agent/control/stop',{})).status,200);
+  f.state.messages.push(f.message('转账给陈屿100元','stopped'),f.message('退订日报','stopped-unsubscribe'));
+  await f.channels.wechat.pollOnce(f.binding());await f.channels.wechat.drain();
+  assert.equal(f.binding().cursor,String(f.state.cursor));assert.equal(status('stopped'),'failed');assert.equal(status('stopped-unsubscribe'),'completed');
+  assert.ok(texts().some(x=>/智能助手已停止/.test(x)));assert.ok(texts().some(x=>/已退订微信日报/.test(x)));assert.equal(f.requests.length,0);
+  await f.receive('帮助','stopped-help');await f.channels.wechat.drain();assert.match(texts().at(-1),/可以查询余额/);
+  assert.equal((await f.call('/agent/control/resume',{pin:'123456'})).status,200);
+  const replies=f.state.sent.length;await f.receive('转账给陈屿100元','stopped');await f.channels.wechat.drain();
+  assert.equal(f.state.sent.length,replies);assert.equal(f.requests.length,0);assert.equal(f.bank.get("SELECT count(*) n FROM agent_actions WHERE channel='wechat'").n,0);
+  // Revoking the tool grant also stops the assistant; once resumed, the missing grant alone must still be answered.
+  assert.equal((await f.call('/v1/puma/consents',{scope:'agent_tools',granted:false})).status,200);assert.equal((await f.call('/agent/control/resume',{pin:'123456'})).status,200);
+  await f.receive('查余额','no-grant');await f.channels.wechat.drain();assert.equal(status('no-grant'),'failed');assert.match(texts().at(-1),/授权已撤销或过期/);assert.equal(f.requests.length,0);
+});
+
+test('微信：冻卡不断开连接：普通消息回复原因，帮助和退订可用，未发出的查询结果不再发送；解冻后同一绑定和会话继续',async t=>{
+  const f=await wechatFixture(t,{wechat:{feedback:false}});await f.bind();
+  const last=()=>f.state.sent.at(-1).msg.item_list[0].text_item.text,before=f.binding(),account=f.bank.get("SELECT id FROM accounts WHERE user_id=? AND type='debit'",f.user.id).id;
+  await f.call('/channels/reports/wechat',{daily:true},'PATCH');
+  await f.channels.wechat.delivery.stop();f.queue.push(llm([],'余额123.45元'));await f.receive('查余额','unsent');await f.channels.wechat.drain();
+  f.bank.run("UPDATE accounts SET status='frozen' WHERE id=?",account);assert.equal(f.binding().auth_state,'valid');
+  f.channels.wechat.delivery.start();await f.channels.wechat.delivery.drain();
+  assert.equal(f.bank.get("SELECT d.status FROM wechat_deliveries d JOIN wechat_inbox i ON i.id=d.request_id WHERE i.upstream_message_id='unsent'").status,'cancelled');assert.equal(f.state.sent.length,0);
+  await f.receive('查余额','frozen');await f.channels.wechat.drain();
+  assert.equal(f.bank.get("SELECT status FROM wechat_inbox WHERE upstream_message_id='frozen'").status,'failed');assert.match(last(),/账户状态暂不支持渠道查询/);
+  await f.receive('帮助','frozen-help');await f.channels.wechat.drain();assert.match(last(),/可以查询余额/);
+  await f.receive('退订日报','frozen-unsubscribe');await f.channels.wechat.drain();assert.match(last(),/已退订微信日报/);
+  assert.equal(f.binding().cursor,String(f.state.cursor));assert.equal(f.requests.length,1);
+  f.bank.run("UPDATE accounts SET status='active' WHERE id=?",account);
+  f.queue.push(llm([],'余额678.90元'));await f.receive('查余额','thawed');await f.channels.wechat.drain();assert.match(last(),/678\.90/);
+  assert.equal(f.binding().binding_generation,before.binding_generation);assert.equal(f.binding().binding_session_id,before.binding_session_id);
+});
+
+test('微信：处理中冻卡回复冻结原因，不再提交模型结果',async t=>{
+  const gate=Promise.withResolvers(),entered=Promise.withResolvers();
+  const f=await wechatFixture(t,{wechat:{feedback:false},chat:{fetch:async()=>{entered.resolve();await gate.promise;return Response.json(llm([],'余额123.45元'));}}});await f.bind();
+  await f.receive('查余额','running');const work=f.channels.wechat.drain();await entered.promise;
+  f.bank.run("UPDATE accounts SET status='frozen' WHERE user_id=? AND type='debit'",f.user.id);gate.resolve();await work;
+  const text=f.state.sent.at(-1).msg.item_list[0].text_item.text;assert.match(text,/账户状态暂不支持渠道查询/);assert.doesNotMatch(text,/123\.45/);
+  assert.equal(f.bank.get('SELECT status FROM wechat_inbox').status,'failed');
+});

@@ -20,5 +20,5 @@ export function FeishuRequests() {
     void refresh(); return () => { cancelled = true; clearTimeout(timer); };
   }, []);
   if (!rows.length && !error) return null;
-  return <Card title="最近的飞书请求"><p className="data-note">飞书回复暂未收到时，可在这里查看结果，无需重复提交业务。</p>{rows.slice(0, 10).map(row => <button className="pill" key={row.id} onClick={() => navigate(`feishu-requests/${row.id}`)}>{new Date(row.received_at).toLocaleString('zh-CN')} · {states[row.status] || '查看请求'}</button>)}<InlineError message={error} /></Card>;
+  return <Card title="最近的飞书请求"><p className="data-note">飞书回复暂未收到时，可在这里查看结果，无需重复提交业务。</p>{rows.slice(0, 10).map(row => <button className="pill" key={row.id} onClick={() => navigate(`feishu-requests/${row.id}`)}>{new Date(row.received_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {states[row.status] || '查看请求'}</button>)}<InlineError message={error} /></Card>;
 }

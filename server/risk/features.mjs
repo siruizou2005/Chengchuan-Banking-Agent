@@ -47,5 +47,5 @@ export function extractFeatures({ rows = [], userId, currency, at, timezone = 'A
     newBeneficiaries7d: new Set(history.filter(r => Date.parse(r.occurred_at) > time - 7 * DAY && r.payee_ref && !history.some(old => old.payee_ref === r.payee_ref && Date.parse(old.occurred_at) <= time - 7 * DAY)).map(r => r.payee_ref)).size,
     balance: balance && balance.currency === currency && Number.isSafeInteger(balance.available) && balance.available >= 0
       && Number.isFinite(Date.parse(balance.asOf)) && time - Date.parse(balance.asOf) >= 0 && time - Date.parse(balance.asOf) <= 300000 ? balance.available : null,
-    notices: [...(months.length < 6 ? ['INSUFFICIENT_HISTORY'] : []), ...(single?.mad === 0 || Object.values(monthly).some(m => m.mad === 0) ? ['BASELINE_UNSTABLE'] : [])] };
+    notices: [...(months.length < 6 ? ['INSUFFICIENT_HISTORY'] : []), ...(single?.mad === 0 || monthly[candidate?.category || 'transfer'].mad === 0 ? ['BASELINE_UNSTABLE'] : [])] };
 }

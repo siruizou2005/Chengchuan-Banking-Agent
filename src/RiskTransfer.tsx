@@ -32,8 +32,9 @@ export function RiskTransfer() {
     const timer = setInterval(() => { load(draft.id).catch(e => setError(e.message)); }, 3000);
     return () => clearInterval(timer);
   }, [draft?.id, draft?.status]);
-  async function act(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); await refresh(); } catch (e) { setError((e as Error).message); if (draft) await load(draft.id).catch(() => {}); setIntent(null); setToken(''); } finally { setBusy(false); } }
-  if (draft && intent?.verificationActionId && !token) return <Verify actionId={intent.verificationActionId} smsOnly={intent.smsOnly} onVerified={setToken} onCancel={() => cancelDraft(draft)} />;
+  async function act(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); await refresh(); } catch (e) { setError((e as Error).message); if (draft) await load(draft.id).catch(() => {}); if ((e as { code?: string }).code !== 'INVALID_PIN') { setIntent(null); setToken(''); } } finally { setBusy(false); } }
+  // Leaving the verification only abandons this attempt; the draft stays until it is cancelled or expires.
+  if (draft && intent?.verificationActionId && !token) return <Verify actionId={intent.verificationActionId} smsOnly={intent.smsOnly} onVerified={setToken} onCancel={() => setIntent(null)} />;
   const account = draft && data.accounts.find(a => a.id === draft.sourceAccountRef);
   const tier = draft?.risk?.tier;
   const payable = draft && editable.includes(draft.status) && !['BLOCKED', 'HOLD_REVIEW'].includes(draft.status) && tier !== 'L3';

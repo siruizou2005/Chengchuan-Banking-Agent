@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { id, now } from './db.mjs';
-import { hash, requireThat, BusinessError } from './errors.mjs';
-import { isDemoUser } from './demo-users.mjs';
+import { hash, requireThat, idField, BusinessError } from './errors.mjs';
 import { createIdentityCrypto, createIdentityStore } from './identity.mjs';
 
 /** Server-only H5 adapter; see docs/FACE.md. No Tencent SDK is installed. */
@@ -16,7 +15,7 @@ export function createFaceVerification(bank, options = {}, { challenge }) {
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30000) throw new TypeError('Invalid face provider timeout');
     crypto.assertConfigured();
   }
-  const mode = user => isDemoUser(user) || !provider ? 'simulated_face' : 'tencent_face';
+  const mode = user => bank.isDemoUser(user) || !provider ? 'simulated_face' : 'tencent_face';
   const profile = user => ({ ...identity.view(user), channel: mode(user), required: mode(user) === 'tencent_face' && !identity.view(user).enrolled });
   function assertIdentity(user) {
     if (mode(user) === 'tencent_face') requireThat(identity.view(user).enrolled, '请先录入实名资料', 403, 'IDENTITY_REQUIRED');
@@ -47,7 +46,7 @@ export function createFaceVerification(bank, options = {}, { challenge }) {
     });
   }
   function ownedSession(user, sessionId) {
-    const session = bank.get('SELECT * FROM face_sessions WHERE id=? AND user_id=?', sessionId, user.id);
+    const session = bank.get('SELECT * FROM face_sessions WHERE id=? AND user_id=?', idField(sessionId, '核身记录编号'), user.id);
     requireThat(session, '核身记录不存在', 404, 'FACE_NOT_FOUND');
     return session;
   }

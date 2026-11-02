@@ -30,17 +30,18 @@ const later = (at, ms) => new Date(Date.parse(at) + ms).toISOString();
 const isSpend = r => r.kind === 'consumption' || r.kind === 'refund';
 
 function parseItems(data) {
-  try {
-    const items = JSON.parse(data.choices[0].message.content).items;
-    return new Map(items.map(item => [item.i, item.category]));
-  } catch { return new Map(); }
+  const content = data.choices[0].message.content;
+  try { return new Map(JSON.parse(content).items.map(item => [item.i, item.category])); }
+  // An answer cut off at the token limit still holds every item finished before the cut, and those were paid for.
+  catch { return new Map([...content.matchAll(/\{\s*"i"\s*:\s*(\d+)\s*,\s*"category"\s*:\s*"([^"]*)"\s*\}/g)].map(match => [Number(match[1]), match[2]])); }
 }
+const batchSizeOf = value => { const size = Math.floor(Number(value)); return size >= 1 ? Math.min(size, 100) : 50; };
 
 export function createMerchantCategories(services, options = {}) {
   const { bank } = services, { get, all, run, atomic, audit } = bank;
   const enabled = () => options.enabled ?? process.env.BILL_CATEGORY_LLM === 'true';
   const getConfig = options.config || loadChatConfig;
-  const batchSize = Math.min(Number(options.batchSize ?? process.env.BILL_CATEGORY_BATCH_SIZE) || 50, 100);
+  const batchSize = batchSizeOf(options.batchSize ?? process.env.BILL_CATEGORY_BATCH_SIZE);
   let active = null, stopped = false, controller = null;
 
   // Keys already answered stay out of the next request, so a merchant shared by many customers is asked about once.
@@ -98,11 +99,11 @@ export function createMerchantCategories(services, options = {}) {
     if (!stopped) run("UPDATE merchant_category_runs SET status='succeeded',error_code=NULL,next_at=NULL,lease_until=NULL,finished_at=? WHERE business_date=?", elapsed(), date);
   }
 
+  const skipReason = config => services.guard.disabled() ? 'AGENT_DISABLED' : !config.apiKey || !config.baseUrl ? 'NOT_CONFIGURED' : null;
   function claim(date, at) {
     const row = get('SELECT * FROM merchant_category_runs WHERE business_date=?', date);
     if (!row) {
-      const config = getConfig();
-      const skipped = services.guard.disabled() ? 'AGENT_DISABLED' : !config.apiKey || !config.baseUrl ? 'NOT_CONFIGURED' : null;
+      const config = getConfig(), skipped = skipReason(config);
       if (skipped) { run("INSERT INTO merchant_category_runs(business_date,status,error_code,started_at,finished_at) VALUES(?,'skipped',?,?,?)", date, skipped, at, at); return null; }
       run("INSERT INTO merchant_category_runs(business_date,status,attempts,lease_until,started_at) VALUES(?,'running',1,?,?)", date, later(at, LEASE_MS), at);
       return config;
@@ -112,8 +113,11 @@ export function createMerchantCategories(services, options = {}) {
     if (interrupted) run("UPDATE merchant_category_runs SET status='failed',error_code='WORKER_INTERRUPTED',next_at=?,finished_at=? WHERE business_date=?", at, at, date);
     if (!interrupted && !(row.status === 'failed' && row.next_at && row.next_at <= at)) return null;
     if (row.attempts >= MAX_ATTEMPTS) { run('UPDATE merchant_category_runs SET next_at=NULL WHERE business_date=?', date); return null; }
+    // The switch may have been flipped or the key removed since the last attempt, and a retry must honour that as much as a first run.
+    const config = getConfig(), skipped = skipReason(config);
+    if (skipped) { run("UPDATE merchant_category_runs SET status='skipped',error_code=?,next_at=NULL,lease_until=NULL,finished_at=? WHERE business_date=?", skipped, at, date); return null; }
     run("UPDATE merchant_category_runs SET status='running',attempts=attempts+1,next_at=NULL,lease_until=? WHERE business_date=?", later(at, LEASE_MS), date);
-    return getConfig();
+    return config;
   }
 
   // Called from the 30-second maintenance tick, so the decision is synchronous and the model calls run behind it.
@@ -121,9 +125,12 @@ export function createMerchantCategories(services, options = {}) {
     if (!enabled() || active || stopped || bjHour(at) < RUN_HOUR) return active || undefined;
     const date = businessDate(at), config = claim(date, at);
     if (!config) return undefined;
+    const started = Date.now();
     active = classify(date, at, config).catch(error => {
       if (stopped) return;
-      run("UPDATE merchant_category_runs SET status='failed',error_code=?,next_at=?,lease_until=NULL,finished_at=? WHERE business_date=?", error.code || 'CLASSIFY_FAILED', later(at, RETRY_MS), at, date);
+      // A run can fail long after it started; the backoff counts from the failure.
+      const failedAt = later(at, Date.now() - started);
+      run("UPDATE merchant_category_runs SET status='failed',error_code=?,next_at=?,lease_until=NULL,finished_at=? WHERE business_date=?", error.code || 'CLASSIFY_FAILED', later(failedAt, RETRY_MS), failedAt, date);
       console.warn('Merchant category run failed:', error.code || 'CLASSIFY_FAILED');
     }).finally(() => { active = null; controller = null; });
     return active;
@@ -142,6 +149,13 @@ export function createMerchantCategories(services, options = {}) {
   }
   const result = (user, ledgerId) => { const { tag, tag_source } = spendRow(user, ledgerId); return { tag, tag_source }; };
 
+  // The full refund of a corrected charge belongs with it; left behind, it would show its old category a negative amount.
+  function fullRefunds(user, row) {
+    const key = merchantKey(row);
+    if (row.kind !== 'consumption' || !key) return [];
+    return ledgerFor(bank, user.id).map(enrich).filter(r => r.kind === 'refund' && r.amount === -row.amount && r.created_at >= row.created_at && merchantKey(r) === key);
+  }
+
   // Corrections belong to this customer only: they never reach the shared cache or the model.
   function setCategory(user, ledgerId, { category, applyToMerchant = false } = {}) {
     const row = spendRow(user, ledgerId);
@@ -150,11 +164,12 @@ export function createMerchantCategories(services, options = {}) {
     const key = merchantKey(row), at = now();
     requireThat(!applyToMerchant || key, '这笔流水没有商户信息，只能修改这一笔', 409, 'MERCHANT_REQUIRED');
     atomic(() => {
+      const entries = [row, ...fullRefunds(user, row)];
       if (applyToMerchant) {
-        run('DELETE FROM ledger_category_overrides WHERE user_id=? AND ledger_id=?', user.id, row.id);
+        for (const entry of entries) run('DELETE FROM ledger_category_overrides WHERE user_id=? AND ledger_id=?', user.id, entry.id);
         run('INSERT INTO merchant_category_overrides VALUES(?,?,?,?) ON CONFLICT(user_id,merchant_key) DO UPDATE SET tag=excluded.tag,updated_at=excluded.updated_at', user.id, key, category, at);
-      } else run('INSERT INTO ledger_category_overrides VALUES(?,?,?,?) ON CONFLICT(user_id,ledger_id) DO UPDATE SET tag=excluded.tag,updated_at=excluded.updated_at', user.id, row.id, category, at);
-      audit(user.id, 'ledger.category.updated', String(row.id), { category, scope: applyToMerchant ? 'merchant' : 'entry' });
+      } else for (const entry of entries) run('INSERT INTO ledger_category_overrides VALUES(?,?,?,?) ON CONFLICT(user_id,ledger_id) DO UPDATE SET tag=excluded.tag,updated_at=excluded.updated_at', user.id, entry.id, category, at);
+      audit(user.id, 'ledger.category.updated', String(row.id), { category, scope: applyToMerchant ? 'merchant' : 'entry', refunds: entries.length - 1 });
     });
     return result(user, ledgerId);
   }
@@ -164,7 +179,7 @@ export function createMerchantCategories(services, options = {}) {
     const row = spendRow(user, ledgerId);
     atomic(() => {
       const entry = get('SELECT 1 FROM ledger_category_overrides WHERE user_id=? AND ledger_id=?', user.id, row.id);
-      if (entry) run('DELETE FROM ledger_category_overrides WHERE user_id=? AND ledger_id=?', user.id, row.id);
+      if (entry) for (const item of [row, ...fullRefunds(user, row)]) run('DELETE FROM ledger_category_overrides WHERE user_id=? AND ledger_id=?', user.id, item.id);
       else run('DELETE FROM merchant_category_overrides WHERE user_id=? AND merchant_key=?', user.id, merchantKey(row));
       audit(user.id, 'ledger.category.reset', String(row.id), { scope: entry ? 'entry' : 'merchant' });
     });

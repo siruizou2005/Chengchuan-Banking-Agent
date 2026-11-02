@@ -36,8 +36,9 @@ export function createPumaModels(bank,services,evidence,policy) {
     return {...meta(),mode:'research_only',status:allowed(user)&&consentAllowed(bank,user.id,'trait_research')&&policy.flags.puma_trait_research==='shadow'?'INSUFFICIENT_EVIDENCE':'DISABLED',hypotheses:[],reason:'NO_VALIDATED_PSYCHOLOGICAL_LABELS'};
   }
   function scam(user,{text='',evidenceIds=[]}={}) {
+    if(policy.flags.puma_scam_risk_shadow==='disabled')return {...meta(),status:'DISABLED',predictions:[],enforceable:false};
     const sources=evidence.references(user.id,evidenceIds).filter(e=>e.evidence_quality==='SUFFICIENT'&&Date.parse(e.occurred_at)>Date.now()-86400000);
-    return {...meta(),status:policy.flags.puma_scam_risk_shadow==='disabled'?'DISABLED':'RESEARCH_ONLY',predictions:SCAM_TYPES.map(type=>({prediction_target:type,time_horizon:'CURRENT_TRANSACTION',score:sources.length&&cues[type].test(text)?0.5:null,calibration_status:'RESEARCH_ONLY',evidence_ids:sources.map(e=>e.event_id),uncertainty:sources.length?'UNCALIBRATED':'INSUFFICIENT_EVIDENCE'})),enforceable:false};
+    return {...meta(),status:'RESEARCH_ONLY',predictions:SCAM_TYPES.map(type=>({prediction_target:type,time_horizon:'CURRENT_TRANSACTION',score:sources.length&&cues[type].test(text)?0.5:null,calibration_status:'RESEARCH_ONLY',evidence_ids:sources.map(e=>e.event_id),uncertainty:sources.length?'UNCALIBRATED':'INSUFFICIENT_EVIDENCE'})),enforceable:false};
   }
   return {behavior,intent,traits,scam};
 }

@@ -1,23 +1,26 @@
 import { randomInt, randomBytes } from 'node:crypto';
 import { id, now } from './db.mjs';
-import { hash, requireThat } from './errors.mjs';
+import { hash, requireThat, idField } from './errors.mjs';
 import { paramsDigest, actionParams } from './authorization.mjs';
 import { createSmsDelivery } from './sms.mjs';
 import { createFaceVerification } from './face.mjs';
 
+// The customer verifies these from bank pages, whatever state the assistant is in.
+const PAGE_TOOLS = new Set(['direct_operation', 'risk_transfer_approval']);
 export function createVerification(bank, services, options, faceOptions) {
   const { get, run, atomic, audit } = bank;
   const sms = createSmsDelivery(bank, options);
   const faceVerification = createFaceVerification(bank, faceOptions, { challenge });
   function owned(user, actionId) {
-    const action = get('SELECT * FROM agent_actions WHERE id=? AND user_id=?', actionId, user.id);
+    const action = get('SELECT * FROM agent_actions WHERE id=? AND user_id=?', idField(actionId, '操作编号'), user.id);
     requireThat(action, '操作不存在',404,'NOT_FOUND');
     requireThat((action.status === 'proposed' && action.expires_at > now()) || (action.status==='awaiting_verification' && action.verification_until>now() && action.authorization_until>now()), '操作已结束或过期',409,'INVALID_STATE');
     requireThat(!action.params_digest || action.params_digest===paramsDigest(actionParams(action)),'操作参数已变化，请重新提议',403,'AUTHORIZATION_MISMATCH');
     return action;
   }
   async function start(user, actionId) {
-    services.guard.assertOpen(user.id); const action=owned(user,actionId);
+    const action=owned(user,actionId), assistant=!PAGE_TOOLS.has(action.tool);
+    if(assistant)services.guard.assertOpen(user.id);
     faceVerification.assertIdentity(user);
     const faceMode = faceVerification.mode(user);
     const faceChannel = action.tool === 'risk_transfer_approval' && JSON.parse(action.args).smsOnly === true && faceMode === 'simulated_face' ? 'not_required' : faceMode;
@@ -45,7 +48,7 @@ export function createVerification(bank, services, options, faceOptions) {
       requireThat(false,'验证码发送失败，请稍后重试',503,'SMS_SEND_FAILED');
     }
     try { atomic(()=>{
-      services.guard.assertOpen(user.id);
+      if(assistant)services.guard.assertOpen(user.id);
       const current=owned(user,actionId);
       requireThat(current.revision===action.revision && paramsDigest(actionParams(current))===paramsDigest(actionParams(action)),'操作参数已变化，请重新提议',403,'AUTHORIZATION_MISMATCH');
       requireThat(get('SELECT expires_at FROM verifications WHERE id=?',verificationId).expires_at>now(),'验证已过期，请重新开始',403,'VERIFICATION_EXPIRED');
@@ -63,7 +66,7 @@ export function createVerification(bank, services, options, faceOptions) {
     return { id:verificationId, expiresIn:300, simulated:delivery.simulated, channel:delivery.channel, faceChannel, ...(delivery.target?{target:delivery.target}:{}), ...(delivery.showCode?{demoCode:code,reason:delivery.reason}:{}) };
   }
   function challenge(user, verificationId) {
-    const v=get('SELECT * FROM verifications WHERE id=? AND user_id=?',verificationId,user.id);
+    const v=get('SELECT * FROM verifications WHERE id=? AND user_id=?',idField(verificationId,'验证编号'),user.id);
     requireThat(v && v.delivery_status==='sent' && !v.used && v.expires_at>now(),'验证已过期，请重新开始',403,'VERIFICATION_EXPIRED');
     const action=owned(user,v.action_id);
     requireThat(v.params_digest===paramsDigest(actionParams(action)) && v.revision===action.revision,'验证与当前参数版本不匹配',403,'INVALID_VERIFICATION');return v;

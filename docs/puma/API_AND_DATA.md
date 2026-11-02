@@ -5,7 +5,7 @@
 | 接口 | 契约及调用方 |
 |---|---|
 | GET /agent/control | 本人 stopped / epoch |
-| POST /agent/control/stop | 已认证本人；原子取消排队/定时任务、未提交草稿及代理授权，发出本进程 AbortSignal；取消尚未发出的账单推送 |
+| POST /agent/control/stop | 已认证本人；原子取消排队/定时任务、未提交草稿及代理授权（已过期草稿记为 EXPIRED，不阻断停止），发出本进程 AbortSignal；取消尚未发出的账单推送。停止期间飞书、微信的普通消息入库并回复原因，恢复后不补执行 |
 | POST /agent/control/resume | `{pin}`；提升 epoch，旧任务不复活 |
 | GET/POST /v1/puma/consents | `{scope,granted,expiresAt?,pin?}`；scope=data_read/personalization/agent_tools/trait_research；授予须 PIN；撤回无需付款批准 |
 | GET /v1/puma/events | 本人最近100条事件引用，无原始对话/账号 |
@@ -15,10 +15,10 @@
 | GET/POST /v1/puma/delegates | 建立关系使用 `{delegateUserId 或 delegatePhone,role,minAmountMinor,expiresAt,pin,jurisdiction?}` |
 | POST /v1/puma/delegates/:id/verify | 被登记人独立登录并提供 PIN；不接受聊天“同意”；法定监护不能走此接口 |
 | POST /v1/puma/delegates/:id/revoke | 本人 PIN 撤销自愿关系；原待批义务保留为 CONFLICT |
-| GET /v1/puma/delegate-approvals | 当前共同确认人的脱敏交易明细和摘要挑战 |
-| POST /v1/puma/delegate-approvals/:id/confirm | `{digest,decision:APPROVED或REJECTED,pin}`；后端验证身份、关系版本、冲突、过期及同一交易摘要。主用户已批准时才可能由后端继续提交 |
+| GET /v1/puma/delegate-approvals | 当前共同确认人的脱敏交易明细和摘要挑战；尚未验证、已撤销或已过期的关系不返回 |
+| POST /v1/puma/delegate-approvals/:id/confirm | `{digest,decision:APPROVED或REJECTED,pin}`；后端验证身份、关系版本、冲突、过期及同一交易摘要。主用户已批准时才可能由后端继续提交；返回 `{status,submitted}`。提交失败（如主用户批准已过期）不影响已记录的决定，原因只通知主用户 |
 | POST /internal/puma/delegates/:id/legal-review | 独立白名单审核员 PIN + documentRef；材料只能来自后端 legalDocuments 可信快照，不接受客户端/LLM 自称有效。action=REVOKE 的独立审核材料撤销法律权限 |
-| POST /internal/puma/review-feedback | 风控审核员；UNDER_REVIEW 案件 + rationale + evidenceIds + 明确 outcome。CONFIRMED_FRAUD 还需 nextReviewAt。INCONCLUSIVE/取消不作为监督标签 |
+| POST /internal/puma/review-feedback | 风控审核员；UNDER_REVIEW 案件 + rationale + evidenceIds + 明确 outcome。CONFIRMED_FRAUD 还需 nextReviewAt，确认后持续拦截该收款人，到期回到复核队列，复核关闭后才解除。INCONCLUSIVE/取消不作为监督标签 |
 | GET /internal/puma/metrics | 既有风控审核员；延时、模型故障、STOP指标 |
 
 原 `v1/transfers` API 保持；草稿响应新增 `delegateApprovals`。主用户批准后若共同确认未完成，响应仍是 `USER_APPROVED`，绝不返回虚假的已提交。没有单独面向用户/Agent 的 submit 接口。

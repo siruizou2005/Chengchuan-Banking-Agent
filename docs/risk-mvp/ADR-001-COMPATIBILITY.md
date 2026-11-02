@@ -39,8 +39,9 @@ Replacing those components would break scheduled and IM-originated operations.
 8. Review is an authenticated, explicit reviewer allowlist API, not a new admin app.
    Review changes work-item status, never payment authorization. Flags do not add to
    future risk scores; current objective facts do. A false-positive disposition suppresses
-   an identical flag for the same draft/facts until expiry. Confirmed provider fraud
-   requires correction at its trusted source; a review cannot silently bypass it.
+   an identical flag for the same draft/facts until expiry, and releases a trusted event only
+   for its own flag type, event type and source on the same draft version. Confirmed provider
+   fraud requires correction at its trusted source; a review cannot silently bypass it.
 
 Unsupported production capabilities: verified DOB feed, WebAuthn/bank auth adapter,
 real bank execution/recipient-name verification, legal retention/deletion policy,

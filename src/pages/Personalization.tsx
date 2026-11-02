@@ -21,7 +21,12 @@ export function Personalization() {
   async function save(path: string, method: string, body: unknown) {
     if (busy) return;
     setBusy(true); setError('');
-    try { await api(path, method, body); await refresh(); setEditing(null); toast('记忆已更新'); }
+    try {
+      await api(path, method, body); await refresh().catch(() => {});
+      // The form's value belongs to the memory being edited, not to the category selected behind it.
+      if (editing) { setEditing(null); selectKey(key); }
+      toast('记忆已更新');
+    }
     catch (e) { setError((e as Error).message); await refresh().catch(() => {}); }
     finally { setBusy(false); }
   }

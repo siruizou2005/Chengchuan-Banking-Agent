@@ -6,6 +6,7 @@ import { requireThat } from './errors.mjs';
 const DAY = 86400000;
 export const beijingDate = (ms = Date.now()) => new Date(ms + 8 * 3600000).toISOString().slice(0, 10);
 const nextDay = date => new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
+const previousDay = date => new Date(Date.parse(`${date}T00:00:00Z`) - DAY).toISOString().slice(0, 10);
 
 export function migrateEarnings(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS holding_earnings (
@@ -23,7 +24,9 @@ const pointRatio = (previous, current) => previous.acc != null && current.acc !=
 
 // Pure: what one holding earns after its settled date, up to and including `through`.
 export function accrue(holding, product, points, through) {
-  let earnings = holding.earnings || 0, carry = holding.accrual_carry || 0, cursor = holding.settled_through || beijingDate(Date.parse(holding.created_at));
+  // A deposit counts its first day and not its last, so n days held pays n days whether it is read, withdrawn early or withdrawn on the maturity day.
+  const opened = beijingDate(Date.parse(holding.created_at)), deposit = product.type === 'deposit';
+  let earnings = holding.earnings || 0, carry = holding.accrual_carry || 0, cursor = holding.settled_through || (deposit ? previousDay(opened) : opened);
   const start = cursor, rows = [];
   // Fractions of a cent carry over, so a small holding still earns instead of rounding to zero every day.
   const book = (date, exact) => {
@@ -49,7 +52,7 @@ export function accrue(holding, product, points, through) {
       book(date, (holding.principal + earnings) * rate / 100 / 365);
     }
   } else if (product.rate > 0) {
-    const maturity = product.type === 'deposit' ? beijingDate(Date.parse(holding.unlock_at)) : through, last = maturity < through ? maturity : through;
+    const maturity = deposit ? previousDay(beijingDate(Date.parse(holding.unlock_at))) : through, last = maturity < through ? maturity : through;
     for (let date = nextDay(cursor); date <= last; date = nextDay(date)) book(date, holding.principal * product.rate / 100 / 365);
     if (maturity < through && cursor < through) cursor = through; // Interest stops at maturity; nothing left to revisit.
   }

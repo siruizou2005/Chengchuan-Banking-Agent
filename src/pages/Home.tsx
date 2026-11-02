@@ -80,7 +80,7 @@ export function Home({ feature, workspaceRoute, title, onSelect, onClose, onBack
     <header className="cc-workspace-head">{canBack && <button className="icon-button" aria-label="返回上一步" onClick={onBack} disabled={busy}><ArrowLeft size={18} /></button>}<h2 id="workspace-title" ref={heading} tabIndex={-1}>{workspaceRoute === 'channels' ? 'Bot 绑定管理' : workspaceRoute === 'accounts' ? '账户' : workspaceRoute === 'services' ? '更多功能' : title}</h2><button className="icon-button" aria-label="收起功能" disabled={busy} onClick={() => { onClose(); document.querySelector<HTMLButtonElement>(`[data-feature="${feature}"]`)?.focus({ preventScroll: true }); }}><X size={19} /></button></header>
     <div hidden={hasOperation}>{children}</div>
     {operations}
-    {(!hasOperation || ['INVALID_PIN', 'RATE_LIMITED'].includes(formError?.code || '')) && <InlineError message={formError?.message || ''} />}
+    {!hasOperation && <InlineError message={formError?.message || ''} />}
     <AgentEntry feature={feature} />
   </section>;
   if (content) lastContent.current = content;

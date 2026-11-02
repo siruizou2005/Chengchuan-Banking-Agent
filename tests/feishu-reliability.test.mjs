@@ -191,3 +191,54 @@ test('飞书：普通问答不附App链接，账单统计等App卡片结果附�
  f.queue.push(llm([],'流水'.repeat(4000)));f.handler(event('long','列出全部流水'));await f.pipe.drain();
  assert.match(contentText(f.sent.at(-1).data.content),/…\n\n回复内容较长，以上仅为部分，完整内容请在App查看：\[https/);
 });
+
+test('飞书：助手停止或授权失效时回调不失败，回复原因，命令可用，恢复后不执行旧消息',async t=>{
+ const f=await setup(t),text=()=>contentText(f.sent.at(-1).data.content);
+ assert.equal((await f.call('/agent/control/stop',{})).status,200);
+ const stopped=event('stopped','转账给陈屿100元');assert.deepEqual(f.handler(stopped),{});await f.pipe.drain();
+ assert.equal(f.bank.get("SELECT status FROM feishu_inbox WHERE message_id='stopped'").status,'failed');assert.match(text(),/智能助手已停止/);
+ f.handler(event('help-stopped','帮助'));await f.pipe.drain();assert.match(text(),/可查余额/);
+ f.handler(event('unsubscribe-stopped','退订日报'));await f.pipe.drain();assert.match(text(),/已退订飞书日报/);
+ assert.equal((await f.call('/agent/control/resume',{pin:'123456'})).status,200);
+ const replies=f.sent.length;f.handler(stopped);await f.pipe.drain();
+ assert.equal(f.sent.length,replies);assert.equal(f.requests.length,0);assert.equal(f.bank.get("SELECT count(*) n FROM feishu_inbox WHERE message_id='stopped'").n,1);
+ // Revoking the tool grant also stops the assistant; once resumed, the missing grant alone must still be answered.
+ assert.equal((await f.call('/v1/puma/consents',{scope:'agent_tools',granted:false})).status,200);assert.equal((await f.call('/agent/control/resume',{pin:'123456'})).status,200);
+ assert.deepEqual(f.handler(event('no-grant','查余额')),{});await f.pipe.drain();assert.match(text(),/授权已撤销或过期/);assert.equal(f.requests.length,0);
+});
+
+test('飞书：冻卡时普通消息回复原因，帮助、退订、取消可用；解冻后同一绑定恢复',async t=>{
+ const f=await setup(t),text=()=>contentText(f.sent.at(-1).data.content),account=f.bank.get("SELECT id FROM accounts WHERE user_id=? AND type='debit'",f.user.id).id;
+ const action=f.services.propose(f.user,'propose_transfer',{recipient:f.recipient,amount:'20'},{channel:'feishu',sessionId:f.binding.binding_session_id});
+ await f.call('/channels/reports/feishu',{daily:true},'PATCH');
+ f.bank.run("UPDATE accounts SET status='frozen' WHERE id=?",account);
+ assert.deepEqual(f.handler(event('frozen','查余额')),{});await f.pipe.drain();
+ assert.equal(f.bank.get("SELECT status FROM feishu_inbox WHERE message_id='frozen'").status,'failed');assert.match(text(),/账户状态暂不支持渠道查询/);assert.equal(f.requests.length,0);
+ for(const [id,command,reply] of [['frozen-help','帮助',/可查余额/],['frozen-unsubscribe','退订日报',/已退订飞书日报/],['frozen-cancel','取消 '+action.id,/操作已取消/]]){assert.deepEqual(f.handler(event(id,command)),{});await f.pipe.drain();assert.match(text(),reply);}
+ assert.equal(f.services.owned(f.user,action.id).status,'cancelled');assert.equal((await f.call('/channels/reports')).data.feishu.daily.enabled,false);
+ f.bank.run("UPDATE accounts SET status='active' WHERE id=?",account);
+ f.queue.push(llm([],'余额 ¥123.45'));f.handler(event('thawed','查余额'));await f.pipe.drain();
+ assert.match(text(),/123\.45/);assert.equal(f.bank.get('SELECT binding_generation g FROM channel_bindings WHERE id=?',f.binding.id).g,f.binding.binding_generation);
+});
+
+test('飞书：冻卡前未发出的查询结果不再发送，处理中的请求回复冻结原因',async t=>{
+ let limited=true;const gate=deferred(),entered=deferred();let calls=0;
+ const f=await setup(t,{reply:()=>limited?{code:99991400}:{code:0},chat:{fetch:async()=>{if(++calls===2){entered.resolve();await gate.promise;}return Response.json(llm([],'余额 ¥123.45'));}}});
+ const account=f.bank.get("SELECT id FROM accounts WHERE user_id=? AND type='debit'",f.user.id).id;
+ f.handler(event('unsent','查余额'));await f.pipe.drain();
+ const unsent=f.bank.get("SELECT d.* FROM feishu_deliveries d JOIN feishu_inbox i ON i.id=d.request_id WHERE i.message_id='unsent'");assert.equal(unsent.status,'retry_wait');
+ limited=false;f.handler(event('running','查余额'));await entered.promise;
+ f.bank.run("UPDATE accounts SET status='frozen' WHERE id=?",account);gate.resolve();
+ f.bank.run('UPDATE feishu_deliveries SET next_at=0 WHERE id=?',unsent.id);await f.pipe.drain();
+ assert.equal(f.bank.get('SELECT status FROM feishu_deliveries WHERE id=?',unsent.id).status,'cancelled');
+ assert.match(contentText(f.sent.at(-1).data.content),/账户状态暂不支持渠道查询/);assert.equal(f.sent.filter(s=>s.path.message_id==='unsent').length,1);
+});
+
+test('飞书：非文本和超长消息回复说明，不进入模型，重复事件不重复回复',async t=>{
+ const f=await setup(t),image=event('image','');image.message={...image.message,message_type:'image',content:JSON.stringify({image_key:'img'})};
+ const messages=[image,event('long','查'.repeat(6001)),event('blank','   ')];
+ for(const e of messages){assert.deepEqual(f.handler(e),{});f.handler(e);}
+ await f.pipe.drain();
+ assert.deepEqual(f.sent.map(s=>s.path.message_id).sort(),['blank','image','long']);for(const s of f.sent)assert.match(contentText(s.data.content),/仅支持不超过6000字的文字消息/);
+ assert.equal(f.requests.length,0);assert.deepEqual(f.bank.all('SELECT status FROM feishu_inbox').map(r=>r.status),['failed','failed','failed']);
+});

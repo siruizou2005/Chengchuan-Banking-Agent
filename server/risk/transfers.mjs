@@ -54,6 +54,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     if (!p) p = bank.get("SELECT a.id,u.name,a.number,'澄川银行' AS bank FROM accounts a JOIN users u ON u.id=a.user_id WHERE a.id=? AND a.type='debit' AND a.status='active'", body.beneficiaryRef);
     requireThat(p && p.number !== account.number, '收款对象不存在或无效', 400, 'INVALID_BENEFICIARY');
     const target = bank.get('SELECT a.id,a.user_id,a.status,u.name FROM accounts a JOIN users u ON u.id=a.user_id WHERE a.number=?', p.number);
+    requireThat(target || p.bank !== '澄川银行', '未找到该行内账户，请核对卡号', 404, 'RECIPIENT_NOT_FOUND');
     requireThat(!target || target.status === 'active' && target.name === p.name, '收款对象当前不可用', 409, 'INVALID_BENEFICIARY');
     const payload = { sourceAccountRef: account.id, beneficiaryRef: p.id, beneficiaryToken: hash(p.number),
       beneficiaryName: p.name, beneficiaryMasked: `****${p.number.slice(-4)}`, institution: p.bank,
@@ -63,7 +64,7 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     return payload;
   }
   const digest = (userId, draftId, version, payload) => paramsDigest({ userId, draftId, version, payload });
-  function candidate(d, held = 0) { const p = JSON.parse(d.payload); return { ...p, beneficiaryRef: p.beneficiaryToken, category: 'transfer', heldByThisPayment: held }; }
+  function candidate(d, held = 0) { const p = JSON.parse(d.payload); return { ...p, beneficiaryRef: p.beneficiaryToken, category: 'transfer', heldByThisPayment: held, draftVersion: d.version }; }
   function evaluate(user, d, stage, held = 0) {
     return bank.atomic(() => {
       const current = owned(user, d.id);
@@ -193,10 +194,16 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
         bank.run('UPDATE accounts SET held=held-? WHERE id=?', d.amount_minor, d.source_account_ref);
         if (p.status === 'SETTLED') {
           // Store a normal simulator transaction so existing ledger/history/risk views see it.
-          const account = bank.get('SELECT number FROM accounts WHERE id=?', payload.targetId);
+          // Outside this bank the money lands in the clearing account, whose number says nothing about the payee.
+          const recipient = bank.get('SELECT number,user_id FROM accounts WHERE id=?', payload.targetId), note = payload.memo ? ` · ${payload.memo}` : '';
           bank.run('INSERT INTO transactions(id,user_id,type,amount,title,status,payload,account_id,created_at,updated_at,expires_at,idempotency_key,fingerprint,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            payment.id, d.user_id, 'transfer', d.amount_minor, `模拟转账 · ${payload.beneficiaryName}`, 'completed', JSON.stringify({ recipientName: payload.beneficiaryName, recipientAccount: account?.number || payload.beneficiaryMasked, bank: payload.institution, targetId: payload.targetId, simulation: true }), d.source_account_ref, now(), now(), d.expires_at, payment.provider_key, d.payload_hash, now());
-          bank.post(payment.id, d.source_account_ref, payload.targetId, d.amount_minor, `模拟转账 · ${payload.beneficiaryName}`, 'transfer');
+            payment.id, d.user_id, 'transfer', d.amount_minor, `模拟转账 · ${payload.beneficiaryName}`, 'completed', JSON.stringify({ recipientName: payload.beneficiaryName, recipientAccount: recipient.user_id ? recipient.number : payload.beneficiaryMasked, payeeToken: payload.beneficiaryToken, bank: payload.institution, targetId: payload.targetId, note: payload.memo, simulation: true }), d.source_account_ref, now(), now(), d.expires_at, payment.provider_key, d.payload_hash, now());
+          bank.post(payment.id, d.source_account_ref, payload.targetId, d.amount_minor, `模拟转账 · ${payload.beneficiaryName}${note}`, 'transfer');
+          if (recipient.user_id) {
+            const sender = bank.get('SELECT name FROM users WHERE id=?', d.user_id).name;
+            bank.run('UPDATE ledger SET title=? WHERE transaction_id=? AND account_id=?', `转账收入 · ${sender}${note}`, payment.id, payload.targetId);
+            bank.notify(recipient.user_id, '转账到账通知', `${sender}向您转入¥${(d.amount_minor / 100).toFixed(2)}，资金已到账。`);
+          }
           bank.notify(d.user_id, '模拟转账已完成', `已向${payload.beneficiaryName}（${payload.beneficiaryMasked}）转账 ¥${(d.amount_minor / 100).toFixed(2)}，流水号 ${payment.id}。`);
         } else if (p.status === 'FAILED') bank.notify(d.user_id, '模拟转账未成功', `向${payload.beneficiaryName}（${payload.beneficiaryMasked}）的转账 ¥${(d.amount_minor / 100).toFixed(2)} 未成功，预留资金已释放。`);
       }
@@ -252,8 +259,16 @@ export function createRiskTransfers(bank, services, risk, options = {}) {
     }
   }
   function cancel(user, draftId) {
-    return bank.atomic(() => { const d = owned(user, draftId); requireThat(editable.includes(d.status), '已提交或结束的支付不可取消', 409, 'DRAFT_STATE'); invalidate(d); bank.run("UPDATE risk_drafts SET status='CANCELLED' WHERE id=?", d.id); bank.audit(user.id, 'risk.draft.cancelled', d.id); risk.metric(user.id, d.id, d.evaluation_id, 'CANCELLED'); return view(user, d.id); });
+    return bank.atomic(() => {
+      const d = owned(user, draftId);
+      // Drafts lapse lazily, possibly on this very read. A lapsed draft is already closed, and raising here would roll the expiry back and abort batch closers such as STOP.
+      if (d.status === 'EXPIRED') return view(user, d.id);
+      requireThat(editable.includes(d.status), '已提交或结束的支付不可取消', 409, 'DRAFT_STATE'); invalidate(d); bank.run("UPDATE risk_drafts SET status='CANCELLED' WHERE id=?", d.id); bank.audit(user.id, 'risk.draft.cancelled', d.id); risk.metric(user.id, d.id, d.evaluation_id, 'CANCELLED'); return view(user, d.id);
+    });
+  }
+  function cancelOpen(user) {
+    return bank.atomic(() => bank.all(`SELECT id FROM risk_drafts WHERE user_id=? AND status IN (${editable.map(() => '?')})`, user.id, ...editable).map(d => cancel(user, d.id)));
   }
   // Agent-visible facade has no approve/submit/provider credentials.
-  return { drafts: { create, view, patch, cancel }, approvals: { intent, approve }, executor: { submit, applyEvent, reconcile }, provider };
+  return { drafts: { create, view, patch, cancel, cancelOpen }, approvals: { intent, approve }, executor: { submit, applyEvent, reconcile }, provider };
 }

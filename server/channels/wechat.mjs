@@ -109,18 +109,18 @@ export function createWeChat(services,router,options={}) {
   function stopBinding(bindingId){loops.get(bindingId)?.abort.abort();}
   function startBinding(bindingId){
     if(stopped||loops.has(bindingId)||!enabled()||!accepting())return;const abort=new AbortController();
-    let rebound=false;
     const task=(async()=>{let backoff=1000;while(!abort.signal.aborted&&!stopped&&enabled()&&accepting()){
       const binding=bank.get("SELECT * FROM channel_bindings WHERE id=? AND status='active' AND auth_state='valid'",bindingId);if(!binding?.token)break;
       try{await pollOnce(binding,abort.signal);backoff=1000;await delay(200,undefined,{signal:abort.signal});}
-      catch(error){rebound=error.code==='BINDING_FENCED';if(abort.signal.aborted||rebound||['WECHAT_REAUTH_REQUIRED','CHANNEL_REAUTH_REQUIRED'].includes(error.code))break;bank.run("UPDATE channel_bindings SET connection_state='degraded',last_error_code=? WHERE id=?",error.code||'WECHAT_ERROR',bindingId);await delay(backoff*(0.8+Math.random()*0.4),undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,30000);}
+      catch(error){if(abort.signal.aborted||['BINDING_FENCED','WECHAT_REAUTH_REQUIRED','CHANNEL_REAUTH_REQUIRED'].includes(error.code))break;bank.run("UPDATE channel_bindings SET connection_state='degraded',last_error_code=? WHERE id=?",error.code||'WECHAT_ERROR',bindingId);await delay(backoff*(0.8+Math.random()*0.4),undefined,{signal:abort.signal}).catch(()=>{});backoff=Math.min(backoff*2,30000);}
     }})().finally(()=>{
       if(loops.get(bindingId)?.abort===abort)loops.delete(bindingId);bank.run('UPDATE channel_bindings SET lease_until=0 WHERE id=? AND lease_owner=?',bindingId,owner);
-      // Password/PIN changes and frozen accounts only flip auth_state in SQL; the poll loop is where that surfaces.
-      if(abort.signal.aborted||stopped)return;
-      if(bank.get("SELECT 1 FROM channel_bindings WHERE id=? AND status='active' AND auth_state<>'valid'",bindingId))halt(bindingId);
-      // A re-scan replaced this binding's generation while the old poll was in flight: carry on with the new one.
-      else if(rebound)queueMicrotask(()=>startBinding(bindingId));
+      if(stopped)return;
+      const binding=bank.get("SELECT auth_state FROM channel_bindings WHERE id=? AND status='active' AND token IS NOT NULL",bindingId);
+      // Password/PIN changes only flip auth_state in SQL; the poll loop is where that surfaces.
+      if(binding&&binding.auth_state!=='valid'){if(!abort.signal.aborted)halt(bindingId);}
+      // A re-scan aborts this loop and finds it still registered, so its own start was a no-op: carry on with the new generation.
+      else if(binding)queueMicrotask(()=>startBinding(bindingId));
     });loops.set(bindingId,{abort,task});
   }
   function sweep(){const t=Date.now();for(const [key,e] of pending)if(e.until<t){e.controller.abort();pending.delete(key);}for(const [key,times] of rate)if(times.every(v=>t-v>60000))rate.delete(key);}

@@ -7,7 +7,10 @@ const bj = iso => new Date(Date.parse(iso) + 8 * 3600000).toISOString();
 export const addDays = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const monthEnd = ym => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10);
 const shiftMonth = (ym, n) => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1)).toISOString().slice(0, 7);
-const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().startsWith(d);
+const validDate = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().startsWith(d);
+// Statements go back years, not centuries; resolveRange also keeps every date inside the four-digit years these helpers assume.
+export const EARLIEST_DATE = '2000-01-01';
+const MAX_RANGE_DAYS = 3660;
 const utcStart = date => new Date(Date.parse(date + 'T00:00:00Z') - 8 * 3600000).toISOString();
 export const utcBounds = range => [utcStart(range.from), utcStart(addDays(range.to, 1))];
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -39,23 +42,31 @@ const PLATFORMS = ['支付宝', '微信支付', '京东支付', '抖音支付'];
 // Native titles are fixed by the bank unless they carry a name the customer typed at checkout.
 const MERCHANT_TITLE = /^(?:信用卡)?消费 · (?!订阅 · )/;
 const normalizeKey = text => text?.normalize('NFKC').replace(/\s+/g, ' ').trim() || null;
-// The merchant a row belongs to. Null when only the payment platform is known, because grouping on it would lump unrelated spending together.
+// Bank memo phrases and payment processors name no one in particular.
+const GENERIC_MERCHANT = /平台商户$|商城业务$|^扫二维码付款$|^赞赏码$|财付通|支付宝|Alipay/i;
+const specificKey = text => { const key = normalizeKey(text); return key && !GENERIC_MERCHANT.test(key) ? key : null; };
+// The merchant a row belongs to. Null when only the payment platform or a generic phrase is known, because grouping on it would lump unrelated spending together.
 export function merchantKey(r) {
   if (!r.txn_type) return normalizeKey(r.title.replace(/^(?:信用卡)?消费 · /, ''));
-  if (r.merchant) return normalizeKey(r.merchant);
+  if (r.merchant) return specificKey(r.merchant);
   if (PLATFORMS.includes(r.platform) || PROCESSOR.test(r.counterparty || '')) return null;
-  return normalizeKey(r.counterparty || r.memo);
+  return specificKey(r.counterparty || r.memo);
 }
 // Only merchant-like text may leave the bank: never personal names, masked values or anything that could be a phone or card number.
 // PERSON cannot list every surname, so any bare two or three Chinese characters count as a possible name, at the cost of some short brand names.
-export const sendableKey = key => Boolean(key) && key.length <= 60 && !/^[一-龥]{2,3}$/.test(key) && !key.includes('*') && !/\d{6}/.test(key);
+// The same trade-off covers the other shapes a name takes: compound surnames, dotted names, pinyin and text addressed to someone.
+const NAME_LIKE = /^(?:欧阳|司马|上官|诸葛|东方|皇甫|尉迟|公孙|慕容|司徒|令狐|夏侯|南宫|独孤|端木|百里|呼延|长孙|宇文|轩辕)[一-龥]{1,2}$|^[一-龥]{1,8}[·•・][一-龥]{1,8}$|(?:给|付给|转给|还给|借给|替|帮)[一-龥]{2,4}/;
+const LATIN_NAME = /^[a-z]+(?: [a-z]+){1,3}$/i, LATIN_BUSINESS = /\b(?:store|shop|cafe|coffee|market|mart|hotel|restaurant|bar|club|mall|inc|ltd|llc|co|company|games?|studio|online|pay)\b/i;
+export const sendableKey = key => Boolean(key) && key.length <= 60 && !/^[一-龥]{2,3}$/.test(key) && !NAME_LIKE.test(key) && !(LATIN_NAME.test(key) && !LATIN_BUSINESS.test(key)) && !/[*@]/.test(key) && !/\d{6}/.test(key.replace(/[\s()（）._—–-]/g, ''));
 
+// A place in a shop's name says where the shop is, not what it sells, and 交通银行 is a bank rather than transport.
+const NOT_EVIDENCE = /交通银行|(?:大学|学院|学校|机场|医院|公园)(?=\S{0,8}(?:店|小卖部|便利部|食堂)(?:\s|$))/g;
 function ruleCategory(r, imported) {
   if (!imported && !MERCHANT_TITLE.test(r.title)) return SPEND.find(([, re]) => re.test(r.title))?.[0];
   const text = imported ? [r.merchant, r.counterparty, r.memo].filter(Boolean).join(' ') : r.title;
   // Hits in several categories mean the rules cannot tell, which is the same as no hit.
   const hits = SPEND.filter(([, re]) => re.test(text));
-  return hits.length === 1 ? hits[0][0] : null;
+  return hits.length === 1 && hits[0][1].test(text.replace(NOT_EVIDENCE, '')) ? hits[0][0] : null;
 }
 function spendCategory(r, imported) {
   const tag = ruleCategory(r, imported);
@@ -102,12 +113,14 @@ export function enrich(r) {
 export function ledgerFor(bank, userId) { return withCategoryTags(bank, userId, bank.all('SELECT l.* FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 10000', userId)); }
 const dateOf = r => r.bj_time.slice(0, 10);
 const merchantOf = r => r.merchant || (r.txn_type ? null : r.title);
+// The name a row is counted under when spending is grouped by merchant, so drilling into a group returns exactly its rows.
+const merchantLabel = r => merchantOf(r) || r.tag;
 export const platformOf = r => r.platform || (r.txn_type ? '银行卡快捷支付' : '澄川银行');
 const isSpend = r => r.kind === 'consumption' || r.kind === 'refund';
 // kind=spend selects consumption plus refunds, matching how consumption is totalled.
-export function selectLedger(rows, { from, to, direction, kind, category, keyword, platform } = {}) {
+export function selectLedger(rows, { from, to, direction, kind, category, keyword, platform, merchant } = {}) {
   return rows.filter(r => (!from || dateOf(r) >= from) && (!to || dateOf(r) <= to) && (!direction || (direction === 'income' ? r.amount > 0 : r.amount < 0))
-    && (!kind || (kind === 'spend' ? isSpend(r) : r.kind === kind)) && (!platform || platformOf(r) === platform) && (!category || r.tag === category) && (!keyword || [r.title, r.counterparty, r.merchant, r.memo, r.transaction_id].some(v => v?.includes(keyword))));
+    && (!kind || (kind === 'spend' ? isSpend(r) : r.kind === kind)) && (!platform || platformOf(r) === platform) && (!merchant || merchantLabel(r) === merchant) && (!category || r.tag === category) && (!keyword || [r.title, r.counterparty, r.merchant, r.memo, r.transaction_id].some(v => v?.includes(keyword))));
 }
 
 export function resolveRange({ preset, period, from, to } = {}, today = businessDate()) {
@@ -116,13 +129,13 @@ export function resolveRange({ preset, period, from, to } = {}, today = business
     requireThat(validDate(from) && validDate(to), '起止日期须为有效的YYYY-MM-DD');
     label = `${from}至${to}`;
   } else if (period) {
-    requireThat(/^\d{4}(-\d{2}(-\d{2})?)?$/.test(period), '期间须为YYYY、YYYY-MM或YYYY-MM-DD');
+    requireThat(typeof period === 'string' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(period), '期间须为YYYY、YYYY-MM或YYYY-MM-DD');
     [from, to] = period.length === 4 ? [`${period}-01-01`, `${period}-12-31`] : period.length === 7 ? [`${period}-01`, monthEnd(period)] : [period, period];
     requireThat(validDate(from) && validDate(to), '期间无效');
     label = named = period;
   } else {
     preset ||= 'this_month';
-    requireThat(PRESETS[preset], '未知时段');
+    requireThat(Object.hasOwn(PRESETS, preset), '未知时段');
     const w = weekday(today), month = today.slice(0, 7);
     [from, to] = { today: [today, today], yesterday: [addDays(today, -1), addDays(today, -1)], this_week: [addDays(today, -w), today], last_week: [addDays(today, -w - 7), addDays(today, -w - 1)],
       last_7_days: [addDays(today, -6), today], last_30_days: [addDays(today, -29), today], this_month: [`${month}-01`, today],
@@ -131,8 +144,10 @@ export function resolveRange({ preset, period, from, to } = {}, today = business
     named = { this_month: month, last_month: from.slice(0, 7), this_year: today.slice(0, 4), today, yesterday: from }[preset];
   }
   requireThat(from <= to, '开始日期不能晚于结束日期');
+  requireThat(from >= EARLIEST_DATE && to <= `${+today.slice(0, 4) + 1}-12-31`, '只能查询2000年至明年的账单');
   if (from <= today && to > today) to = today; // a period still in progress ends today, so averages and comparisons stay month-to-date
   const days = Math.round((Date.parse(to) - Date.parse(from)) / DAY) + 1;
+  requireThat(days <= MAX_RANGE_DAYS, '查询跨度不能超过10年');
   const sameMonth = from.endsWith('-01') && from.slice(0, 7) === to.slice(0, 7) && (to === monthEnd(to.slice(0, 7)) || to === today);
   const sameYear = from.endsWith('-01-01') && from.slice(0, 4) === to.slice(0, 4) && (to.endsWith('-12-31') || to === today);
   return { from, to, label, days, granularity: days <= 62 ? 'day' : 'month', period: named || (from === to ? from : sameMonth ? from.slice(0, 7) : sameYear ? from.slice(0, 4) : `${from}~${to}`) };
@@ -146,11 +161,11 @@ function group(list, key, sign) {
   for (const r of list) { const k = key(r); if (k == null) continue; const g = map.get(k) || { name: k, amount: 0, count: 0 }; g.amount += sign * r.amount; g.count++; map.set(k, g); }
   return [...map.values()];
 }
+// Counted up front rather than compared as strings: past 9999-12-31 a date becomes "+010000-01", which sorts below any end date.
 function buckets(range, granularity) {
-  const keys = [];
-  if (granularity === 'day') for (let d = range.from; d <= range.to; d = addDays(d, 1)) keys.push(d);
-  else for (let m = range.from.slice(0, 7); m <= range.to.slice(0, 7); m = shiftMonth(m, 1)) keys.push(m);
-  return keys;
+  if (granularity === 'day') return Array.from({ length: Math.max(0, Math.round((Date.parse(range.to) - Date.parse(range.from)) / DAY) + 1) }, (_, i) => addDays(range.from, i));
+  const monthNumber = date => +date.slice(0, 4) * 12 + +date.slice(5, 7);
+  return Array.from({ length: Math.max(0, monthNumber(range.to) - monthNumber(range.from) + 1) }, (_, i) => shiftMonth(range.from.slice(0, 7), i));
 }
 function coverageOf(all, range, selected) {
   const dates = all.map(dateOf).sort(), active = all.filter(r => r.kind !== 'opening').map(dateOf).sort();
@@ -167,7 +182,8 @@ export function billReport(rows, range) {
   const trend = buckets(range, range.granularity).map(key => { const list = sel.filter(r => dateOf(r).startsWith(key)); return { key, consumption: neg(list.filter(r => r.kind === 'consumption' || r.kind === 'refund')), income: sum(list.filter(r => r.kind === 'income')) }; });
   const coverage = coverageOf(all, range, sel);
   // Compare with the same span one period earlier (calendar months compare month-to-date), only when the data reaches back that far.
-  const monthly = range.from.endsWith('-01') && range.from.slice(0, 7) === range.to.slice(0, 7);
+  // A single day is compared with the day before, even on the first of a month; the month view of that same date stays month-to-date.
+  const monthly = range.from.endsWith('-01') && range.from.slice(0, 7) === range.to.slice(0, 7) && range.period !== range.from;
   const prevFrom = monthly ? `${shiftMonth(range.from.slice(0, 7), -1)}-01` : addDays(range.from, -range.days);
   const prevTo = monthly ? (range.to === monthEnd(range.to.slice(0, 7)) ? monthEnd(prevFrom.slice(0, 7)) : [`${prevFrom.slice(0, 7)}${range.to.slice(7)}`, monthEnd(prevFrom.slice(0, 7))].sort()[0]) : addDays(range.from, -1);
   const prevConsumption = neg(selectLedger(all, { from: prevFrom, to: prevTo }).filter(r => r.kind === 'consumption' || r.kind === 'refund'));
@@ -204,10 +220,10 @@ export const STATS_LABEL = { category: '分类', merchant: '商户', platform: '
 const STATS_TIME = new Set(['month', 'week', 'day', 'weekday', 'hour']);
 export function spendingStats(rows, range, { by = 'category', kind = 'consumption', category, keyword, limit = 10 } = {}) {
   const sel = selectLedger(rows.map(enrich), { ...range, category, keyword }).filter(r => kind === 'consumption' ? r.kind === 'consumption' || r.kind === 'refund' : r.kind === kind);
-  const sign = kind === 'income' ? 1 : -1;
+  const sign = kind === 'income' || kind === 'refund' ? 1 : -1;
   let skipped = 0;
   const key = {
-    category: r => r.tag, merchant: r => merchantOf(r) || r.tag, platform: platformOf,
+    category: r => r.tag, merchant: merchantLabel, platform: platformOf,
     month: r => dateOf(r).slice(0, 7), week: r => addDays(dateOf(r), -weekday(dateOf(r))), day: dateOf, weekday: r => WEEKDAYS[weekday(dateOf(r))],
     hour: r => { if (r.time_precision === 'day') { skipped++; return null; } return `${r.bj_time.slice(11, 13)}时`; },
   }[by];

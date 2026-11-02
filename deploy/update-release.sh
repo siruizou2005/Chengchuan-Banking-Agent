@@ -7,6 +7,9 @@ release=${1:?usage: update-release.sh <release-name> <upload-dir>}
 upload_dir=${2:?usage: update-release.sh <release-name> <upload-dir>}
 base=/opt/chengchuan-bank
 release_dir=$base/releases/$release
+db=/var/lib/chengchuan-bank/bank.sqlite
+backups=/var/lib/chengchuan-bank/backups
+backup=$backups/bank-before-$release.sqlite
 export PATH="$base/runtime/bin:$PATH"
 
 test ! -e "$release_dir"
@@ -28,19 +31,40 @@ fi
 sudo install -m 0644 deploy/chengchuan-bank.service /etc/systemd/system/chengchuan-bank.service
 sudo systemctl daemon-reload
 
+# 切换前备份数据库（自动部署已备份过就沿用）。新版本可能做不可逆的数据变更，回滚时要一起恢复。
+if sudo test -f "$db"; then
+  sudo -u bank-sim mkdir -p "$backups"
+  sudo test -f "$backup" || sudo -u bank-sim "$base/runtime/bin/node" -e "new (require('node:sqlite').DatabaseSync)('$db').exec(\"VACUUM INTO '$backup'\")"
+fi
+
+# 启动要导入演示数据和连接渠道，给足时间，避免把启动慢的版本误判成失败。
+healthy() {
+  for _ in $(seq 1 15); do
+    if curl -fsS http://127.0.0.1:8316/api/health >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
 previous=$(readlink -f "$base/current" || true)
 sudo ln -sfn "$release_dir" "$base/current.new"
 sudo mv -T "$base/current.new" "$base/current"
 sudo systemctl restart chengchuan-bank
-sleep 2
-if ! curl -fsS http://127.0.0.1:8316/api/health >/dev/null; then
+if ! healthy; then
   echo "健康检查失败，回滚到 $previous" >&2
+  sudo systemctl stop chengchuan-bank
+  if sudo test -f "$backup"; then
+    # 故障库连同 WAL 留作排查。WAL 和 SHM 不能留在原位，否则会重放到恢复后的数据上。
+    for suffix in "" -wal -shm; do sudo -u bank-sim mv -f "$db$suffix" "$backups/bank-failed-$release.sqlite$suffix" 2>/dev/null || true; done
+    sudo -u bank-sim cp "$backup" "$db"
+    echo "数据库已恢复到部署前：$backup" >&2
+  fi
   if test -n "$previous"; then
-    sudo ln -sfn "$previous" "$base/current.new"; sudo mv -T "$base/current.new" "$base/current"; sudo systemctl restart chengchuan-bank
+    sudo ln -sfn "$previous" "$base/current.new"; sudo mv -T "$base/current.new" "$base/current"; sudo systemctl start chengchuan-bank
   fi
   exit 1
 fi
-echo "已发布 $release（上一版本：$previous）"
+echo "已发布 ${release}（上一版本：${previous}）"
 systemctl is-active chengchuan-bank
 curl -fsS http://127.0.0.1:8316/api/health; echo
 curl -fsS http://127.0.0.1:8316/api/chat/status; echo

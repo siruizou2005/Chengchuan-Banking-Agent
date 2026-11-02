@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { id, now } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
-import { enqueueExecution, assertChannelExecution } from '../agent/execution.mjs';
+import { enqueueExecution } from '../agent/execution.mjs';
 import { redact } from '../agent/guard.mjs';
 import { eventsText } from './router.mjs';
 import { channelText } from './preferences.mjs';
+import { accountUnavailable, channelRefusal } from './refusal.mjs';
 import { IM_NOT_ENABLED_REPLY } from '../agent/enrollment.mjs';
 import { REPORT_DELIVERY_MS, reportDeliveryNotice } from './reports.mjs';
 
-const commandPattern=/^(帮助|help|解绑|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
+const commandPattern=/^(帮助|help|解绑|(?:开始)?新对话|退订(?:日报|周报|月报|账单(?:推送)?)|确认(?:\s+[A-Za-z0-9]+)?|取消(?:\s+[A-Za-z0-9]+)?)$/i;
 const pending=['queued','running'];
 const appCards={report:'账单图表',stats:'统计图表',subscriptions:'订阅明细',products:'产品列表与对比',advice:'配置建议（可调整期限与金额、查看产品详情）',anomalies:'异常支出明细'};
 export const feishuResultLink=(origin,requestId)=>`${origin||''}/#feishu-requests/${requestId}`;
@@ -39,11 +40,14 @@ export function createFeishuPipeline(services,router,send,options={}) {
     const entry=typing.get(requestId);if(!entry)return;
     typing.delete(requestId);clearTimeout(entry.timer);entry.done=true;removeTyping(entry);
   }
+  // A frozen account does not break the connection: intake keeps running and each message is refused (see refusal.mjs).
   function bindingFor(row) {
-    const b=bank.get("SELECT * FROM channel_bindings WHERE id=? AND channel='feishu' AND status='active'",row.binding_id||row.id);
+    const b=bank.get("SELECT * FROM channel_bindings WHERE id=? AND channel='feishu' AND status='active' AND auth_state='valid'",row.binding_id||row.id);
     requireThat(b&&b.binding_generation===row.binding_generation&&b.binding_session_id===row.binding_session_id&&b.user_id===row.user_id,'飞书绑定已变更',409,'BINDING_FENCED');
-    assertChannelExecution(bank,{channel:'feishu',bindingId:b.id},b.user_id);return b;
+    return b;
   }
+  // Refusals and command replies must reach a depositor whose card is frozen; account data must not.
+  const carriesAccountData=row=>row.kind==='report'||row.kind==='action_result'||(row.kind==='final'&&Boolean(bank.get("SELECT 1 FROM feishu_inbox WHERE id=? AND status='completed' AND is_command=0",row.request_id)));
   function assertTask(table,row,status) {
     requireThat(bank.get(`SELECT 1 FROM ${table} WHERE id=? AND status=? AND lease_owner=? AND lease_epoch=? AND lease_until>?`,row.id,status,owner,row.lease_epoch,Date.now()),'请求已停止',409,'WORKER_FENCED');
     return bindingFor(row);
@@ -73,23 +77,24 @@ export function createFeishuPipeline(services,router,send,options={}) {
   }
   function ingest(input,reply) {
     requireThat(!stopped,'飞书正在停止，请稍后重试',503,'FEISHU_STOPPING');
-    if(typeof input.text!=='string'||!input.text.trim()||input.text.length>6000||typeof input.messageId!=='string'||!input.messageId)return true;
+    if(typeof input.messageId!=='string'||!input.messageId)return true;
+    const text=typeof input.text==='string'?input.text:'';
     const b=bank.get("SELECT * FROM channel_bindings WHERE channel='feishu' AND external_id=? AND status='active'",input.externalId);
     // A shared bot cannot resolve an identity from a personal bot or another App ID.
     if(!input.binding&&b&&(b.token||(input.botAccountId&&b.external_bot_id!==input.botAccountId)))return false;
     if(input.binding&&(b?.id!==input.binding.id||b?.binding_generation!==input.binding.binding_generation))return true;
     if(!b)return false;
     // Only the shared bot accepts binding codes; it must not interpret them as an Agent request.
-    if(!input.binding&&/^绑定\s*\d{6}$/.test(input.text.trim()))return false;
+    if(!input.binding&&/^绑定\s*\d{6}$/.test(text.trim()))return false;
     let requestId,queued=false;
     bank.atomic(()=>{
       bindingFor(b);
       if(bank.get('SELECT 1 FROM feishu_inbox WHERE binding_id=? AND message_id=?',b.id,input.messageId)||bank.get("SELECT 1 FROM channel_messages WHERE channel='feishu' AND message_id=?",input.messageId))return;
-      requestId=id('FSREQ');const time=Date.now(),command=commandPattern.test(input.text.trim());
+      requestId=id('FSREQ');const time=Date.now(),command=commandPattern.test(text.trim());
       const count=bank.get("SELECT count(*) n FROM feishu_inbox WHERE user_id=? AND status IN ('queued','running') AND is_command=0",b.user_id).n;
-      const reason=!command&&count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':!command&&process.env.AGENT_DISABLED==='true'?'智能助手暂不可用，请在App办理。':!command&&!services.enrollment.enabled(b.user_id)?IM_NOT_ENABLED_REPLY:null;
+      const reason=!text.trim()||text.length>6000?'仅支持不超过6000字的文字消息，请用文字描述需求。':command?null:process.env.AGENT_DISABLED==='true'?'智能助手暂不可用，请在App办理。':!services.enrollment.enabled(b.user_id)?IM_NOT_ENABLED_REPLY:channelRefusal(bank,b)||(count>=maxPending?'当前请求较多，这次还未开始处理，请稍后重试。':null);
       bank.run(`INSERT INTO feishu_inbox(id,binding_id,binding_session_id,binding_generation,user_id,message_id,input_cipher,status,is_command,received_at,queue_deadline,run_id)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,b.id,b.binding_session_id,b.binding_generation,b.user_id,input.messageId,crypto.encrypt(input.text),reason?'failed':'queued',command?1:0,time,time+(options.queueMs||30000),id('RUN'));
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,requestId,b.id,b.binding_session_id,b.binding_generation,b.user_id,input.messageId,crypto.encrypt(text.slice(0,6000)),reason?'failed':'queued',command?1:0,time,time+(options.queueMs||30000),id('RUN'));
       if(reason){bank.run('UPDATE feishu_inbox SET result_json=?,finished_at=? WHERE id=?',JSON.stringify({text:reason,events:[]}),time,requestId);enqueue(b,{requestId,messageId:input.messageId,kind:'final',body:reason});}
       else if(!command){enqueueExecution(bank,b.user_id,requestId,'feishu',time+(options.queueMs||30000));queued=true;}
       bank.run("UPDATE channel_bindings SET last_inbound_at=?,connection_state='receiving' WHERE id=?",time,b.id);
@@ -119,7 +124,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
     bank.atomic(()=>{
       for(const out of bank.all("SELECT o.* FROM channel_outbox o JOIN channel_bindings b ON b.id=o.binding_id WHERE b.channel='feishu' AND o.status='pending' AND o.next_at<=? LIMIT 100",now())){
         const b=bank.get('SELECT * FROM channel_bindings WHERE id=?',out.binding_id);
-        try{bindingFor(b);if(out.binding_generation!=null)bindingFor({...out,user_id:b.user_id});}
+        try{bindingFor(b);if(out.binding_generation!=null)bindingFor({...out,user_id:b.user_id});requireThat(!accountUnavailable(bank,b.user_id),'账户状态暂不支持渠道查询',403,'CHANNEL_ACCOUNT_UNAVAILABLE');}
         catch{bank.run("UPDATE channel_outbox SET status='cancelled' WHERE id=? AND status='pending'",out.id);continue;}
         enqueue(b,{kind:out.kind==='report'?'report':'action_result',body:out.body,sourceId:out.id});
         bank.run("UPDATE channel_outbox SET status='forwarded' WHERE id=? AND status='pending'",out.id);
@@ -165,7 +170,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
   }
   async function execute(row,abort) {
     const heartbeat=setInterval(()=>{
-      try{assertTask('feishu_inbox',row,'running');bank.run('UPDATE feishu_inbox SET lease_until=? WHERE id=? AND lease_epoch=?',Date.now()+leaseMs,row.id,row.lease_epoch);}catch{abort.abort();}
+      try{if(channelRefusal(bank,assertTask('feishu_inbox',row,'running'))){abort.abort();return;}bank.run('UPDATE feishu_inbox SET lease_until=? WHERE id=? AND lease_epoch=?',Date.now()+leaseMs,row.id,row.lease_epoch);}catch{abort.abort();}
     },Math.max(10,Math.floor(leaseMs/3)));heartbeat.unref();
     try{
       const b=assertTask('feishu_inbox',row,'running'),text=crypto.decrypt(row.input_cipher);
@@ -176,7 +181,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
     }catch(error){
       const current=bank.get('SELECT * FROM feishu_inbox WHERE id=?',row.id);
       if(current?.status==='running'&&current.lease_epoch===row.lease_epoch){
-        try{complete(row,{text:error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:'本次处理未完成，已有操作请在App查看；查询可以稍后重试。',events:[]},error);}
+        try{complete(row,{text:(error.code==='AGENT_NOT_ENABLED'?IM_NOT_ENABLED_REPLY:channelRefusal(bank,bindingFor(row)))||'本次处理未完成，已有操作请在App查看；查询可以稍后重试。',events:[]},error);}
         catch{bank.run("UPDATE feishu_inbox SET status='interrupted',finished_at=?,lease_epoch=lease_epoch+1 WHERE id=? AND status='running' AND lease_epoch=?",Date.now(),row.id,row.lease_epoch);cancelFeedback(row.id);}
       }
     }finally{clearInterval(heartbeat);}
@@ -186,7 +191,7 @@ export function createFeishuPipeline(services,router,send,options={}) {
       for(const row of bank.all("SELECT * FROM feishu_deliveries WHERE status IN ('pending','retry_wait') AND next_at<=? ORDER BY seq LIMIT 100",Date.now())){
         if(sends.has(row.binding_id)||bank.get("SELECT 1 FROM feishu_deliveries WHERE binding_id=? AND status='sending' AND lease_until>?",row.binding_id,Date.now()))continue;
         if(bank.get("SELECT 1 FROM feishu_deliveries WHERE binding_id=? AND seq<? AND status IN ('pending','retry_wait','sending')",row.binding_id,row.seq))continue;
-        try{bindingFor(row);}catch{bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);if(row.kind==='final')stopTyping(row.request_id);continue;}
+        try{const b=bindingFor(row);requireThat(!carriesAccountData(row)||!accountUnavailable(bank,b.user_id),'账户状态暂不支持渠道查询',403,'CHANNEL_ACCOUNT_UNAVAILABLE');}catch(error){bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);if(error.code==='CHANNEL_ACCOUNT_UNAVAILABLE')notice(row);if(row.kind==='final')stopTyping(row.request_id);continue;}
         if(row.kind==='progress'&&!pending.includes(bank.get('SELECT status FROM feishu_inbox WHERE id=?',row.request_id)?.status)){bank.run("UPDATE feishu_deliveries SET status='cancelled' WHERE id=?",row.id);continue;}
         bank.run("UPDATE feishu_deliveries SET status='sending',lease_owner=?,lease_epoch=lease_epoch+1,lease_until=?,attempts=attempts+1 WHERE id=? AND status IN ('pending','retry_wait')",owner,Date.now()+sendMs+5000,row.id);
         return bank.get('SELECT * FROM feishu_deliveries WHERE id=?',row.id);

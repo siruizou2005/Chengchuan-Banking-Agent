@@ -170,6 +170,33 @@ test('基金申购执行风险匹配、起购额、申购状态与单日上限�
   assert.equal((await f.confirm((await f.create({ type: 'redeem', holdingId: 'HLEGACY', amount: '1000' })).data)).data.status, 'completed'); f.balanced();
 });
 
+test('单日申购上限按北京时间当日累计：待确认占额度，取消释放，次日重置', async t => {
+  const f = await fixture(t), yuan = c => (c / 100).toFixed(2);
+  await f.req('/risk-assessment', { answers: [4, 4, 4, 4, 4] });
+  const product = (await f.req('/products')).data.filter(p => p.purchasable && p.purchaseLimit && p.minimum * 3 <= p.purchaseLimit).sort((a, b) => a.purchaseLimit - b.purchaseLimit)[0], limit = product.purchaseLimit, part = Math.ceil(limit * 0.6);
+  const buy = amount => f.create({ type: 'investment', productId: product.id, amount: yuan(amount) });
+  const first = await buy(part); assert.equal(first.status, 201);
+  const over = await buy(part); assert.equal(over.data.error.code, 'PURCHASE_LIMIT'); assert.match(over.data.error.message, /今日已申购/);
+  await f.req(`/transactions/${first.data.id}/cancel`, {});
+  const second = await buy(part); assert.equal((await f.confirm(second.data)).data.status, 'completed');
+  const rest = await buy(limit - part); assert.equal(rest.status, 201);
+  assert.equal((await f.confirm(rest.data)).data.status, 'completed', '确认时不把自己再算一次');
+  assert.equal((await buy(product.minimum)).data.error.code, 'PURCHASE_LIMIT');
+  f.bank.run("UPDATE transactions SET completed_at=? WHERE type='investment' AND status='completed'", new Date(Date.now() - 2 * 86400000).toISOString());
+  assert.equal((await buy(limit)).status, 201, '次日额度重置');
+  f.balanced();
+});
+
+test('暂停赎回的基金不能赎回，开放赎回的不受影响', async t => {
+  const f = await fixture(t), products = (await f.req('/products')).data, past = new Date(Date.now() - 86400000).toISOString();
+  const add = (id, product) => f.bank.run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at) VALUES(?,?,?,100000,?,?)', id, f.alice.user.id, product.id, past, past);
+  add('HSUSPENDED', products.find(p => p.redeemStatus === '暂停赎回')); add('HOPEN', products.find(p => p.redeemStatus === '开放赎回'));
+  const before = (await f.state()).accounts[0].balance, refused = await f.create({ type: 'redeem', holdingId: 'HSUSPENDED', amount: '100' });
+  assert.equal(refused.status, 409); assert.equal(refused.data.error.code, 'REDEEM_UNAVAILABLE');
+  assert.equal((await f.state()).accounts[0].balance, before);
+  assert.equal((await f.confirm((await f.create({ type: 'redeem', holdingId: 'HOPEN', amount: '100' })).data)).data.status, 'completed');
+});
+
 test('贷款确认时复验额度，支持部分还款与结清', async t => {
   const f = await fixture(t);
   const first = (await f.create({ type: 'loan_draw', amount: '150000', months: 12 })).data;
@@ -223,7 +250,7 @@ test('注册新用户、收款人、客服和预约可保存且隔离', async t 
   assert.equal((await f.req(`/payees/${payee.data.id}`, {}, 'DELETE')).status, 200);
   assert.equal((await f.req('/support', { subject: '转账问题', content: '这是一个测试问题描述' })).status, 201);
   assert.equal((await f.request('/support', undefined, f.bob.token)).data.length, 0);
-  const appointment = { branch: '城中支行', service: '账户咨询', date: new Date().toISOString().slice(0, 10) };
+  const appointment = { branch: '城中支行', service: '账户咨询', date: new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10) };
   const booked = await f.req('/appointments', appointment); assert.equal(booked.status, 201); assert.equal((await f.req('/appointments', appointment)).status, 409);
   assert.equal((await f.req(`/appointments/${booked.data.id}/cancel`, {})).status, 200);
   assert.equal((await f.state()).appointments[0].status, 'cancelled');
@@ -253,6 +280,16 @@ test('SQLite重启保留用户与资金，不重复生成开户数据', () => {
   assert.equal(bank.get('SELECT COUNT(*) AS count FROM users').count, 5); bank.db.close();
 });
 
+test('旧库的流水账户手机号已变更时不重复导入，也不会启动失败', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'chengchuan-bank-test-')), 'bank.sqlite');
+  let bank = createBank(path);
+  for (const [phone, older] of [['18662995523', '17700177000'], ['15040147842', '13300133000']]) bank.run('UPDATE users SET phone=? WHERE phone=?', older, phone);
+  const before = bank.all('SELECT id,balance FROM accounts ORDER BY id'), users = bank.get('SELECT COUNT(*) AS n FROM users').n; bank.db.close();
+  bank = createBank(path);
+  assert.equal(bank.get('SELECT COUNT(*) AS n FROM users').n, users); assert.deepEqual(bank.all('SELECT id,balance FROM accounts ORDER BY id'), before);
+  bank.db.close();
+});
+
 test('导入流水使用模拟卡号，逐笔余额与原对账单一致', () => {
   const bank = createBank(':memory:');
   for (const [phone, name, rows, closing] of [['18662995523', '邹瑞', 131, 147848], ['13500135000', '万锦', 507, 568413], ['15040147842', '万奇', 472, 54]]) {
@@ -266,4 +303,20 @@ test('导入流水使用模拟卡号，逐笔余额与原对账单一致', () =>
   assert.equal(bank.get('SELECT SUM(amount) AS value FROM ledger').value, 0);
   assert.equal(bank.get("SELECT COUNT(*) AS n FROM ledger WHERE counterparty LIKE '%思瑞%' OR counterparty LIKE '%锦奇%' OR counterparty_account GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*'").n, 0);
   bank.db.close();
+});
+
+test('网点预约按北京时间判断可选日期', async t => {
+  // 07:30 on 2 Nov in Beijing is still 1 Nov in UTC, so a UTC comparison would accept yesterday.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T23:30:00Z') });
+  const f = await fixture(t);
+  const book = date => f.req('/appointments', { branch: '城中支行', service: '账户咨询', date });
+  assert.equal((await book('2026-11-01')).status, 400);
+  assert.equal((await book('2026-11-02')).status, 201);
+  assert.equal((await book('2026-12-02')).status, 201);
+  assert.equal((await book('2026-12-03')).status, 400);
+  // After 20:00 in Beijing a limit of "noon UTC within 31 days" also accepted day 31.
+  t.mock.timers.setTime(Date.parse('2026-11-01T13:00:00Z'));
+  assert.equal((await book('2026-10-31')).status, 400);
+  assert.equal((await book('2026-12-01')).status, 201);
+  assert.equal((await book('2026-12-02')).status, 400);
 });

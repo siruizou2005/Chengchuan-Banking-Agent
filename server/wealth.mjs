@@ -44,7 +44,7 @@ export function financeProfile(services, user, today = businessDate()) {
   const flows = monthlyFlows(services.bank, user.id, today);
   const holdings = { liquid: 0, stable: 0, growth: 0 };
   for (const h of state.holdings) holdings[bucketOf(h.product)] += h.value ?? h.principal;
-  const next = state.holdings.filter(h => h.product.type === 'deposit' && h.unlock_at.slice(0, 10) >= today).sort((a, b) => a.unlock_at.localeCompare(b.unlock_at))[0];
+  const next = state.holdings.filter(h => h.product.type === 'deposit' && businessDate(h.unlock_at) >= today).sort((a, b) => a.unlock_at.localeCompare(b.unlock_at))[0];
   // Money-fund holdings are as liquid as the current account, so both count toward the emergency fund.
   const target = flows.spend * EMERGENCY_MONTHS, covered = available + holdings.liquid;
   const creditCard = state.creditCard?.used || 0;
@@ -53,7 +53,7 @@ export function financeProfile(services, user, today = businessDate()) {
     available, monthlySpend: flows.spend, monthlyIncome: flows.income, monthlySurplus: flows.income - flows.spend, months: flows.months, basis: flows.basis,
     emergency: { target, min: flows.spend * EMERGENCY_MIN_MONTHS, covered, gap: Math.max(0, target - covered), months: flows.spend ? Math.floor(covered / flows.spend * 10) / 10 : null },
     commitments: { creditCard }, investable,
-    holdings: { ...holdings, total: holdings.liquid + holdings.stable + holdings.growth, nextMaturity: next ? { name: next.product.name, date: next.unlock_at.slice(0, 10), principal: next.principal } : null },
+    holdings: { ...holdings, total: holdings.liquid + holdings.stable + holdings.growth, nextMaturity: next ? { name: next.product.name, date: businessDate(next.unlock_at), principal: next.principal } : null },
   };
 }
 

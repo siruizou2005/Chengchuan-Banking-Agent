@@ -145,3 +145,28 @@ test('微信没有会话上下文时跳过并只提醒一次；收到消息后�
   await f.receive('退订账单推送','unsubscribe');await f.channels.wechat.drain();assert.match(f.state.sent.at(-1).msg.item_list[0].text_item.text,/已退订微信全部账单推送/);
   settings=(await f.call('/channels/reports')).data.wechat;assert.equal(settings.daily.enabled,false);assert.equal(settings.monthly.enabled,false);
 });
+
+test('微信总开关关闭时账单记为跳过不入队；积压的通知超期作废，重开后只发未过期的',async t=>{
+  process.env.WECHAT_ENABLED='true';t.after(()=>{delete process.env.WECHAT_ENABLED;});
+  const f=await wechatFixture(t,{wechat:{feedback:false,enabled:undefined}});await f.bind();await f.receive('你好','hello');await f.channels.wechat.drain();
+  await f.call('/channels/reports/wechat',{daily:true},'PATCH');const binding=f.binding(),replies=f.state.sent.length,slot=todaySlot();
+  process.env.WECHAT_ENABLED='false';
+  f.bank.run("UPDATE report_subscriptions SET next_at=? WHERE kind='daily'",slot);f.channels.reports.runDue(slot,{budgetMs:Infinity});
+  assert.equal(f.bank.get('SELECT count(*) n FROM channel_outbox').n,0);
+  const last=(await f.call('/channels/reports')).data.wechat.daily.last;assert.deepEqual([last.state,last.reason],['skipped','channel_disabled']);
+  const ago=ms=>new Date(Date.now()-ms).toISOString(),insert=(id,kind,at)=>f.bank.run('INSERT INTO channel_outbox(id,binding_id,body,next_at,binding_generation,binding_session_id,kind) VALUES(?,?,?,?,?,?,?)',id,binding.id,id,at,binding.binding_generation,binding.binding_session_id,kind);
+  insert('stale-report','report',ago(13*HOUR));insert('stale-result',null,ago(HOUR));insert('fresh-report','report',ago(HOUR));insert('fresh-result',null,ago(60000));
+  // They expire on the maintenance beat even while the channel stays off.
+  f.channels.prune();const status=id=>f.bank.get('SELECT status FROM channel_outbox WHERE id=?',id).status;
+  assert.deepEqual(['stale-report','stale-result','fresh-report','fresh-result'].map(status),['expired','expired','pending','pending']);
+  process.env.WECHAT_ENABLED='true';await f.channels.wechat.delivery.drain();
+  assert.deepEqual(f.state.sent.slice(replies).map(s=>s.msg.item_list[0].text_item.text.split('\n')[0]).sort(),['fresh-report','fresh-result']);
+  assert.deepEqual(['fresh-report','fresh-result'].map(status),['forwarded','forwarded']);
+});
+
+test('账户冻结时账单推送记为跳过，不入队',async t=>{
+  const f=await feishu(t);f.bind();await f.call('/channels/reports/feishu',{daily:true},'PATCH');
+  f.bank.run("UPDATE accounts SET status='frozen' WHERE user_id=? AND type='debit'",f.user.id);
+  const slot=todaySlot();f.due('daily',slot);await f.run(slot);assert.equal(f.sent.length,0);assert.equal(f.bank.get('SELECT count(*) n FROM channel_outbox').n,0);
+  const last=(await f.call('/channels/reports')).data.feishu.daily.last;assert.deepEqual([last.state,last.reason],['skipped','account_unavailable']);
+});

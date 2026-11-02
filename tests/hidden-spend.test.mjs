@@ -124,3 +124,64 @@ test('隐形消费：需开通智能助手和读取授权，清空助手数据�
   assert.equal((await f.call('/agent/enrollment/disable', { clearData: true, pin: '123456' })).status, 200);
   assert.equal(f.bank.all('SELECT 1 FROM hidden_spend_analyses').length, 0);
 });
+
+test('隐形消费：当月流水不变时，隔天打开和改分类都不重新调模型', async t => {
+  const f = await fixture(t, { products: { remote: false } });
+  const account = f.services.accountFor(f.user).id, realNow = Date.now();
+  const period = new Date(realNow + 8 * 3600000).toISOString().slice(0, 7);
+  f.bank.post('HIDDEN-NOW', account, 'system', 1200, '消费 · 瑞幸咖啡', 'payment', new Date(realNow - 3600000).toISOString());
+  f.queue.push(answer({ summary: '有一笔', findings: [{ type: 'other', reason: '咖啡', rows: [0] }], tips: [] }));
+  const first = await f.call('/ledger/bills/hidden', { period });
+  assert.ok(first.data.total > 0);
+  const calls = f.requests.length, row = f.bank.get("SELECT l.id FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE l.transaction_id='HIDDEN-NOW' AND a.user_id=?", f.user.id);
+  assert.equal((await f.call(`/ledger/${row.id}/category`, { category: '其他消费' }, 'PUT')).status, 200);
+  assert.deepEqual((await f.call('/ledger/bills/hidden', { period })).data, first.data);
+  assert.equal(f.requests.length, calls);
+  const RealDate = globalThis.Date, offset = 86400000;
+  globalThis.Date = class extends RealDate { constructor(...args) { if (args.length) super(...args); else super(RealDate.now() + offset); } static now() { return RealDate.now() + offset; } };
+  t.after(() => { globalThis.Date = RealDate; });
+  const session = (await f.req('/auth/login', { phone: f.user.phone, password: 'Bank123456' })).data;
+  const again = await f.req('/ledger/bills/hidden', { period }, session.token);
+  globalThis.Date = RealDate;
+  assert.deepEqual(again.data, first.data);
+  assert.equal(f.requests.length, calls);
+});
+
+test('隐形消费：发现全部无效或回答被截断时报错且不留存，之后可以重新分析', async t => {
+  const { f, analyze } = await setup(t);
+  f.queue.push(answer({ summary: '有两项', findings: [{ type: '订阅', reason: 'x', rows: ['0'] }, { type: 'auto_renew', reason: 'x', rows: [99] }], tips: ['看看'] }));
+  assert.equal((await analyze()).data.error.code, 'HIDDEN_ANALYSIS_INVALID');
+  const cut = answer({ summary: '有一项', findings: [{ type: 'fee', reason: '手续费', rows: [0] }], tips: [] });
+  cut.choices[0].finish_reason = 'length';
+  f.queue.push(cut);
+  assert.equal((await analyze()).data.error.code, 'HIDDEN_ANALYSIS_INVALID');
+  assert.equal(f.bank.all('SELECT 1 FROM hidden_spend_analyses').length, 0);
+  f.queue.push(answer({ summary: '恢复', findings: [{ type: 'fee', reason: '手续费', rows: [0] }], tips: [] }));
+  assert.equal((await analyze()).data.total, 2500);
+});
+
+test('隐形消费：带金额、联系方式或链接的文字不显示', async t => {
+  const { f, analyze } = await setup(t);
+  const unsafe = ['每月三十多元', '约30多块', '每次5美元', '占比百分之二十', '３０元一次', '请致电400-123-4567退订', '访问 pay.example.com 退订', '加微信 abc123 退款', '回复验证码取消'];
+  f.queue.push(answer({ summary: unsafe[0], findings: [{ type: 'auto_renew', reason: unsafe[1], rows: [0] }], tips: [...unsafe.slice(2), '多元化消费可以分类记录'] }));
+  const { data } = await analyze();
+  assert.equal(data.summary, '');
+  assert.equal(data.groups[0].findings[0].reason, '');
+  // Only three tips are read, and each of them is unsafe.
+  assert.deepEqual(data.tips, []);
+  for (const text of unsafe) {
+    f.bank.post('HIDDEN-X' + unsafe.indexOf(text), f.services.accountFor(f.user).id, 'system', 100, '消费 · 文字检查' + unsafe.indexOf(text), 'payment', '2020-06-20T02:00:00Z');
+    f.queue.push(answer({ summary: text, findings: [{ type: 'other', reason: '正常理由', rows: [0] }], tips: [] }));
+    assert.equal((await analyze()).data.summary, '', text);
+  }
+  f.bank.post('HIDDEN-OK', f.services.accountFor(f.user).id, 'system', 100, '消费 · 文字检查通过', 'payment', '2020-06-21T02:00:00Z');
+  f.queue.push(answer({ summary: '多元化消费可以分类记录', findings: [{ type: 'other', reason: '正常理由', rows: [0] }], tips: [] }));
+  assert.equal((await analyze()).data.summary, '多元化消费可以分类记录');
+});
+
+test('隐形消费：流水超出模型输入或行数上限时直接说明，不提示开始新对话', async t => {
+  const { f, analyze } = await setup(t, { inference: { maxInputTokens: 2000 } });
+  const bad = await analyze();
+  assert.deepEqual([bad.status, bad.data.error.code], [422, 'HIDDEN_ANALYSIS_TOO_LARGE']);
+  assert.equal(f.requests.length, 0);
+});

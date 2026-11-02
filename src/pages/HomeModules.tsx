@@ -16,12 +16,14 @@ const beijingToday = () => new Date(Date.now() + 8 * 3600000).toISOString().slic
 
 function useReport(preset: string) {
   const { data } = useBank(), latest = data.ledger[0]?.id;
-  const [report, setReport] = useState<Report | null>(null), [error, setError] = useState(false);
+  const [report, setReport] = useState<Report | null>(null), [error, setError] = useState(false), [retry, setRetry] = useState(0);
   useEffect(() => {
     let alive = true;
     api<{ report: Report }>(`/ledger/report?preset=${preset}`).then(r => { if (alive) { setReport(r.report); setError(false); } }).catch(() => { if (alive) setError(true); });
     return () => { alive = false; };
-  }, [preset, beijingToday(), latest]);
+  }, [preset, beijingToday(), latest, retry]);
+  // A failed read tries again with the next snapshot; a good one reloads only for a new ledger row.
+  useEffect(() => { if (error) setRetry(n => n + 1); }, [data]);
   return { report, error };
 }
 

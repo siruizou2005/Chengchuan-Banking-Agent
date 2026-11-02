@@ -56,7 +56,7 @@ export function migrateModularMemory(db) {
   `);
   if(!db.prepare('PRAGMA table_info(memory_context_metrics)').all().some(c=>c.name==='sqlite_ms'))db.exec('ALTER TABLE memory_context_metrics ADD COLUMN sqlite_ms REAL NOT NULL DEFAULT 0');
   if(!db.prepare('PRAGMA table_info(behavior_events)').all().some(c=>c.name==='run_id'))db.exec('ALTER TABLE behavior_events ADD COLUMN run_id TEXT');
-  // Covers explicit unbind, upstream credential loss, password/account triggers and binding rotation.
+  // Covers explicit unbind, upstream credential loss, password triggers and binding rotation.
   // Database-level fencing also invalidates a Web inference running in another worker.
   db.exec(`CREATE TRIGGER IF NOT EXISTS memory_channel_revoked AFTER UPDATE OF auth_state,status,binding_session_id,user_id ON channel_bindings
     WHEN OLD.auth_state='valid' AND (NEW.auth_state<>'valid' OR NEW.status<>'active' OR NEW.binding_session_id<>OLD.binding_session_id OR NEW.user_id<>OLD.user_id)

@@ -67,7 +67,8 @@ risk storage, exported to the Agent, or written to logs.
 
 Existing session cookie/Bearer authentication and same-origin write protection apply.
 Writes/reviews have per-user rate limiting. Errors include 400 invalid schema, 403 resource
-or authorization denial, 409 stale version/state, 429 throttling and 503 risk unavailable.
+or authorization denial, 404 `RECIPIENT_NOT_FOUND` for an in-bank payee whose card does not
+exist, 409 stale version/state, 429 throttling and 503 risk unavailable.
 
 | Method/path | Body or response |
 | --- | --- |
@@ -78,7 +79,7 @@ or authorization denial, 409 stale version/state, 429 throttling and 503 risk un
 | PATCH `/v1/transfers/drafts/:id` | `{version,...changedDraftFields}`; revokes all old approvals |
 | POST `/v1/transfers/drafts/:id/approval-intents` | `{version,payloadHash}`; returns challenge and optional verificationActionId |
 | POST `/v1/transfers/drafts/:id/approve` | `{challengeId,version,payloadHash,pin,verificationToken?}` |
-| POST `/v1/transfers/drafts/:id/cancel` | `{}`; only before provider submission |
+| POST `/v1/transfers/drafts/:id/cancel` | `{}`; only before provider submission; a lapsed draft returns as EXPIRED |
 | GET `/v1/transfers/:id/status` | Separates approved, pending and settled states |
 | GET `/v1/risk/flags` | Own flag IDs/lifecycle, no detector thresholds |
 | POST `/v1/risk/appeals` | `{flagId,rationale}` |
@@ -97,9 +98,14 @@ An unknown provider outcome stays PENDING, including across process restart. Mai
 reconciles by provider key. It never reports success merely because approval succeeded.
 
 Flags transition OPEN → UNDER_REVIEW → CONFIRMED / FALSE_POSITIVE / RESOLVED;
-temporary active flags expire after seven days. Confirmation requires next review time.
-Every review requires rationale and reviewer identity. Appeals are recorded; there is no
-invented review SLA. An unresolved draft points to the existing support page.
+OPEN and UNDER_REVIEW flags expire after seven days. Confirmation requires next review time:
+a CONFIRMED flag stays in force past that time and returns to the reviewer queue when due,
+and only a review closes it (CONFIRMED → UNDER_REVIEW, which restarts the seven days).
+Confirming a flag, or a later HOLD_REVIEW/BLOCK on the same concern, raises its payee link to
+HIGH, so confirmed fraud blocks further payments to that payee whatever the first decision was.
+A HOLD_REVIEW or BLOCK decision and its flags stay on record even when they abort a legacy
+request. Every review requires rationale and reviewer identity. Appeals are recorded; there is
+no invented review SLA. An unresolved draft points to the existing support page.
 
 Fairness uses latest pre-approval snapshot per draft, grouped by week, policy, objective
 core action, age band and boundary cohorts 59/60, 64/65, 69/70, 79/80. Rates include

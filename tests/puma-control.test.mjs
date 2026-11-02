@@ -49,3 +49,36 @@ test('PUMA STOP revokes unsubmitted draft approval and allows owner inspection',
   assert.equal((await f.call(`/v1/transfers/drafts/${d.id}`)).data.status,'CANCELLED');
   assert.equal(f.bank.get('SELECT COUNT(*) n FROM risk_payments').n,0);
 });
+
+test('过期草稿不阻断 STOP、撤销授权和取消', async t => {
+  const f=await fixture(t), body={sourceAccountRef:f.services.accountFor(f.user).id,beneficiaryRef:f.recipient,amountMinor:10000,currency:'CNY'};
+  const create=(expired=false)=>{const d=f.services.riskDrafts.create(f.user,body);if(expired)f.bank.run("UPDATE risk_drafts SET expires_at='2020-01-01' WHERE id=?",d.id);return d.id;};
+  const status=id=>f.bank.get('SELECT status FROM risk_drafts WHERE id=?',id).status;
+  const stale=create(true), open=create();
+  const stopped=await f.call('/agent/control/stop',{});
+  assert.equal(stopped.status,200,JSON.stringify(stopped.data));assert.equal(stopped.data.stopped,true);
+  assert.equal(status(stale),'EXPIRED');assert.equal(status(open),'CANCELLED');
+  assert.equal((await f.call('/agent/control/resume',{pin:'123456'})).status,200);
+  const lapsed=create(true);
+  const revoked=await f.call('/v1/puma/consents',{scope:'agent_tools',granted:false});
+  assert.equal(revoked.status,200,JSON.stringify(revoked.data));assert.equal(status(lapsed),'EXPIRED');
+  const single=create(true);
+  const cancelled=await f.call(`/v1/transfers/drafts/${single}/cancel`,{});
+  assert.equal(cancelled.status,200,JSON.stringify(cancelled.data));assert.equal(cancelled.data.status,'EXPIRED');assert.equal(status(single),'EXPIRED');
+  const batch=[create(true),create()];
+  assert.deepEqual(f.services.riskDrafts.cancelOpen(f.user).map(d=>d.status).sort(),['CANCELLED','EXPIRED']);
+  assert.deepEqual(batch.map(status).sort(),['CANCELLED','EXPIRED']);
+});
+
+test('撤销 data_read 后不能读风险摘要', async t => {
+  const f=await fixture(t);
+  f.services.riskDrafts.create(f.user,{sourceAccountRef:f.services.accountFor(f.user).id,beneficiaryRef:f.recipient,amountMinor:10000,currency:'CNY'});
+  assert.equal((await executeTool(f.services,f.user,'get_finance_risk_summary',{})).ok,true);
+  assert.equal((await f.call('/v1/puma/consents',{scope:'data_read',granted:false})).status,200);
+  await assert.rejects(executeTool(f.services,f.user,'get_finance_risk_summary',{}),{code:'DATA_CONSENT_REQUIRED'});
+});
+
+test('工具调用 id 含特殊字符仍可执行', async t => {
+  const f=await fixture(t);
+  for(const toolCallId of ['0:call_abc|fc_def','0:call+abc=','0:'+'x'.repeat(300)])assert.equal((await executeTool(f.services,f.user,'get_overview',{},{channel:'app',toolCallId})).ok,true,toolCallId);
+});

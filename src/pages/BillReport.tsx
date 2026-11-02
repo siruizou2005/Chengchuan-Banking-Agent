@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useBank } from '../bank';
-import { InlineError } from '../ui';
+import { InlineError, Notice } from '../ui';
 import { EventCards } from '../chat/cards';
 import type { AgentEvent } from '../types';
 
 // Opened from the scheduled Feishu/WeChat reports; the numbers come from the same statistics as the message.
 export function BillReport() {
-  const { route, navigate } = useBank();
+  const { route, navigate, hidden } = useBank();
   const params = new URLSearchParams(route.split('?')[1] || ''), from = params.get('from') || '', to = params.get('to') || '';
   const fromBills = params.get('origin') === 'bills';
   const [events, setEvents] = useState<AgentEvent[] | null>(null), [range, setRange] = useState({ from, to }), [error, setError] = useState('');
@@ -19,6 +19,7 @@ export function BillReport() {
     }).catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, [from, to, fromBills]);
+  if (hidden) return <div className="page"><Notice>当前已隐藏金额</Notice></div>;
   return <div className="page">
     {events ? <EventCards events={events} /> : !error && <p role="status">正在读取账单…</p>}
     <InlineError message={error} />

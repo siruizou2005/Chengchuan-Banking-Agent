@@ -35,7 +35,7 @@ test('定期按本金逐日计息，到期后停止，不足一分的余数累�
   assert.ok(running.rows.every(r => [4520, 4521].includes(r.amount)), '1,000,000 × 1.65% / 365 ≈ 45.21 元');
 
   const matured = accrue(holding({ principal: 100000000, settled_through: start, unlock_at: ago(7) }), product, [], through);
-  assert.equal(matured.rows.at(-1).date, beijingDate(Date.now() - 7 * DAY));
+  assert.equal(matured.rows.at(-1).date, beijingDate(Date.now() - 8 * DAY), '算头不算尾：到期当日不再计息');
   assert.equal(matured.settledThrough, through, '到期后不再重复检查');
 
   let small = holding({ principal: 5000, settled_through: dateAgo(400) }), total = 0;
@@ -68,13 +68,13 @@ test('重复读取不重复记账，存量持仓首次读取自动补算', async
   const f = await fixture(t), id = f.seed('deposit-365', 10000000, 6);
   const first = (await f.call('/holdings')).data.find(h => h.id === id);
   assert.equal(first.earnings, f.bank.get('SELECT SUM(amount) AS n FROM holding_earnings WHERE holding_id=?', id).n);
-  assert.equal(f.bank.get('SELECT COUNT(*) AS n FROM holding_earnings WHERE holding_id=?', id).n, 5);
+  assert.equal(f.bank.get('SELECT COUNT(*) AS n FROM holding_earnings WHERE holding_id=?', id).n, 6);
   assert.equal(first.value, 10000000 + first.earnings);
   assert.ok(first.yesterdayEarning > 0);
   assert.equal(first.accrual_carry, undefined);
   await f.call('/holdings'); await f.call('/dashboard');
   assert.equal(f.bank.get('SELECT earnings FROM holdings WHERE id=?', id).earnings, first.earnings);
-  assert.equal(f.bank.get('SELECT COUNT(*) AS n FROM holding_earnings WHERE holding_id=?', id).n, 5);
+  assert.equal(f.bank.get('SELECT COUNT(*) AS n FROM holding_earnings WHERE holding_id=?', id).n, 6);
   const snapshot = (await f.call('/dashboard')).data;
   assert.equal(snapshot.earningsSummary.total, f.bank.get('SELECT SUM(amount) AS n FROM holding_earnings WHERE user_id=?', f.user.id).n);
 });
@@ -105,6 +105,19 @@ test('部分赎回按比例拆分，全额赎回清零，到账金额和明细�
   assert.deepEqual({ ...gone }, { principal: 0, earnings: 0 });
   assert.ok(!(await f.call('/holdings')).data.some(h => h.id === id));
   assert.equal((await f.call('/wealth/earnings?view=all')).data.summary.total > 0, true, '赎回后收益明细保留');
+});
+
+test('定期算头不算尾：持有多少天计多少天，到期当日支取不少一天', async t => {
+  const f = await fixture(t), matured = f.seed('deposit-90', 10000000, 90, 0), early = f.seed('deposit-365', 10000000, 10), today = f.seed('deposit-365', 10000000, 0), over = f.seed('deposit-90', 10000000, 120, -30);
+  const holdings = (await f.call('/holdings')).data, days = id => f.bank.get('SELECT COUNT(*) AS n FROM holding_earnings WHERE holding_id=?', id).n;
+  assert.deepEqual([matured, early, today, over].map(days), [90, 10, 0, 90]);
+  const balance = () => f.bank.get("SELECT balance FROM accounts WHERE user_id=? AND type='debit'", f.user.id).balance, start = balance();
+  const value = holdings.find(h => h.id === matured).value;
+  assert.ok(Math.abs(value - (10000000 + 10000000 * 0.0135 / 365 * 90)) <= 1, '90 天利息足额');
+  assert.equal((await redeem(f, matured, (value / 100).toFixed(2))).data.status, 'completed');
+  assert.equal(balance(), start + value);
+  assert.deepEqual({ ...f.bank.get('SELECT principal,earnings FROM holdings WHERE id=?', matured) }, { principal: 0, earnings: 0 });
+  assert.equal(holdings.find(h => h.id === early).yesterdayEarning > 0, true);
 });
 
 test('基金亏损时全额赎回按持有金额到账', async t => {

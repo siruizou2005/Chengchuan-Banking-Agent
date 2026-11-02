@@ -149,7 +149,7 @@
 .session-row .btn-text.danger { color: var(--red); }
 
 /* 理财配置建议：步骤条、应急资金进度、三段分配条（流动/稳健/进取固定配色，段间 2px 间隔） */
-.advice-card.busy { opacity: .6; pointer-events: none; transition: opacity .15s; }
+.advice-card.busy { opacity: .6; transition: opacity .15s; }
 .advice-steps { display: flex; gap: 6px; margin: 0 0 4px; padding: 0; list-style: none; font-size: 12px; color: var(--muted, #687786); }
 .advice-steps li { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .advice-steps li + li::before { content: ""; flex: 0 0 10px; height: 1px; background: var(--line, #e8edf3); }

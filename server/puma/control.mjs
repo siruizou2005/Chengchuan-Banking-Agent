@@ -34,7 +34,7 @@ export function createAgentControl(bank, services, drafts) {
       for (const a of bank.all("SELECT id FROM agent_actions WHERE user_id=? AND tool<>'risk_transfer_approval' AND status IN ('proposed','confirmed','awaiting_verification')", user.id)) services.cancel(user, a.id);
       bank.run("UPDATE scheduled_tasks SET status='cancelled' WHERE user_id=? AND status IN ('pending','awaiting_verification')", user.id);
       for (const a of bank.all("SELECT DISTINCT action_id FROM operation_authorizations WHERE user_id=? AND status='active'", user.id)) services.authorization.revoke(a.action_id, 'STOP_ALL_AGENT_ACTIONS');
-      for (const d of bank.all("SELECT id FROM risk_drafts WHERE user_id=? AND status IN ('RISK_CHECKED','AWAITING_APPROVAL','USER_APPROVED','HOLD_REVIEW','BLOCKED')", user.id)) drafts.cancel(user, d.id);
+      drafts.cancelOpen(user);
       bank.audit(user.id, 'puma.agent.stopped', '', { epoch: controlState(bank, user.id).epoch });
       bank.run('INSERT INTO puma_audit(user_id,action,resource_ref,detail,created_at) VALUES(?,?,?,?,?)', user.id, 'STOP_ALL_AGENT_ACTIONS', user.id, JSON.stringify(controlState(bank, user.id)), now());
       return { ...controlState(bank, user.id), payments: bank.all('SELECT draft_id,status FROM risk_payments WHERE user_id=?', user.id), providerCancellation: 'UNSUPPORTED_BY_PROVIDER' };

@@ -1,3 +1,4 @@
+import { hasPublicCredentials } from './demo-users.mjs';
 import express from 'express';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { createBank, id, now, verifyPassword, hashPassword } from './db.mjs';
@@ -33,13 +34,14 @@ import { createOnboarding } from './agent/onboarding.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
-import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport, withCategoryTags } from './agent/analytics.mjs';
+import { addDays, enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport, withCategoryTags } from './agent/analytics.mjs';
 import { createMerchantCategories } from './agent/merchant-categories.mjs';
 import { billView } from './agent/bill-view.mjs';
 import { createHiddenSpend } from './agent/hidden-spend.mjs';
 import { reportAnomalies } from './channels/reports.mjs';
 import { canonical } from './authorization.mjs';
-import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
+import { createRateLimiter } from './rate-limit.mjs';
+import { BusinessError, fail, requireThat, hash, textField, idField, passwordField, validPin, cents } from './errors.mjs';
 export { cents } from './errors.mjs';
 const publicUser = u => ({ id: u.id, name: u.name, phone: u.phone, email: u.email ? maskEmail(u.email) : null, dailyLimit: u.daily_limit, riskLevel: u.risk_level, createdAt: u.created_at });
 const HOME_MODULES = Object.freeze(['bill_daily', 'spend_tips', 'recommend']), DEFAULT_HOME_MODULES = Object.freeze(['bill_daily', 'recommend']);
@@ -63,13 +65,17 @@ export function createApp(dbPath = ':memory:', options = {}) {
   let services;
   app.disable('x-powered-by');
   if (options.trustProxy) app.set('trust proxy', 'loopback');
-  // Only avatar uploads may exceed the normal JSON limit; the body parser skips a request that is already parsed.
+  // Only avatar uploads, chat and Feishu events may exceed the normal JSON limit; the body parser skips a request that is already parsed.
   app.post('/api/me/avatar', express.json({ limit: '256kb' }));
+  // The chat budget is 12000 characters, which is 36KB of Chinese before the JSON around it.
+  app.post(['/api/agent/chat', '/api/chat'], express.json({ limit: '64kb' }));
+  // Feishu allows 150KB of text and the event arrives encrypted; an oversized message must get an answer, not a 413 and retries.
+  app.post('/api/channels/feishu/events/:id', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: '32kb' }));
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     res.set('X-Content-Type-Options', 'nosniff');
-    if (['POST', 'PATCH', 'DELETE'].includes(req.method)) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.get('origin');
       if (origin && origin !== (options.publicOrigin || `${req.protocol}://${req.get('host')}`)) return res.status(403).json({ error: { code: 'ORIGIN_REJECTED', message: '请求来源不匹配' } });
       if (req.path === '/voice/transcribe') return next();
@@ -99,21 +105,11 @@ export function createApp(dbPath = ':memory:', options = {}) {
       } catch (error) { next(error); }
     });
   };
-  const attempts = new Map();
-  function checkRate(key) {
-    const entry = attempts.get(key);
-    if (entry && entry.until < Date.now()) attempts.delete(key);
-    requireThat(!attempts.get(key) || attempts.get(key).count < 8, '尝试次数过多，请15分钟后再试', 429, 'RATE_LIMITED');
-  }
-  function badAttempt(key) {
-    if (attempts.size > 10000) attempts.clear();
-    const old = attempts.get(key);
-    attempts.set(key, { count: (old?.count || 0) + 1, until: old?.until || Date.now() + 900000 });
-  }
+  const { checkRate, badAttempt, clearRate } = createRateLimiter();
   function pin(user, value) {
     const key = `pin:${user.id}`; checkRate(key);
     if (!verifyPassword(value, user.pin_hash)) { badAttempt(key); guard.record(user.id, 'pin_failure'); audit(user.id, 'pin.rejected'); fail('支付密码不正确', 403, 'INVALID_PIN'); }
-    attempts.delete(key);
+    clearRate(key);
   }
   function startSession(userId, res) {
     const token = randomBytes(32).toString('hex');
@@ -124,6 +120,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     return { user: publicUser(get('SELECT * FROM users WHERE id=?', userId)), token, expiresAt: expires };
   }
   const accountFor = (user, accountId) => {
+    requireThat(!accountId || typeof accountId === 'string', '账户不存在', 404, 'NOT_FOUND');
     const a = accountId ? get('SELECT * FROM accounts WHERE id=? AND user_id=?', accountId, user.id) : get("SELECT * FROM accounts WHERE user_id=? AND type='debit' ORDER BY rowid LIMIT 1", user.id);
     requireThat(a, '账户不存在', 404, 'NOT_FOUND');
     return a;
@@ -173,7 +170,13 @@ export function createApp(dbPath = ':memory:', options = {}) {
         requireThat(product && product.type === (b.type === 'deposit' ? 'deposit' : 'wealth'), '产品不存在');
         requireThat(product.purchasable, `该产品当前${product.purchaseStatus || '不可申购'}`, 409, 'PRODUCT_UNAVAILABLE');
         requireThat(amount >= product.minimum, `起购金额为${money(product.minimum)}元`);
-        if (product.purchaseLimit) requireThat(amount <= product.purchaseLimit, `该产品单日申购上限为${money(product.purchaseLimit)}元`, 409, 'PURCHASE_LIMIT');
+        if (product.purchaseLimit) {
+          // The limit is per Beijing business day across this customer's purchases, including ones still awaiting confirmation.
+          const day = businessDate(b._businessAt || now());
+          const bought = all("SELECT id,status,amount,completed_at,updated_at FROM transactions WHERE user_id=? AND type='investment' AND status IN ('pending','completed') AND json_extract(payload,'$.productId')=?", user.id, product.id)
+            .filter(t => t.id !== b._excludeId && businessDate(t.status === 'completed' ? t.completed_at || t.updated_at : now()) === day).reduce((n, t) => n + t.amount, 0);
+          requireThat(bought + amount <= product.purchaseLimit, `该产品单日申购上限为${money(product.purchaseLimit)}元${bought ? `，今日已申购${money(bought)}元` : ''}`, 409, 'PURCHASE_LIMIT');
+        }
         if (product.riskLevel) {
           requireThat(user.risk_level > 0, '请先完成风险测评', 409, 'RISK_ASSESSMENT_REQUIRED');
           requireThat(user.risk_level >= product.riskLevel, `该产品为${product.risk}，高于您的风险承受等级R${user.risk_level}`, 409, 'RISK_MISMATCH');
@@ -182,10 +185,11 @@ export function createApp(dbPath = ':memory:', options = {}) {
       }
       case 'redeem': {
         earnings.settle(user.id);
-        const h = get('SELECT * FROM holdings WHERE id=? AND user_id=?', b.holdingId, user.id);
+        const h = get('SELECT * FROM holdings WHERE id=? AND user_id=?', idField(b.holdingId, '持仓编号'), user.id);
         requireThat(h && h.principal + h.earnings >= amount, h ? `可赎回金额不足，当前可赎回${money(Math.max(0, h.principal + h.earnings))}元，请重新输入` : '可赎回金额不足', 409, 'HOLDING_UNAVAILABLE');
         const product = catalog.forHolding(h);
         requireThat(product.type === 'deposit' || h.unlock_at <= now(), '产品尚未到期，暂不可赎回', 409, 'HOLDING_LOCKED');
+        requireThat(!product.redeemStatus?.includes('暂停赎回'), '该产品当前暂停赎回', 409, 'REDEEM_UNAVAILABLE');
         p.holdingId = h.id; debit = false; title = `赎回 · ${product.name}`; break;
       }
       case 'loan_draw': {
@@ -196,7 +200,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
         debit = false; title = '澄心贷 · 借款到账'; break;
       }
       case 'loan_repay': {
-        const loan = get('SELECT * FROM loans WHERE id=? AND user_id=?', b.loanId, user.id);
+        const loan = get('SELECT * FROM loans WHERE id=? AND user_id=?', idField(b.loanId, '贷款编号'), user.id);
         requireThat(loan && loan.outstanding >= amount, '还款金额超过待还本金');
         p.loanId = loan.id; title = '澄心贷 · 归还本金'; break;
       }
@@ -212,7 +216,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       }
       case 'payment': {
         const labels = { water: '水费', electricity: '电费', gas: '燃气费', mobile: '话费', broadband: '宽带费', property: '物业费', scan: '扫码付款', merchant: '商户消费' };
-        requireThat(labels[b.billType], '请选择缴费类型');
+        requireThat(typeof b.billType === 'string' && Object.hasOwn(labels, b.billType), '请选择缴费类型');
         p.billType = b.billType;
         if (b.billType === 'merchant') { p.merchant = textField(b.merchant, '商户名称', 2, 50); title = `消费 · ${p.merchant}`; break; }
         p.billNumber = textField(b.billNumber, '缴费户号', 6, 30);
@@ -249,7 +253,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
       requireThat(e.finalAction !== 'STEP_UP' || permit.strong, '风险已变化，请完成加强验证', 403, 'SUPPLEMENTAL_VERIFICATION_REQUIRED');
     }
         const payload = JSON.parse(t.payload);
-        const { p, account } = prepare(user, { ...payload, amount: t.amount }, true);
+        const { p, account } = prepare(user, { ...payload, amount: t.amount, _excludeId: t.id, _businessAt: permit.at }, true);
         let realized = 0;
         if(t.type==='transfer')requireThat(dailyTotal(bank,user.id,t.id,businessDate(permit.at),permit.at)+t.amount<=get('SELECT daily_limit FROM users WHERE id=?',user.id).daily_limit,'已超出每日转账限额',409,'DAILY_LIMIT');
         if (p.scenario === 'bank_rejected') fail('模拟收款行拒绝入账，预留资金已释放', 409, 'BANK_REJECTED');
@@ -356,10 +360,14 @@ export function createApp(dbPath = ':memory:', options = {}) {
   registerEnrollmentRoutes(route, services);
   route('get', '/health', '服务健康状态', (_req, res) => res.json({ status: 'ok', simulation: true }), false);
   route('post', '/auth/login', '登录，返回会话 Cookie 与 Bearer Token', (req, res) => {
-    const key = `login:${req.ip}`; checkRate(key);
+    const ipKey = `login-ip:${req.ip}`; checkRate(ipKey);
     const u = get('SELECT * FROM users WHERE phone=?', String(req.body.phone || ''));
-    if (!u || !verifyPassword(req.body.password, u.password_hash)) { badAttempt(key); fail('手机号或登录密码不正确', 401, 'INVALID_CREDENTIALS'); }
-    attempts.delete(key); audit(u.id, 'session.login'); res.json(startSession(u.id, res));
+    // Counted per account too, so rotating addresses buys no extra guesses; a number nobody holds has nothing to protect.
+    const phoneKey = u && !hasPublicCredentials(u) ? `login-phone:${u.id}` : null;
+    if (phoneKey) checkRate(phoneKey);
+    if (!u || !verifyPassword(req.body.password, u.password_hash)) { badAttempt(ipKey); if (phoneKey) badAttempt(phoneKey); fail('手机号或登录密码不正确', 401, 'INVALID_CREDENTIALS'); }
+    // Only this account's count resets: clearing the address would let any login wipe the record of guesses against others.
+    if (phoneKey) clearRate(phoneKey); audit(u.id, 'session.login'); res.json(startSession(u.id, res));
   }, false, { required: ['phone', 'password'], properties: { phone: { type: 'string' }, password: { type: 'string' } } });
   // Registration proves the email first: codes then only ever go to an address its owner confirmed.
   route('post', '/auth/email-code', '注册前向邮箱发送6位验证码；example.com 等保留域名为演示，验证码直接返回', async (req, res) => {
@@ -380,9 +388,10 @@ export function createApp(dbPath = ':memory:', options = {}) {
     requireThat(/^1\d{10}$/.test(phone), '请输入11位手机号');
     requireThat(!get('SELECT id FROM users WHERE phone=?', phone), '该手机号已注册', 409, 'PHONE_EXISTS');
     const name = textField(req.body.name, '姓名', 2, 20);
-    const password = textField(req.body.password, '登录密码', 8, 72);
-    requireThat(/[A-Za-z]/.test(password) && /\d/.test(password), '登录密码须包含字母和数字');
-    requireThat(/^\d{6}$/.test(req.body.pin || ''), '支付密码须为6位数字');
+    // The name reaches other customers' ledgers and their assistant's context, so it can only look like a name.
+    requireThat(/^\p{L}[\p{L}·•' -]*$/u.test(name), '姓名只能包含文字、空格和间隔号');
+    const password = passwordField(req.body.password, '登录密码');
+    requireThat(validPin(req.body.pin), '支付密码须为6位数字');
     const email = normalizeEmail(req.body.email);
     requireThat(validEmail(email), '请输入有效的邮箱地址');
     const codeId = String(req.body.emailCodeId || ''), valid = () => get('SELECT * FROM email_codes WHERE id=? AND email=? AND used=0 AND attempts<5 AND expires_at>?', codeId, email, now());
@@ -469,7 +478,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const q = key => query[key] === undefined ? undefined : String(query[key]);
     const range = q('preset') || q('period') || q('from') || q('to') ? resolveRange({ preset: q('preset'), period: q('period'), from: q('from'), to: q('to') }, businessDate()) : null;
     const rows = all(`SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=?${range ? ' AND l.created_at>=? AND l.created_at<?' : ''} ORDER BY l.created_at DESC,l.id DESC`, user.id, ...(range ? utcBounds(range) : []));
-    return selectLedger(withCategoryTags(bank, user.id, rows).map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), keyword: q('q') });
+    return selectLedger(withCategoryTags(bank, user.id, rows).map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), merchant: q('merchant'), keyword: q('q') });
   }
   route('get', '/ledger', '收支流水，支持时段（preset/period/from/to，北京时间）、方向、类型、分类与关键字过滤', (req, res) => res.json(ledgerQuery(req.user, req.query).slice(0, 2000)));
   // Same statistics as the assistant's bill card and the scheduled Feishu/WeChat reports, so their numbers agree.
@@ -548,14 +557,14 @@ export function createApp(dbPath = ':memory:', options = {}) {
   });
   route('patch', '/settings', '修改每日限额、登录密码或支付密码', (req, res) => {
     pin(req.user, req.body.pin);
+    requireThat(!hasPublicCredentials(req.user) || (req.body.newPassword === undefined && req.body.newPin === undefined), '公开演示账户不能修改登录密码和支付密码', 403, 'DEMO_CREDENTIALS_FIXED');
     const changes = {};
     if (req.body.dailyLimit !== undefined) { const limit = cents(req.body.dailyLimit); requireThat(limit <= 50000000, '每日限额最高为500,000元'); changes.daily_limit = limit; }
     if (req.body.newPassword !== undefined) {
       requireThat(verifyPassword(req.body.oldPassword, req.user.password_hash), '原登录密码不正确', 403);
-      const password = textField(req.body.newPassword, '新登录密码', 8, 72);
-      requireThat(/[A-Za-z]/.test(password) && /\d/.test(password), '新密码须包含字母和数字'); changes.password_hash = hashPassword(password);
+      changes.password_hash = hashPassword(passwordField(req.body.newPassword, '新登录密码'));
     }
-    if (req.body.newPin !== undefined) { requireThat(/^\d{6}$/.test(req.body.newPin), '新支付密码须为6位数字'); changes.pin_hash = hashPassword(req.body.newPin); }
+    if (req.body.newPin !== undefined) { requireThat(validPin(req.body.newPin), '新支付密码须为6位数字'); changes.pin_hash = hashPassword(req.body.newPin); }
     requireThat(Object.keys(changes).length, '未提供需要修改的设置');
     atomic(() => {
       const proof=directVerification.consume(req.user, '/settings', req.body);
@@ -580,8 +589,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   route('get', '/support', '查询本人的模拟客服工单', (req, res) => res.json(all('SELECT * FROM tickets WHERE user_id=? ORDER BY created_at DESC', req.user.id)));
   route('post', '/appointments', '预约模拟网点服务', (req, res) => {
     const branch = textField(req.body.branch, '网点', 2, 40), service = textField(req.body.service, '业务', 2, 40), date = textField(req.body.date, '日期');
-    const parsed = new Date(date + 'T12:00:00Z');
-    requireThat(/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0,10) === date && date >= now().slice(0, 10) && parsed.valueOf() < Date.now() + 31 * 86400000, '请选择未来30天内的有效预约日期');
+    const parsed = new Date(date + 'T12:00:00Z'), today = businessDate();
+    requireThat(/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0,10) === date && date >= today && date <= addDays(today, 30), '请选择未来30天内的有效预约日期');
     requireThat(!get("SELECT id FROM appointments WHERE user_id=? AND date=? AND status='reserved'", req.user.id, date), '当天已有预约，请先取消原预约', 409);
     const appointmentId = id('B'); run('INSERT INTO appointments(id,user_id,branch,service,date,created_at) VALUES(?,?,?,?,?,?)', appointmentId, req.user.id, branch, service, date, now());
     res.status(201).json({ id: appointmentId });
@@ -595,21 +604,25 @@ export function createApp(dbPath = ':memory:', options = {}) {
       const path = '/api' + r.path.replace(/:([a-z]+)/g, '{$1}');
       const params = [...r.path.matchAll(/:([a-z]+)/g)].map(m => ({ name: m[1], in: 'path', required: true, schema: { type: 'string' } }));
       if (r.path === '/transactions' && r.method === 'post') params.push({ name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', minLength: 8, maxLength: 100 } });
-      (paths[path] ||= {})[r.method] = { summary: r.summary, operationId: r.method + r.path.replace(/[^a-zA-Z]/g, '_'), security: r.auth ? [{ bearerAuth: [] }, { cookieAuth: [] }] : [], parameters: params, ...(['post', 'patch', 'delete'].includes(r.method) ? { requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', ...(r.schema || { additionalProperties: true }) } } } } } : {}), responses: { '200': { description: '成功；所有响应金额为整数分' }, '400': { description: '参数错误' }, '401': { description: '未认证' }, '403': { description: '密码或来源校验失败' }, '404': { description: '资源不存在或无权访问' }, '409': { description: '余额、状态或幂等冲突' }, '429': { description: '请求频率限制' } } };
+      (paths[path] ||= {})[r.method] = { summary: r.summary, operationId: r.method + r.path.replace(/[^a-zA-Z]/g, '_'), security: r.auth ? [{ bearerAuth: [] }, { cookieAuth: [] }] : [], parameters: params, ...(['post', 'put', 'patch', 'delete'].includes(r.method) ? { requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', ...(r.schema || { additionalProperties: true }) } } } } } : {}), responses: { '200': { description: '成功；所有响应金额为整数分' }, '400': { description: '参数错误' }, '401': { description: '未认证' }, '403': { description: '密码或来源校验失败' }, '404': { description: '资源不存在或无权访问' }, '409': { description: '余额、状态或幂等冲突' }, '429': { description: '请求频率限制' } } };
     }
     res.json({ openapi: '3.1.0', info: { title: '澄川银行模拟 API', version: '1.0.0', description: '全部为虚拟业务。详见项目 docs/API.md，金额输入为元字符串，输出为整数分。' }, servers: [{ url: '/' }], paths, components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' }, cookieAuth: { type: 'apiKey', in: 'cookie', name: 'bank_session' } } } });
   }, false);
   app.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } }));
+  // The body parser and the router reject a malformed request with a 4xx of their own: the client's to fix, not a server fault.
+  const REQUEST_ERRORS = { 'entity.parse.failed': ['INVALID_JSON', '请求内容不是有效的 JSON'], 'entity.too.large': ['BODY_TOO_LARGE', '请求内容过大，请缩短后重试'], 'charset.unsupported': ['UNSUPPORTED_ENCODING', '不支持的请求编码'], 'encoding.unsupported': ['UNSUPPORTED_ENCODING', '不支持的请求编码'] };
   app.use((error, _req, res, _next) => {
-    const status = error instanceof BusinessError ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
+    const business = error instanceof BusinessError, rejected = !business && error.status >= 400 && error.status < 500;
+    const status = business || rejected ? error.status : 500;
+    const [code, message] = business ? [error.code, error.message] : rejected ? REQUEST_ERRORS[error.type] || ['INVALID_REQUEST', '请求格式无效'] : ['INTERNAL_ERROR', '服务暂时不可用，请稍后重试'];
     if (status === 500) console.error('Bank API error:', redactIdentity(error.message));
     const action=_req.user&&_req.resourceId?get('SELECT decision FROM agent_actions WHERE id=? AND user_id=?',_req.resourceId,_req.user.id):null;
     const latest=error.decision||(action?.decision?JSON.parse(action.decision):null);
     const requirement=['VERIFICATION_REQUIRED','INVALID_VERIFICATION','APP_VERIFICATION_REQUIRED','SUPPLEMENTAL_VERIFICATION_REQUIRED','FACE_REQUIRED','INVALID_CODE','VERIFICATION_EXPIRED'].includes(error.code);
-    const decision=latest?(requirement?latest:{...latest,outcome:'deny',evaluatedAt:now(),reasons:[{code:error.code||'INTERNAL_ERROR',message:status===500?'服务暂时不可用':error.message}]}):null;
+    const decision=latest?(requirement?latest:{...latest,outcome:'deny',evaluatedAt:now(),reasons:[{code,message}]}):null;
     if(_req.directProof)atomic(()=>directVerification.fail(_req.user,_req.path.replace(/^\/api/,''),error));
-    if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
-    res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
+    if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code,outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
+    res.status(status).json({ error: { code, message, ...(decision?{decision}:{}) } });
   });
   return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); services.risk.expire(); riskTransfers.executor.reconcile(); services.merchantCategories.runDue(); } };
 }

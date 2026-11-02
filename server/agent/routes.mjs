@@ -6,12 +6,13 @@ export function registerAgentRoutes(route,services,agent) {
  const {bank}=services;
  const chat=async(req,res)=>{
   requireThat(!req.body.expectedUserId||req.body.expectedUserId===req.user.id,'登录账户已变化，请重新开始对话',409,'ACCOUNT_CHANGED');
+  requireThat(!req.body.sessionId||typeof req.body.sessionId==='string','会话不存在',404,'NOT_FOUND');
   const abort=new AbortController();res.on('close',()=>{if(!res.writableEnded)abort.abort();});
   res.json(await agent.runTurn({user:req.user,channel:'app',messages:req.body.messages,sessionId:req.body.sessionId,messageId:req.body.messageId||req.get('Idempotency-Key'),signal:abort.signal}));
  };
  route('post','/agent/chat','智能体工具对话',chat);route('post','/chat','兼容智能体对话',chat);
  const principal=req=>resolvePrincipal(bank,req.user,{channel:'app'});
- route('get','/agent/memory','本人画像、长期记忆与待确认项',(req,res)=>{const p=principal(req);res.json({enabled:services.memory.enabled(),profile:services.memory.profile(p),memories:services.memory.list(p)});});
+ route('get','/agent/memory','本人画像、长期记忆与待确认项',(req,res)=>{const p=principal(req);res.json({enabled:services.memory.enabled(p),profile:services.memory.profile(p),memories:services.memory.list(p)});});
  route('post','/agent/memory','保存本人明确偏好',(req,res)=>res.json(services.memory.update(principal(req),{key:req.body.key,value:req.body.value,category:req.body.category,expires_at:req.body.expires_at,module:req.body.module,memory_type:req.body.memory_type,intent:req.body.intent},{type:'explicit',messageId:id('EDIT')})));
  route('get','/agent/memory/behavior','本人行为假设与证据编号',(req,res)=>res.json(services.memoryEvolution.view(principal(req))));
  route('get','/agent/memory/behavior/:id/evidence','本人假设证据来源（无原文）',(req,res)=>res.json(services.memoryEvolution.evidenceView(principal(req),req.params.id)));
@@ -50,9 +51,10 @@ export function registerAgentRoutes(route,services,agent) {
  });res.json({ok:true});});
  route('post','/agent/unlock','支付密码解除智能体锁定',(req,res)=>{services.pin(req.user,req.body.pin);services.guard.unlock(req.user.id);res.json({ok:true});});
  route('get','/agent/splits/:id/:index','本人收到的AA收款请求',(req,res)=>{
-  const action=bank.get("SELECT * FROM agent_actions WHERE id=? AND tool='propose_split' AND status='completed'",req.params.id);
-  requireThat(action,'收款请求不存在',404);const request=JSON.parse(action.result).requests[Number(req.params.index)];requireThat(request?.toUserId===req.user.id,'收款请求不存在',404);
-  const recipient=bank.get("SELECT a.id,u.name FROM accounts a JOIN users u ON u.id=a.user_id WHERE u.id=? AND a.type='debit'",action.user_id);
-  res.json({amount:(request.amount/100).toFixed(2),recipient:recipient.id,name:recipient.name,note:JSON.parse(action.args).note||'AA分摊'});
+  // A split inside a plan runs as a scheduled task, and its links carry the task id.
+  const split=bank.get("SELECT user_id,args,result FROM agent_actions WHERE id=? AND tool='propose_split' AND status='completed'",req.params.id)||bank.get("SELECT user_id,args,result FROM scheduled_tasks WHERE id=? AND kind='propose_split' AND status='completed'",req.params.id);
+  requireThat(split,'收款请求不存在',404);const request=JSON.parse(split.result).requests[Number(req.params.index)];requireThat(request?.toUserId===req.user.id,'收款请求不存在',404);
+  const recipient=bank.get("SELECT a.id,u.name FROM accounts a JOIN users u ON u.id=a.user_id WHERE u.id=? AND a.type='debit'",split.user_id);
+  res.json({amount:(request.amount/100).toFixed(2),recipient:recipient.id,name:recipient.name,note:JSON.parse(split.args).note||'AA分摊'});
  });
 }

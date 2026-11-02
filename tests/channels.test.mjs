@@ -116,3 +116,18 @@ test('飞书专属机器人：解绑后仍可扫码自动重建，重新配置�
  await sendSigned();await f.channels.feishuPipeline.drain();assert.equal(f.requests.length,2);
  await sendSigned();await f.channels.feishuPipeline.drain();assert.equal(f.requests.length,2);
 });
+test('飞书专属机器人：助手停止或冻卡时签名回调仍返回200并回复原因，超过普通请求上限的长消息也有回复',async t=>{
+ const {f,fake}=await personalFixture(t),{state}=fake,started=(await f.call('/channels/feishu/register',{pin:'123456'})).data;
+ fake.approve({client_id:'cli_bob',client_secret:'bob-secret',user_info:{open_id:'ou_bob',tenant_brand:'feishu'}});
+ const done=await until(async()=>{const s=(await f.call(`/channels/feishu/register/${started.id}`)).data;return s.status==='confirmed'&&s;},'registration');
+ const key=state.patches[0].data.event_and_callback_encrypt_strategy.encryption_key,send=(id,text)=>f.req(`/channels/feishu/events/${done.bindingId}`,feishuEvent('ou_bob',id,text),undefined,'POST',{'x-test-key':key});
+ const reply=id=>until(()=>state.sent.find(s=>s.reply&&s.path.message_id===id),'reply '+id).then(s=>JSON.parse(s.data.content).zh_cn.content[0][0].text);
+ await f.call('/agent/control/stop',{});
+ assert.equal((await send('stopped','查余额')).status,200);assert.match(await reply('stopped'),/智能助手已停止/);
+ await f.call('/agent/control/resume',{pin:'123456'});
+ const account=f.bank.get("SELECT id FROM accounts WHERE user_id=? AND type='debit'",f.user.id).id;f.bank.run("UPDATE accounts SET status='frozen' WHERE id=?",account);
+ assert.equal((await send('frozen','查余额')).status,200);assert.match(await reply('frozen'),/账户状态暂不支持渠道查询/);
+ f.bank.run("UPDATE accounts SET status='active' WHERE id=?",account);
+ assert.equal((await send('long','查'.repeat(20000))).status,200);assert.match(await reply('long'),/仅支持不超过6000字的文字消息/);
+ assert.equal(f.requests.length,0);
+});

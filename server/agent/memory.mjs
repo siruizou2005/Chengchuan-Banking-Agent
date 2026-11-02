@@ -1,6 +1,6 @@
 import { id, now } from '../db.mjs';
 import { requireThat } from '../errors.mjs';
-import { injectionFlags } from './guard.mjs';
+import { injectionFlags, instructionLike } from './guard.mjs';
 import { assertPrincipal } from './principal.mjs';
 import { createHash } from 'node:crypto';
 import { classifyMemory, MODULES, INTENTS } from './modules.mjs';
@@ -11,7 +11,9 @@ import { consentAllowed } from '../puma/consent.mjs';
 export const PROFILE_KEYS = ['preferred_name','focus_areas','language','answer_length','analysis_style','markets','sectors','watchlist','investment_goal','investment_horizon'];
 const sensitive = /password|\bpin\b|token|secret|密码|验证码|密钥|身份证|银行卡号|\d{11,19}|sk-[\w-]+/i;
 const authoritative = /^(balance|holdings|positions|risk_level|risk_tolerance|transactions|余额|持仓|风险等级|风险承受能力)$/i;
-const clean = text => text.normalize('NFKC').trim().replace(/\s+/g,' ');
+// The key reaches the prompt next to the value but needs no evidence, so it may only be a short field name.
+const fieldName = /^[\p{Script=Han}A-Za-z0-9_-]{1,40}$/u;
+const clean =text => text.normalize('NFKC').trim().replace(/\s+/g,' ');
 const digest = text => createHash('sha256').update(text).digest('hex');
 export function boundedHistory(history, maxBytes = 24000) {
   const result=[]; let bytes=0;
@@ -33,7 +35,7 @@ export function createMemoryManager(bank, options={}) {
   function validate(key,value) {
     requireThat(typeof key==='string'&&typeof value==='string'&&key.trim().length>0&&key.length<=60&&value.trim().length>0&&value.length<=300,'记忆格式无效',400,'INVALID_MEMORY');
     key=clean(key);value=clean(value);
-    requireThat(!sensitive.test(key+' '+value)&&!authoritative.test(key)&&!injectionFlags(value).length,'此内容不能保存为偏好记忆',400,'UNSAFE_MEMORY');
+    requireThat(!sensitive.test(key+' '+value)&&!authoritative.test(key)&&fieldName.test(key)&&!instructionLike(key)&&!injectionFlags(value).length,'此内容不能保存为偏好记忆',400,'UNSAFE_MEMORY');
     if(key==='language')requireThat(['中文','English'].includes(value),'请选择中文或English',400,'INVALID_MEMORY');
     if(key==='answer_length')requireThat(['简短','适中','详细'].includes(value),'请选择简短、适中或详细',400,'INVALID_MEMORY');
     if(key==='preferred_name')requireThat(value.length<=20,'称呼不超过20个字',400,'INVALID_MEMORY');
@@ -101,6 +103,8 @@ export function createMemoryManager(bank, options={}) {
       if(source.epoch!==undefined&&source.epoch!==epoch(p))return {saved:false};
       const row={memory_id:id('MEM'),version:1},time=now();
       const meta=metadata(key,'preference',{},source.route);
+      // A superseded or lapsed row must not hold the unique slot and silently swallow a new proposal of the same value.
+      bank.run("DELETE FROM memory_candidates WHERE tenant_id=? AND user_id=? AND key=? AND value=? AND (status<>'candidate' OR expires_at<=?)",...scope(p),key,value,time);
       const inserted=bank.run(`INSERT OR IGNORE INTO memory_candidates(memory_id,tenant_id,user_id,key,value,category,source_message_id,source_channel,created_at,updated_at,expires_at)
         VALUES(?,?,?,?,?,'preference',?,?,?,?,?)`,row.memory_id,...scope(p),key,value,source.messageId,p.channel,time,time,new Date(Date.now()+30*86400000).toISOString());
       if(inserted.changes){bank.run('UPDATE memory_candidates SET module=?,memory_type=?,intent=? WHERE tenant_id=? AND user_id=? AND memory_id=?',meta.module,meta.memory_type,meta.intent,...scope(p),row.memory_id);activate(p,meta.module);log(p,row,'candidate',source.messageId);}
@@ -132,6 +136,13 @@ export function createMemoryManager(bank, options={}) {
       bank.run("UPDATE memory_candidates SET value=memory_id,status='deleted',version=version+1 WHERE tenant_id=? AND user_id=? AND key=?",...scope(p),row.key);
       invalidate(p,{key:row.key,reason:'deleted'});log(p,{...row,version:(current?.version||0)+1},'deleted');return {ok:true};
     });
+  }
+  // Starting over leaves no tombstones or old candidates that would block new suggestions or keep cleared values; the change log stays.
+  function clearAll(p) {
+    for(const table of ['agent_memory','memory_candidates']){
+      for(const row of bank.all(`SELECT memory_id,version FROM ${table} WHERE tenant_id=? AND user_id=? AND status<>'deleted'`,...scope(p)))log(p,row,'deleted');
+      bank.run(`DELETE FROM ${table} WHERE tenant_id=? AND user_id=?`,...scope(p));
+    }
   }
   function relevant(p,query) {
     return retrieval.retrieve(p,query,routeBehavior({text:query})).items;
@@ -172,5 +183,5 @@ export function createMemoryManager(bank, options={}) {
     bank.run('DELETE FROM memory_module_summaries WHERE expires_at<=?',at);
   }
   const retrieval=createModularRetriever(bank,{scope,epoch,enabled,options:options.budgets});
-  return {enabled,validate,list,profile,update,candidate,owned,confirm,remove,relevant,recent,command,cleanup,epoch,invalidate,activate,retrieve:retrieval.retrieve,setChangeListener:listener=>{onChange=listener;}};
+  return {enabled,validate,list,profile,update,candidate,owned,confirm,remove,clearAll,relevant,recent,command,cleanup,epoch,invalidate,activate,retrieve:retrieval.retrieve,setChangeListener:listener=>{onChange=listener;}};
 }

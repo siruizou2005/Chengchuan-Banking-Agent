@@ -44,9 +44,9 @@ test('未开通时对话、语音、渠道绑定都被拒绝且不调用模型�
 
   const enabled = (await f.call('/agent/enrollment', { documents: current(status.documents) })).data;
   assert.equal(enabled.status, 'enabled'); assert.equal(enabled.onboarding, 'pending');
-  assert.deepEqual(enabled.accepted.map(a => [a.id, a.version]), [['privacy', '1.1'], ['risk', '1.0'], ['service', '1.0']]);
+  assert.deepEqual(enabled.accepted.map(a => [a.id, a.version]), [['privacy', '1.1'], ['risk', '1.0'], ['service', '1.1']]);
   const [record] = audits(f, 'agent.enabled');
-  assert.deepEqual(record.detail.documents.map(d => `${d.title}@${d.version}`), ['智能助手服务协议@1.0', '个人信息处理授权书@1.1', '风险提示书@1.0']);
+  assert.deepEqual(record.detail.documents.map(d => `${d.title}@${d.version}`), ['智能助手服务协议@1.1', '个人信息处理授权书@1.1', '风险提示书@1.0']);
   assert.equal(record.detail.acceptedAt, enabled.enabledAt);
   // Accepting again is a no-op rather than a second consent record.
   await f.call('/agent/enrollment', { documents: current(status.documents) });
@@ -143,6 +143,9 @@ test('关闭并解绑渠道、清空数据需支付密码；清空删除记忆�
   assert.deepEqual(memory.profile, {}); assert.equal(memory.memories.length, 0);
   assert.equal((await f.call('/agent/sessions')).data.length, 0);
   assert.equal(f.bank.get('SELECT archived FROM agent_sessions WHERE id=?', session).archived, 1);
+  // The decision trace stays, without the conversation in it.
+  const run = f.bank.get('SELECT input,output,events,trace FROM agent_runs WHERE session_id=?', session);
+  assert.deepEqual([run.input, run.output, run.events], ['', '', '[]']);
   assert.ok(f.bank.get('SELECT COUNT(*) n FROM audit WHERE user_id=?', f.user.id).n > auditCount);
   assert.equal(f.bank.get('SELECT COUNT(*) n FROM agent_runs WHERE user_id=?', f.user.id).n, 1);
   assert.deepEqual(audits(f, 'agent.disabled').at(-1).detail, { unbindChannels: true, clearData: true, cancelledActions: 0, unboundChannels: 2 });
@@ -161,4 +164,29 @@ test('微信：关闭后新消息收到开通提示，不进入模型', async t 
   const row = f.bank.get("SELECT * FROM wechat_inbox WHERE upstream_message_id='closed-1'");
   assert.equal(row.status, 'failed'); assert.equal(JSON.parse(row.result_json).text, IM_NOT_ENABLED_REPLY);
   assert.equal(f.requests.length, 0);
+});
+
+test('清空数据同时清除飞书、微信请求记录里的消息与回复，未发出的回复不再发送', async t => {
+  const f = await wechatFixture(t, { wechat: { feedback: false } });
+  await f.bind();
+  f.channels.router.bind('feishu', 'open-alice', f.channels.router.createCode(f.user, '123456').code);
+  f.queue.push(llm([], '余额123.45元'));
+  await f.receive('查余额', 'wx-done'); await f.channels.wechat.drain();
+  // The shared bot is not running in this fixture, so this reply is still waiting to be sent.
+  f.queue.push(llm([], '余额678.90元'));
+  f.channels.feishuPipeline.ingest({ externalId: 'open-alice', messageId: 'fs-unsent', text: '查余额' }); await f.channels.feishuPipeline.drain();
+  const wx = f.bank.get("SELECT * FROM wechat_inbox WHERE upstream_message_id='wx-done'"), fs = f.bank.get("SELECT * FROM feishu_inbox WHERE message_id='fs-unsent'");
+  assert.match((await f.call(`/channels/wechat/requests/${wx.id}`)).data.result.text, /123\.45/);
+  assert.match((await f.call(`/channels/feishu/requests/${fs.id}`)).data.result.text, /678\.90/);
+  assert.equal(f.bank.get('SELECT status FROM feishu_deliveries WHERE request_id=?', fs.id).status, 'retry_wait');
+
+  assert.equal((await f.call('/agent/enrollment/disable', { clearData: true, pin: '123456' })).status, 200);
+  for (const [channel, id, status] of [['wechat', wx.id, 'completed'], ['feishu', fs.id, 'completed']]) {
+    const view = await f.call(`/channels/${channel}/requests/${id}`);
+    assert.equal(view.status, 200); assert.equal(view.data.status, status); assert.equal(view.data.result, null);
+  }
+  const wxRow = f.bank.get('SELECT * FROM wechat_inbox WHERE id=?', wx.id), wxOut = f.bank.get('SELECT * FROM wechat_deliveries WHERE request_id=?', wx.id);
+  assert.equal(wxRow.result_json, null); assert.equal(wxRow.input_cipher, null); assert.equal(wxRow.context_token_cipher, null); assert.equal(wxOut.body_cipher, null); assert.equal(wxOut.context_token_cipher, null);
+  const fsRow = f.bank.get('SELECT * FROM feishu_inbox WHERE id=?', fs.id), fsOut = f.bank.get('SELECT * FROM feishu_deliveries WHERE request_id=?', fs.id);
+  assert.equal(fsRow.result_json, null); assert.equal(fsRow.input_cipher, ''); assert.equal(fsOut.status, 'cancelled'); assert.equal(fsOut.body_cipher, ''); assert.equal(fsOut.sent_body_cipher, null);
 });

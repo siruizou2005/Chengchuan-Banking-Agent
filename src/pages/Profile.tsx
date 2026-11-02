@@ -39,7 +39,7 @@ export function Profile() {
 
 export function Security() {
   const { data, openModal, closeModal, mutate, navigate } = useBank();
-  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按 UTC 日期统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<Notice>下一步核对操作，高风险修改需完成人脸模拟、模拟手机验证码和支付密码验证。</Notice><Submit>下一步</Submit></form>);
+  const edit = (kind: string) => openModal({ limit: '每日转账限额', password: '修改登录密码', pin: '修改支付密码' }[kind]!, <form className="stack-form" onSubmit={async e => { const f = formValues(e); if (await mutate('/settings', f, '设置已更新', 'PATCH')) closeModal(); }}>{kind === 'limit' && <Field label="每日转账限额（元）" hint="最高 500,000 元，按北京时间统计"><input name="dailyLimit" type="number" min="0.01" step="0.01" max="500000" defaultValue={data.user.dailyLimit / 100} required /></Field>}{kind === 'password' && <><Field label="原登录密码"><input name="oldPassword" type="password" autoComplete="current-password" required /></Field><Field label="新登录密码" hint="8至72位，须包含字母和数字"><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></Field></>}{kind === 'pin' && <Field label="新支付密码"><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} required /></Field>}<Notice>下一步核对操作，高风险修改需完成人脸模拟、模拟手机验证码和支付密码验证。</Notice><Submit>下一步</Submit></form>);
   return <div className="page">
     <section className="card split"><div><CircleIcon icon={IcoShield} tone="blue" size={30} glyph={16} /><span>支付验证</span><b>已开启</b></div><div><CircleIcon icon={IcoClock} tone="orange" size={30} glyph={16} /><span>会话有效期</span><b>24小时</b></div></section>
     <Card title="密码与验证">
@@ -88,7 +88,7 @@ function CloseAssistant() {
 }
 
 export function Messages() {
-  const { data, mutate, route, navigate, refresh } = useBank();
+  const { data, mutate, route, navigate, refresh, hidden } = useBank();
   const selected = new URLSearchParams(route.split('?')[1] || '').get('id');
   const message = selected ? data.notifications.find(n => n.id === selected) : undefined;
   // Opening one message reads only that one; a failed mark is harmless and retried the next time it opens.
@@ -101,7 +101,7 @@ export function Messages() {
   </div>;
   return <div className="page">
     <Card title="账户通知" action="全部已读" onAction={() => void mutate('/notifications/read', {}, '全部消息已读')}>
-      {data.notifications.map(n => <button className={`message message-row${n.is_read ? ' read' : ''}`} key={n.id} data-testid="message-row" onClick={() => navigate(`messages?id=${encodeURIComponent(n.id)}`)}><CircleIcon icon={IcoBell} tone={n.is_read ? 'gray' : 'blue'} size={40} glyph={20} /><div><h3>{n.title}{!n.is_read && <i className="dot" />}</h3><p>{n.body}</p><small>{date(n.created_at)}</small></div><ChevronRight size={17} className="chevron" /></button>)}
+      {data.notifications.map(n => <button className={`message message-row${n.is_read ? ' read' : ''}`} key={n.id} data-testid="message-row" onClick={() => navigate(`messages?id=${encodeURIComponent(n.id)}`)}><CircleIcon icon={IcoBell} tone={n.is_read ? 'gray' : 'blue'} size={40} glyph={20} /><div><h3>{n.title}{!n.is_read && <i className="dot" />}</h3>{!hidden && <p>{n.body}</p>}<small>{date(n.created_at)}</small></div><ChevronRight size={17} className="chevron" /></button>)}
       {!data.notifications.length && <Empty title="暂无消息" />}
     </Card>
   </div>;

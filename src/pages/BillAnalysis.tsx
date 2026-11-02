@@ -47,15 +47,17 @@ export function HiddenAnalysis({ bill }: { bill: BillData }) {
   const { totals } = bill;
   const subscriptions = data.subscriptions;
   const [result, setResult] = useState<HiddenSpend>(), [failure, setFailure] = useState<{ message: string; needsAssistant: boolean } | null>(null), [retry, setRetry] = useState(0);
-  // Repeats are answered from the stored result, so a ledger change is the only thing that reaches the model again.
+  // Each post can be a paid model call, and polling replaces the bill object every 30s: only a new period or an explicit retry may send one.
+  const period = bill.from.slice(0, 7);
   useEffect(() => {
     let active = true;
     setFailure(null);
-    api<HiddenSpend>('/ledger/bills/hidden', 'POST', { period: bill.from.slice(0, 7) }).then(value => { if (active) setResult(value); }).catch(e => {
+    setResult(current => current?.period === period ? current : undefined);
+    api<HiddenSpend>('/ledger/bills/hidden', 'POST', { period }).then(value => { if (active) setResult(value); }).catch(e => {
       if (active) setFailure({ message: e.message || '隐形消费暂时无法分析', needsAssistant: e instanceof ApiError && e.code === 'AGENT_NOT_ENABLED' });
     });
     return () => { active = false; };
-  }, [bill, retry]);
+  }, [period, retry]);
   function evidence(finding: HiddenFinding) {
     const ids = new Set(finding.ids);
     openModal(finding.title, <div className="bill-evidence">{finding.reason && <p>{finding.reason}</p>}{bill.entries.filter(r => ids.has(r.id)).map(r =>
@@ -64,7 +66,7 @@ export function HiddenAnalysis({ bill }: { bill: BillData }) {
   const count = result?.groups.reduce((n, g) => n + g.findings.reduce((m, f) => m + f.ids.length, 0), 0);
   return <>
     <section className="bill-panel bill-summary hidden-summary"><div><Eye /><span>本月隐形消费</span><strong>{result ? money(result.total, masked) : '—'}</strong><small>{result ? `共 ${count} 笔` : failure ? '暂未分析' : '分析中'}</small></div>
-      <div><span>占本月支出</span><strong>{result && totals.consumption > 0 ? percent(result.total / totals.consumption) : '—'}</strong></div></section>
+      <div><span>占本月支出</span><strong>{result && totals.consumptionGross > 0 ? percent(result.total / totals.consumptionGross) : '—'}</strong></div></section>
     {failure ? <section className="bill-panel bill-status" role="alert"><p>{failure.message}</p>
         {failure.needsAssistant ? <button className="bill-outline" onClick={() => navigatePage('assistant')}>去开通智能助手</button> : <button className="bill-outline" onClick={() => setRetry(n => n + 1)}>重新分析</button>}</section>
       : !result ? <section className="bill-panel bill-status" role="status">正在结合近半年流水分析…</section>

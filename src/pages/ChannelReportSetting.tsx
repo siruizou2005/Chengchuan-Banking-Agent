@@ -13,7 +13,7 @@ const KINDS: { kind: Kind; title: string; note: string }[] = [
   { kind: 'monthly', title: '月报', note: '每月1日推送上月收支' },
 ];
 const STATES: Record<string, string> = { sent: '已发送', sending: '发送中', unknown: '未确认送达', failed: '未送达', missed: '已错过' };
-const REASONS: Record<string, string> = { no_context: '需先在微信给助手发一条消息', binding_unavailable: '当时未绑定', assistant_unavailable: '智能助手未开通', assistant_locked: '智能助手已锁定' };
+const REASONS: Record<string, string> = { no_context: '需先在微信给助手发一条消息', binding_unavailable: '当时未绑定', assistant_unavailable: '智能助手未开通', assistant_locked: '智能助手已锁定', channel_disabled: '微信渠道已关闭', account_unavailable: '银行卡已冻结或挂失' };
 // Choices are kept per channel like hide-amounts; reports only go out while the channel is bound.
 export function ChannelReportSetting({ channel }: { channel: Channel }) {
   const { data } = useBank();

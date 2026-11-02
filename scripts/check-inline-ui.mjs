@@ -118,10 +118,9 @@ try {
   await page.locator('.inline-surface input[name="pin"]').waitFor(); await noOverlay();
   await page.locator('.inline-surface input[name="pin"]').fill('000000');
   await page.getByRole('button', { name: '确认执行', exact: true }).click();
-  await page.getByTestId('confirm-transaction').waitFor();
+  await page.getByTestId('pin-error').waitFor();
   assert.equal(instance.bank.get('SELECT status FROM transactions WHERE id=?', txId).status, 'pending');
   assert.equal(instance.bank.get('SELECT balance FROM accounts WHERE id=?', tx.account_id).balance, before);
-  await page.getByTestId('confirm-transaction').click();
   await page.locator('.inline-surface input[name="pin"]').fill('123456');
   await page.getByRole('button', { name: '确认执行', exact: true }).click();
   await page.getByTestId('transaction-status').filter({ hasText: '交易成功' }).waitFor(); await noOverlay();

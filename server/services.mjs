@@ -8,8 +8,16 @@ import { recognizeSubscriptions, ledgerFor } from './agent/analytics.mjs';
 const parse = value => value ? JSON.parse(value) : null;
 const yuan = n => (n/100).toFixed(2);
 const labels={propose_transfer:'转账',propose_payment:'缴费/消费',propose_split:'AA收款',propose_subscribe_product:'产品申购',propose_redeem:'赎回',propose_loan_draw:'贷款提款',propose_loan_repay:'贷款还款',propose_credit_repay:'信用卡还款',propose_card_action:'卡片管理',propose_virtual_card:'虚拟卡申请',propose_set_daily_limit:'调整每日限额',propose_cancel_subscription:'取消订阅',propose_lock_funds:'资金锁定',list_subscriptions:'订阅明细查询',create_plan:'联动计划'};
+// A time without an offset is Beijing time; new Date() would read it in the process timezone, which is UTC on the server.
+function businessTime(value) {
+ if(typeof value!=='string')return NaN;
+ const text=value.trim(),m=text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/);
+ if(!m)return /\d:\d{2}.*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(text)?Date.parse(text):NaN;
+ const [y,mo,d,h,mi,s]=m.slice(1).map(x=>Number(x||0)),utc=new Date(Date.UTC(y,mo-1,d,h,mi,s));
+ return utc.getUTCMonth()===mo-1&&utc.getUTCDate()===d&&utc.getUTCHours()===h&&utc.getUTCMinutes()===mi&&utc.getUTCSeconds()===s?utc.valueOf()-8*3600000:NaN;
+}
 export function future(value) {
- const d=new Date(value);requireThat(typeof value==='string'&&Number.isFinite(d.valueOf())&&d.valueOf()>Date.now()&&d.valueOf()<Date.now()+366*86400000,'请选择未来一年内的有效时间');return d.toISOString();
+ const t=businessTime(value);requireThat(Number.isFinite(t)&&t>Date.now()&&t<Date.now()+366*86400000,'请选择未来一年内的有效时间');return new Date(t).toISOString();
 }
 export function createServices(bank,core,guard) {
  const {get,all,run,atomic,audit,notify}=bank;
@@ -34,7 +42,9 @@ export function createServices(bank,core,guard) {
    const visited=new Set(),visiting=new Set(),ordered=[];
    const visit=step=>{if(visited.has(step.id))return;requireThat(!visiting.has(step.id),'计划存在循环依赖');visiting.add(step.id);for(const dep of step.dependsOn){requireThat(ids.has(dep),'计划依赖不存在');visit(args.steps.find(s=>s.id===dep));}visiting.delete(step.id);visited.add(step.id);ordered.push(step);};
    args.steps.forEach(visit);
-   args.steps=ordered.map(s=>({...s,args:normalize(user,s.tool,s.args,expectedAt(s,ordered)),runAt:s.runAt?future(s.runAt):undefined,status:'pending'}));
+   // Normalize every step time first: they are compared as strings and assigned to business days below.
+   const timed=ordered.map(s=>({...s,runAt:s.runAt?future(s.runAt):undefined,args:{...s.args,...(s.args.scheduleAt?{scheduleAt:future(s.args.scheduleAt)}:{}),...(s.args.at?{at:future(s.args.at)}:{})}}));
+   args.steps=timed.map(s=>({...s,args:normalize(user,s.tool,s.args,expectedAt(s,timed)),status:'pending'}));
    for(const step of args.steps){if(step.tool==='propose_lock_funds')requireThat(step.args.until>expectedAt(step,args.steps),'锁定截止时间必须晚于执行时间');for(const dep of step.dependsOn){const parent=args.steps.find(s=>s.id===dep);requireThat(!step.runAt||!parent.runAt||step.runAt>=parent.runAt,'步骤时间不能早于依赖步骤');}}
    return args;
   }
@@ -77,7 +87,7 @@ export function createServices(bank,core,guard) {
   const target=args.card?['accounts','credit_cards','virtual_cards'].map(t=>get(`SELECT number FROM ${t} WHERE id=? AND user_id=?`,args.card,row.user_id)).find(Boolean):null;
   return {...row,decision:parse(row.decision),accountTail:(target||core.accountFor({id:row.user_id})).number.slice(-4),args:clean,result:redact(parse(row.result)),...(row.tool==='create_plan'?{plan:planView(get('SELECT * FROM agent_plans WHERE action_id=?',row.id))}:{})};
  }
- function planView(row){const a=row?get('SELECT authorization_until,verification_until,pause_reason FROM agent_actions WHERE id=?',row.action_id):{};return row?{...row,...a,budget:parse(row.steps).reduce((n,s)=>n+scheduledAmount(s.args,s.tool),0),steps:parse(row.steps).map(s=>{const args=redact(s.args);delete args._transaction;return {...s,args,result:redact(s.result)};})}:null;}
+ function planView(row){const a=row?get('SELECT authorization_until,verification_until,pause_reason FROM agent_actions WHERE id=?',row.action_id):{};return row?{...row,...a,budget:planReservation(parse(row.steps),row.created_at),steps:parse(row.steps).map(s=>{const args=redact(s.args);delete args._transaction;return {...s,args,result:redact(s.result)};})}:null;}
  function propose(user,tool,raw,context={}) {
   guard.assertOpen(user.id);
   return atomic(()=>{
@@ -144,15 +154,22 @@ export function createServices(bank,core,guard) {
   const at=future(args.at);run('INSERT OR IGNORE INTO scheduled_tasks(id,user_id,kind,args,run_at,created_at) VALUES(?,?,?,?,?,?)',key,user.id,'reminder',JSON.stringify({text:args.text}),at,now());audit(user.id,'reminder.created',key,{at});return {id:key,at,text:args.text};
  }
  function scheduledAmount(args,tool){return args._transaction&& !['redeem','loan_draw','credit_spend'].includes(args._transaction.type)?cents(args.amount):tool==='propose_lock_funds'?cents(args.amount):0;}
+ // A lock also funds the spending that runs after it, so those steps share it. Spending before a lock cannot draw on it and needs its own money, or the lock would fail after the payment went out.
+ function planReservation(steps,base) {
+  let total=0,pool=0;
+  for(const {s} of steps.map((s,i)=>({s,i,at:expectedAt(s,steps,base)})).sort((a,b)=>a.at.localeCompare(b.at)||a.i-b.i)){
+   const amount=scheduledAmount(s.args,s.tool);
+   if(s.tool==='propose_lock_funds'){pool+=amount;total+=amount;}else{const drawn=Math.min(pool,amount);pool-=drawn;total+=amount-drawn;}
+  }
+  return total;
+ }
  function authorizePlan(user,action,args) {
   const plan=get('SELECT * FROM agent_plans WHERE action_id=?',action.id);
-  const spending=args.steps.reduce((n,s)=>n+(s.tool==='propose_lock_funds'?0:scheduledAmount(s.args,s.tool)),0);
-  const locked=args.steps.filter(s=>s.tool==='propose_lock_funds').reduce((n,s)=>n+cents(s.args.amount),0);
   const transfers=new Map();
   for(const s of args.steps)if(s.tool==='propose_transfer'){const date=businessDate(expectedAt(s,args.steps,action.created_at));transfers.set(date,(transfers.get(date)||0)+cents(s.args.amount));}
   for(const [date,amount] of transfers)requireThat(dailyTotal(bank,user.id,action.id,date)+amount<=fresh(user).daily_limit,'计划超出该业务日的每日限额',409,'DAILY_LIMIT');
   const until=authorizationWindow(action,args);
-  reserve(user,action.id,plan.id,Math.max(spending,locked),until,`计划预授权 · ${args.title}`);
+  reserve(user,action.id,plan.id,planReservation(args.steps,action.created_at),until,`计划预授权 · ${args.title}`);
   for(const step of args.steps){
    const taskId=id('TASK');step.actionId=taskId;
    const runAt=expectedAt(step,args.steps,action.created_at);
@@ -165,11 +182,15 @@ export function createServices(bank,core,guard) {
   const binding=get("SELECT * FROM channel_bindings WHERE (id=? OR binding_session_id=?) AND user_id=? AND status='active'",action.session_id,action.session_id,action.user_id);
   if(binding){run('INSERT INTO channel_outbox(id,binding_id,body,next_at,binding_generation,binding_session_id) VALUES(?,?,?,?,?,?)',id('OUT'),binding.id,text,now(),binding.binding_generation,binding.binding_session_id);queueMicrotask(()=>services.onChannelResult?.());}
  }
+ const fromAssistant=action=>Boolean(action.run_id||action.session_id);
  function completeAction(action,result) {
+  // Bank pages finish their operations here too; only the assistant's actions carry its name or count toward its failure streak.
+  const page=action.tool==='direct_operation';
   run("UPDATE agent_actions SET status='completed',result=?,updated_at=? WHERE id=?",JSON.stringify(result),now(),action.id);
   run("UPDATE operation_authorizations SET status='completed' WHERE action_id=? AND status='active'",action.id);
-  audit(action.user_id,'agent.action.completed',action.id,{result:redact(result)});guard.record(action.user_id,'action_success');
-  notify(action.user_id,'智能助手操作完成',`${action.title}，操作编号：${action.id}`);pushResult(action,`【操作完成】${action.title}\n回单/操作编号：${result?.id||action.id}`);
+  audit(action.user_id,page?'operation.completed':'agent.action.completed',action.id,{result:redact(result)});if(!page)guard.record(action.user_id,'action_success');
+  // A settled transaction has already told the customer.
+  if(!page||!result?.type)notify(action.user_id,fromAssistant(action)?'智能助手操作完成':'操作完成',`${action.title}，操作编号：${action.id}`);pushResult(action,`【操作完成】${action.title}\n回单/操作编号：${result?.id||action.id}`);
  }
  function authorizationWindow(action,args) {
   if(action.authorization_until)return action.authorization_until;
@@ -225,11 +246,12 @@ export function createServices(bank,core,guard) {
     }
    });
   }catch(error){
-   if(!authorized){error.decision=initialDecision;audit(user.id,'authorization.rejected',action.id,{code:error.code,decision:initialDecision});throw error;}
+   // A paused channel can recover, so the action stays confirmable instead of failing for good.
+   if(!authorized||error.code==='AUTHORIZATION_PAUSED'){error.decision=initialDecision;audit(user.id,'authorization.rejected',action.id,{code:error.code,decision:initialDecision});throw error;}
    atomic(()=>{
     authorization.revoke(action.id,error.code||'EXECUTION_FAILED');run('UPDATE verifications SET used=1 WHERE action_id=?',action.id);releaseReservations(action.id);
     run("UPDATE agent_actions SET status='failed',error=?,updated_at=? WHERE id=?",error instanceof BusinessError?error.message:'执行失败',now(),action.id);
-    audit(user.id,'agent.action.failed',action.id,{error:error.code||'EXECUTION_FAILED',decision:policyDecision(user,action.tool,args,{excludeId:action.id,denial:{code:error.code||'EXECUTION_FAILED',message:error.message}})});guard.record(user.id,'action_failure');notify(user.id,'智能助手操作失败',action.title+'：'+error.message);pushResult(action,'【操作失败】'+action.title+'：'+error.message);
+    audit(user.id,'agent.action.failed',action.id,{error:error.code||'EXECUTION_FAILED',decision:policyDecision(user,action.tool,args,{excludeId:action.id,denial:{code:error.code||'EXECUTION_FAILED',message:error.message}})});guard.record(user.id,'action_failure');notify(user.id,fromAssistant(action)?'智能助手操作失败':'操作未完成',action.title+'：'+error.message);pushResult(action,'【操作失败】'+action.title+'：'+error.message);
     if(action.tool==='create_plan')run("UPDATE agent_plans SET status='failed' WHERE action_id=?",action.id);
    });
   }
@@ -266,6 +288,12 @@ export function createServices(bank,core,guard) {
   run("UPDATE scheduled_tasks SET status='awaiting_verification',error=? WHERE action_id=? AND status='pending'",reason,action.id);
   audit(user.id,'agent.action.awaiting_verification',action.id,{reason,until});notify(user.id,'定时操作需补充模拟加强验证',action.title+'：'+reason+'。请在 '+until+' 前验证。');pushResult(action,'【需回App补充模拟加强验证】'+action.title+'，编号：'+action.id);
  }
+ // Unapproved drafts the assistant or an IM channel created end with it; the effect ledger tells them apart from the App transfer page's own drafts.
+ function cancelConversationDrafts(userId,binding) {
+  const user=fresh({id:userId}),open=all(`SELECT d.id FROM risk_drafts d JOIN agent_tool_effects e ON e.effect_ref=d.id AND e.effect_type='create_transfer_draft' AND e.status='committed' WHERE d.user_id=? AND d.status IN ('RISK_CHECKED','AWAITING_APPROVAL','HOLD_REVIEW','BLOCKED') AND d.expires_at>?${binding?' AND (e.binding_id=? OR e.binding_session_id=?)':''}`,userId,now(),...(binding?[binding.id,binding.binding_session_id]:[]));
+  for(const d of open)services.riskDrafts.cancel(user,d.id);
+  return open.length;
+ }
  function cancel(user,actionId) {
   const a=owned(user,actionId);if(a.status==='cancelled')return actionView(a);
   requireThat(['proposed','confirmed','awaiting_verification'].includes(a.status),'操作已执行或结束，不能取消',409,'INVALID_STATE');
@@ -297,9 +325,11 @@ export function createServices(bank,core,guard) {
    if(plan)abortPlan({id:a.user_id},plan.id,'授权或补充验证窗口已过期','expired');
    run("UPDATE scheduled_tasks SET status='expired' WHERE action_id=? AND status IN ('pending','awaiting_verification')",a.id);
    run("UPDATE agent_actions SET status='expired',updated_at=? WHERE id=?",now(),a.id);run("UPDATE agent_plans SET status='expired' WHERE action_id=?",a.id);audit(a.user_id,'agent.action.expired',a.id);
+   // Unconfirmed proposals simply lapse, but authorized work that never ran must be reported. Plans already report through abortPlan.
+   if(a.status!=='proposed'){if(!plan)notify(a.user_id,'定时任务未完成',`${a.title}：授权窗口已结束，未执行，预留资金已释放。`);pushResult(a,`【定时操作已过期】${a.title}`);}
   });
  }
  function plans(user){return all('SELECT * FROM agent_plans WHERE user_id=? ORDER BY created_at DESC',user.id).map(planView);}
  function snapshot(user){return {agentActions:all("SELECT * FROM agent_actions WHERE user_id=? AND tool<>'risk_transfer_approval' ORDER BY created_at DESC LIMIT 100",user.id).map(actionView),agentPlans:plans(user),subscriptions:all('SELECT * FROM subscriptions WHERE user_id=?',user.id),virtualCards:all('SELECT * FROM virtual_cards WHERE user_id=?',user.id),reservations:all("SELECT * FROM reservations WHERE user_id=? AND status='active'",user.id),scheduledTasks:all('SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY run_at DESC LIMIT 100',user.id).map(t=>({...t,args:redact(parse(t.args)),result:redact(parse(t.result))})),bindings:all("SELECT id,channel,status,created_at,auth_state,connection_state,last_inbound_at,last_api_accepted_at,last_error_code,channel='feishu' AND base_url IS NOT NULL AS personal,transport='webhook' AS live FROM channel_bindings WHERE user_id=? AND status<>'setup'",user.id).map(b=>({...b,personal:Boolean(b.personal),live:Boolean(b.live)})),agentLockedUntil:fresh(user).agent_locked_until};}
- return Object.assign(services,{resolveRecipients,normalize,policy,policyDecision,recheckTask,pauseAction,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
+ return Object.assign(services,{cancelConversationDrafts,resolveRecipients,normalize,policy,policyDecision,recheckTask,pauseAction,actionView,planView,propose,owned,confirm,cancel,plans,snapshot,executeOne,releaseReservations,reserve,abortPlan,handover,reminder,completeAction,expireActions,pushResult,scheduledAmount});
 }

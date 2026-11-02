@@ -1,11 +1,11 @@
-import { validate, redact } from './guard.mjs';
+import { validate, redact, unsafeReminder } from './guard.mjs';
 import { READ_TOOLS, LOW_RISK_EFFECTS, businessDate } from './policy.mjs';
 import { ledgerFor, enrich, selectLedger, resolveRange, billReport, compactReport, spendingStats, compactStats, detectAnomalies, PRESETS, KIND_LABEL } from './analytics.mjs';
 import { runAnalysis } from './sandbox.mjs';
 import { id, now } from '../db.mjs';
 import { CATEGORY_LABEL } from '../products.mjs';
 import { wealthAdvice, compactAdvice } from '../wealth.mjs';
-import { requireThat, cents } from '../errors.mjs';
+import { requireThat, cents, hash } from '../errors.mjs';
 import { assertChannelExecution, commitToolEffect } from './execution.mjs';
 import { resolvePrincipal } from './principal.mjs';
 import { consentAllowed } from '../puma/consent.mjs';
@@ -31,14 +31,14 @@ const definitions={
  get_transactions:['查询本人交易状态',obj()],
  get_products_and_holdings:['查询定期存款与基金产品目录（基金净值和业绩来自东方财富公开数据）及本人持仓。产品较多，按category类型、maxRisk最高风险等级、keyword名称或管理人关键词筛选；sort=return按收益率从高到低。返回counts为各类数量，shown为本次列出条数',obj({category:{type:'string',enum:Object.keys(CATEGORY_LABEL)},maxRisk:{type:'integer',minimum:1,maximum:5},keyword:str(40),sort:{type:'string',enum:['return','risk']},limit:{type:'integer',minimum:1,maximum:20}})],
  get_credit_card:['查询本人信用卡',obj()],get_loans:['查询本人贷款',obj()],get_payees:['查询本人收款人簿（脱敏）',obj()],
- resolve_recipient:['按姓名、手机号、账号查找收款人；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
+ resolve_recipient:['按姓名、手机号、账号查找收款人；手机号和账号直接传你看到的遮蔽值（如****8096），服务端按用户本轮原文还原；返回脱敏候选，用recipient字段提议转账；多候选必须询问用户',obj({name:str(40),phone:str(19),account:str(19)})],
  bill_report:['生成账单报告，不传参数为本月。日报用period=YYYY-MM-DD或preset=today/yesterday，周报this_week/last_week，月报YYYY-MM或this_month/last_month，年报YYYY，也可任意from+to。返回消费（已扣退款）、转账给他人、收入、消费分类占比、商户Top5、收入来源、不计入消费的本人互转/充值提现/理财、趋势、环比与数据覆盖范围；本工具金额单位为元',obj(range)],spending_stats:['按维度统计，默认本月消费（已扣退款）。by：category分类/merchant商户/platform支付平台/month按月/week按周/day按日/weekday按星期/hour按小时；category只看某分类（如食品），keyword按商户关键词（如美团），kind可改为income/transfer_out等。时段参数同bill_report；本工具金额单位为元',obj({...range,by:{type:'string',enum:STATS_BY},kind,category:str(20),keyword:str(40),limit:{type:'integer',minimum:1,maximum:31}},['by'])],detect_anomalies:['检测异常支出（大额、深夜、首次大额、24小时同额重复），仅为模拟规则提示；可选时段，不传为全部流水',obj(range)],list_subscriptions:['提议查询本人订阅与周期扣费明细，用户授权确认前只返回查询范围',obj()],
  wealth_advice:['生成本人理财配置建议：服务端按风险测评、活期余额、近3个月收支、应急资金和资金期限确定性筛选排序产品，返回资金体检、引导步骤、分配方案及每款产品的理由。amount为拟投资金额（元，不传按建议可投资金额），horizon为资金期限：short随时可能用、mid 3-12个月、long 1年以上（不传按风险测评或由用户在卡片中选择）。推荐理财必须用本工具',obj({amount:money,horizon:{type:'string',enum:['short','mid','long']}})],
  compare_products:['按产品id对比近1/3/6/12个月收益、净值日期、费率、起购额、申购状态与风险等级（不承诺收益）',obj({ids:arr(str(),8)},['ids'])],get_risk_profile:['查询风险测评结果',obj()],get_scheduled_tasks:['查询计划与定时任务',obj()],get_cards:['查询卡片、虚拟卡、锁定资金',obj()],
  run_analysis:['只读沙箱统计，data含today（北京时间日期）、本人全部ledger（含kind、tag、bj_time及导入明细字段，金额整数分）和transactions。代码需return结果，无网络/文件访问，1秒限时',obj({purpose:str(200),code:str(12000)},['purpose','code'])],
  remember:['记录待本人确认的记忆候选；value必须原样出现在当前用户消息的evidence片段中，不得猜测日期或风险能力。优先在最终回答附memory_candidates以避免额外工具轮次',obj({key:str(60),value:str(300),evidence:str(600)},['key','value','evidence'])],recall:['读取本人已确认且有效的记忆',obj()],
  propose_transfer:['提议转账，必须使用resolve_recipient返回的recipient，确认前不会扣款',obj({recipient:str(),amount:money,note:str(100),scheduleAt:str(40)},['recipient','amount'])],
- propose_payment:['提议缴费或模拟商户消费',obj({billType:{type:'string',enum:['water','electricity','gas','mobile','broadband','property','scan','merchant']},billNumber:str(30),merchant:str(50),amount:money},['billType','amount'])],
+ propose_payment:['提议缴费或模拟商户消费；billNumber若是遮蔽值（如****8000）直接传入，服务端按用户本轮原文还原',obj({billType:{type:'string',enum:['water','electricity','gas','mobile','broadband','property','scan','merchant']},billNumber:str(30),merchant:str(50),amount:money},['billType','amount'])],
  propose_split:['提议AA收款，people为收款请求接收者的recipient，每人均分total，生成银行内收款链接',obj({total:money,people:arr(str(),20),note:str(100)},['total','people'])],
  propose_subscribe_product:['提议申购理财或定期，需要风险匹配和App加强验证',obj({productId:str(),amount:money},['productId','amount'])],
  propose_redeem:['提议赎回本人持仓',obj({holdingId:str(),amount:money},['holdingId','amount'])],
@@ -55,8 +55,10 @@ const stepArgs=Object.assign({},...Object.entries(definitions).filter(([k])=>k.s
 definitions.create_plan=['建立待一次确认的DAG计划；最多12步，tool只可为propose工具或set_reminder，runAt为ISO时间，dependsOn是步骤ID。生日安排先询问或明确展示花费、日期、商户与依赖。',obj({title:str(100),steps:arr(obj({id:str(40),title:str(100),tool:{type:'string',enum:Object.keys(definitions).filter(k=>k.startsWith('propose_')||k==='set_reminder')},args:obj(stepArgs),dependsOn:{type:'array',items:str(40),maxItems:12},runAt:str(40)},['id','title','tool','args']),12)},['title','steps'])];
 export const toolDefinitions=Object.entries(definitions).map(([name,[description,parameters]])=>({type:'function',function:{name,description,parameters}}));
 export function validateArgs(name,args) {
- requireThat(definitions[name],'未知工具',400,'UNKNOWN_TOOL');
+ requireThat(typeof name==='string'&&Object.hasOwn(definitions,name),'未知工具',400,'UNKNOWN_TOOL');
  const clean=validate(definitions[name][1],args);
+ // A reminder posts as the bank with no confirmation, so its body cannot depend on the model ignoring injected text.
+ if(name==='set_reminder')requireThat(!unsafeReminder(clean.text),'提醒内容只写要提醒的事项，不能含链接、电话或引导操作的话',400,'UNSAFE_REMINDER');
  if(name==='create_plan')clean.steps=clean.steps.map(s=>({...s,args:validateArgs(s.tool,s.args),dependsOn:s.dependsOn||[]}));
  return clean;
 }
@@ -64,7 +66,8 @@ export async function executeTool(services,user,name,raw,context={}) {
  context={...context,controlEpoch:assertAgentControl(services.bank,user.id,context.controlEpoch)};
  services.guard.assertOpen(user.id);
  if(READ_TOOLS.has(name)&&name!=='recall')requireThat(consentAllowed(services.bank,user.id,'data_read'),'助手数据读取授权已撤销或过期',403,'DATA_CONSENT_REQUIRED');
- const ref=context.toolCallId||id('TOOL');
+ // Tool call ids come from the model provider in any format; evidence keeps only an opaque reference.
+ const ref=context.toolCallId?'tool:'+hash(context.toolCallId):id('TOOL');
  const event=type=>services.puma?.evidence.ingest({user_id:user.id,type,occurred_at:now(),source:'agent',initiated_by:'AGENT',correlation_id:context.requestId||ref,resource_ref:ref,consent_scope:'security',evidence_quality:'SUFFICIENT'});
  event('AGENT_TOOL_REQUESTED');
  const result=await executeToolInternal(services,user,name,raw,context);

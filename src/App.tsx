@@ -2,7 +2,7 @@ import { RiskTransfer } from './RiskTransfer';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, Menu, Headphones, Check, CircleX, Clock3, LoaderCircle, Flame, Zap, ShieldCheck, Coins } from 'lucide-react';
 import { NavAccount, NavWealth, NavAssistant, NavBill, NavProfile } from './icons';
-import { api, ApiError, formValues, yuan, date, statusLabel, tail, transferAmountMinor } from './api';
+import { api, ApiError, formValues, retryWrongPin, yuan, date, statusLabel, tail, transferAmountMinor } from './api';
 import { BankContext, WorkspaceBank } from './bank';
 import { Brand, Field, InlineError, Modal, Notice, PinField } from './ui';
 import { DemoCode, type Delivery } from './Verify';
@@ -27,12 +27,13 @@ import { Enroll } from './chat/Enroll';
 import type { Snapshot, Transaction } from './types';
 import { BankTheme, themeForPage } from './Theme';
 import { ThemeGlyph } from './Botanical';
-import { InlinePresentation } from './InlineSurface';
+import { HiddenSlot, InlinePresentation } from './InlineSurface';
 import { featureForRoute, routePage, type Feature } from './workspace';
 
-const titles: Record<string, string> = { ...billTitles, earnings: '我的收益', 'asset-proof': '资产证明', 'risk-transfer': '核对模拟转账', personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', 'bill-report': '账单报告', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '首页', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
+const titles: Record<string, string> = { ...billTitles, 'pay-request': 'AA收款请求', earnings: '我的收益', 'asset-proof': '资产证明', 'risk-transfer': '核对模拟转账', personalization: '\u4e2a\u6027\u5316\u4e0e\u8bb0\u5fc6', 'face-return': '人脸核身结果', 'feishu-requests': '飞书请求结果', 'wechat-requests': '微信请求结果', 'bill-report': '账单报告', channels: '消息渠道绑定', tasks: '智能助手操作与计划', home: '首页', accounts: '银行卡', transfer: '转账汇款', ledger: '交易记录', transactions: '交易进度', payees: '收款人管理', receive: '收款码', scan: '扫一扫', wealth: '理财', deposit: '定期存款', loan: '澄心贷', credit: '信用卡', risk: '风险测评', advice: '理财配置建议', funds: '基金理财', life: '生活', appointments: '网点预约', support: '帮助与客服', profile: '我的', security: '安全中心', messages: '消息中心', agent: '开发者中心', assistant: '智能助手', search: '搜索', services: '全部服务' };
 const tabs = [{ id: 'home', title: '首页', icon: NavAccount }, { id: 'wealth', title: '理财', icon: NavWealth }, { id: 'assistant', title: '智能助手', icon: NavAssistant }, { id: 'bills', title: '账单', icon: NavBill }, { id: 'profile', title: '我的', icon: NavProfile }];
 const tabPages = ['wealth', 'life', 'profile'];
+const sessionExpired = (e: unknown) => e instanceof ApiError && e.status === 401 && e.code === 'UNAUTHENTICATED';
 
 export default function App() {
   const [data, setData] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [initialError, setInitialError] = useState('');
@@ -40,11 +41,14 @@ export default function App() {
   const [route, setRoute] = useState(location.hash.slice(1) || 'home');
   const [busy, setBusy] = useState(false), busyRef = useRef(false);
   const [formError, setFormError] = useState<{ message: string; code: string } | null>(null);
-  const [approval, setApproval] = useState<{ actionId?: string; title: string; resolve: (proof: ApprovalProof | null) => void } | null>(null);
-  const [modal, setModal] = useState<{ title: string; content: ReactNode } | null>(null), [tx, setTx] = useState<Transaction | null>(null);
+  const [approval, setApproval] = useState<{ actionId?: string; title: string; submitting: boolean; resolve: (proof: ApprovalProof | null) => void } | null>(null);
+  const [modal, setModal] = useState<{ title: string; content: ReactNode; hash: string } | null>(null), [tx, setTx] = useState<Transaction | null>(null);
+  // Forms keep the callbacks from the render that opened their modal, so the error path reads the live state here.
+  const overlay = useRef(false); overlay.current = Boolean(modal || tx);
   const [toastState, setToastState] = useState<{ message: string; error: boolean } | null>(null), toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hidden, setHidden] = useState(localStorage.getItem('bank-hide-balances') === 'true');
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem('bank-hide-balances') === 'true'; } catch { return false; } });
   const page = route.startsWith('feishu-requests/') ? 'feishu-requests' : route.startsWith('wechat-requests/') ? 'wechat-requests' : route.split('?')[0];
+  const pageTitle = titles[page.startsWith('pay-request/') ? 'pay-request' : page];
   // 智能助手页首次打开后保持挂载，切换标签不丢失对话；退出登录时随整个应用卸载。
   const [assistantOpened, setAssistantOpened] = useState(page === 'assistant');
   const [workspace, setWorkspace] = useState<{ route: string; feature: Feature; back: string[] } | null>(null);
@@ -81,41 +85,66 @@ export default function App() {
     if (busyRef.current) return;
     setAgentRequest({ id: Date.now(), text }); navigatePage('assistant');
   }
-  const refresh = useCallback(async () => {
+  const toast = useCallback((message: string, error = false) => { if (toastTimer.current) clearTimeout(toastTimer.current); setToastState({ message, error }); toastTimer.current = setTimeout(() => setToastState(null), error ? 6500 : 3500); }, []);
+  // A response older than the one on screen is dropped, and so is one started before the session ended: late answers must not bring old figures back.
+  const snapshotLoads = useRef({ started: 0, applied: 0 });
+  const clearSession = useCallback(() => {
+    snapshotLoads.current.applied = snapshotLoads.current.started;
+    setData(null); setModal(null); setTx(null); setFormError(null);
+    // A pending approval must settle, or the operation waiting on it keeps the app busy after the next login.
+    setApproval(current => { current?.resolve(null); return null; });
+  }, []);
+  const loadSnapshot = useCallback(async () => {
+    const loads = snapshotLoads.current, load = ++loads.started;
     const snapshot = await api<Snapshot>('/dashboard');
+    if (load <= loads.applied) return;
+    loads.applied = load;
     if (sessionUser.current && sessionUser.current !== snapshot.user.id) {
       // A different login in another tab must not inherit drafts or queued prompts.
       setWorkspace(null); setAgentRequest(null); setAssistantOpened(false); setModal(null); setTx(null); setFormError(null);
     }
     sessionUser.current = snapshot.user.id; setData(snapshot);
   }, []);
-  const toast = useCallback((message: string, error = false) => { if (toastTimer.current) clearTimeout(toastTimer.current); setToastState({ message, error }); toastTimer.current = setTimeout(() => setToastState(null), error ? 6500 : 3500); }, []);
+  const refresh = useCallback(async () => {
+    try { await loadSnapshot(); }
+    catch (e) { if (sessionExpired(e)) { clearSession(); toast((e as Error).message, true); } }
+  }, [loadSnapshot, clearSession, toast]);
   function handleError(e: unknown) {
     const message = (e as Error).message || '网络连接失败，请重试';
+    if (sessionExpired(e)) { clearSession(); toast(message, true); return; }
     setFormError({ message, code: e instanceof ApiError ? e.code : 'NETWORK_ERROR' });
-    if (e instanceof ApiError && e.status === 401 && e.code === 'UNAUTHENTICATED') { setData(null); setModal(null); setTx(null); }
-    if (!modal && !tx) toast(message, true);
+    if (!overlay.current) toast(message, true);
   }
   useEffect(() => {
-    // Page modals belong to the page they were opened on, so leaving the page closes them.
-    const sync = () => { navigated.current = true; setRoute(location.hash.slice(1) || 'home'); setModal(null); window.scrollTo(0, 0); };
+    let active = true;
+    const sync = () => {
+      navigated.current = true; setRoute(location.hash.slice(1) || 'home'); setFormError(null); window.scrollTo(0, 0);
+      // Page modals belong to the page they were opened on. This event fires late, so a modal opened since the hash changed already belongs to the new page.
+      setModal(current => current?.hash === location.hash ? current : null);
+    };
     addEventListener('hashchange', sync);
-    refresh().catch(e => { if (!(e instanceof ApiError && e.status === 401)) setInitialError(e.message); }).finally(() => setLoading(false));
-    return () => removeEventListener('hashchange', sync);
-  }, [refresh]);
-  useEffect(() => { if (!data) return; const timer = setInterval(() => { if (!document.hidden && !busyRef.current) refresh().catch(() => {}); }, 30000); return () => clearInterval(timer); }, [Boolean(data), refresh]);
-  useEffect(() => { document.title = `${titles[page] || '账户'} · 澄川银行`; }, [page]);
+    loadSnapshot().catch(e => { if (!(e instanceof ApiError && e.status === 401)) setInitialError(e.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; removeEventListener('hashchange', sync); };
+  }, [loadSnapshot]);
+  useEffect(() => { if (!data) return; const timer = setInterval(() => { if (!document.hidden && !busyRef.current) void refresh(); }, 30000); return () => clearInterval(timer); }, [Boolean(data), refresh]);
+  useEffect(() => { document.title = `${pageTitle || '账户'} · 澄川银行`; }, [pageTitle]);
+  function approved<T>(request: { actionId?: string; title: string }, submit: (proof: ApprovalProof) => Promise<T>) {
+    return retryWrongPin<ApprovalProof, T>(
+      () => new Promise(resolve => setApproval({ ...request, submitting: false, resolve })),
+      proof => { setFormError(null); setApproval(current => current && { ...current, submitting: true }); return submit(proof); },
+      e => setFormError({ message: e.message, code: e.code }),
+    ).finally(() => setApproval(null));
+  }
   async function mutate(path: string, body: unknown, success: string, method = 'POST') {
     if (busyRef.current) return false;
     busyRef.current = true; setBusy(true); setFormError(null);
     try {
       if (path === '/settings' || path === '/credit-card' || /^\/accounts\/[A-Za-z0-9]+$/.test(path)) {
         const intent = await api('/verify/intent', 'POST', { path, body });
-        const proof = await new Promise<ApprovalProof | null>(resolve => setApproval({ actionId: intent.actionId, title: intent.required ? '身份验证已完成，请输入支付密码确认本次修改。' : '请核对设置并输入支付密码确认。', resolve }));
-        if (!proof) return false;
-        body = { ...(body as Record<string, unknown>), ...proof };
-      }
-      await api(path, method, body); await refresh(); toast(success); return true;
+        const done = await approved({ actionId: intent.actionId, title: intent.required ? '身份验证已完成，请输入支付密码确认本次修改。' : '请核对设置并输入支付密码确认。' }, proof => api(path, method, { ...(body as Record<string, unknown>), ...proof }));
+        if (!done) return false;
+      } else await api(path, method, body);
+      await refresh(); toast(success); return true;
     }
     catch (e) { handleError(e); return false; }
     finally { busyRef.current = false; setBusy(false); }
@@ -146,9 +175,9 @@ export default function App() {
     try {
       const path = `/transactions/${tx.id}/confirm`;
       const intent = await api('/verify/intent', 'POST', { path, body: {} });
-      const proof = await new Promise<ApprovalProof | null>(resolve => setApproval({ actionId: intent.actionId, title: `${tx.title} ¥${yuan(tx.amount)}`, resolve }));
-      if (!proof) return;
-      const result = await api<Transaction>(path, 'POST', proof); setTx(result); await refresh();
+      const done = await approved({ actionId: intent.actionId, title: `${tx.title} ¥${yuan(tx.amount)}` }, proof => api<Transaction>(path, 'POST', proof));
+      if (!done) return;
+      setTx(done.result); await refresh();
     }
     catch (e) { handleError(e); if (tx) { const current = await api<Transaction>(`/transactions/${tx.id}`).catch(() => null); if (current) setTx(current); } }
     finally { busyRef.current = false; setBusy(false); }
@@ -160,24 +189,25 @@ export default function App() {
     catch (e) { handleError(e); }
     finally { busyRef.current = false; setBusy(false); }
   }
-  async function logout() { try { await api('/auth/logout', 'POST', {}); setData(null); setTx(null); setModal(null); setWorkspace(null); setAgentRequest(null); setAssistantOpened(false); navigatePage('home'); } catch (e) { handleError(e); } }
+  async function logout() { try { await api('/auth/logout', 'POST', {}); clearSession(); setWorkspace(null); setAgentRequest(null); setAssistantOpened(false); navigatePage('home'); } catch (e) { handleError(e); } }
   const toastElement = toastState && <div className={`toast ${toastState.error ? 'error' : ''}`} role={toastState.error ? 'alert' : 'status'}>{toastState.error ? <CircleX size={18} /> : <Check size={18} />}<span>{toastState.message}</span></div>;
   if (loading) return <div className="app-shell bank-theme theme-home loading-screen"><Brand /><LoaderCircle size={26} className="spin" /><p>正在加载…</p></div>;
-  if (!data) return <><Login initialError={initialError} onLogin={async () => { await refresh(); if (!location.hash.slice(1)) navigate('home'); }} />{toastElement}</>;
+  if (!data) return <><Login initialError={initialError} onLogin={async () => { await loadSnapshot(); if (!location.hash.slice(1)) navigate('home'); }} />{toastElement}</>;
   const pages = (pageRoute: string): Record<string, ReactNode> => ({ earnings: <Earnings />, 'asset-proof': <AssetProof />, 'risk-transfer': <RiskTransfer />, personalization: <Personalization key={data.user.id} />, 'face-return': <FaceReturn />, 'feishu-requests': <ChannelRequest />, 'wechat-requests': <ChannelRequest />, 'bill-report': <BillReport />, channels: <Channels />, tasks: <AgentTasks />, accounts: <Accounts />, transfer: <Transfer key={pageRoute} />, ledger: <LedgerPage key={pageRoute} />, transactions: <Transactions />, payees: <Payees />, receive: <Receive />, scan: <Scan />, wealth: <Wealth key={pageRoute} />, deposit: <Wealth deposits />, loan: <Loans />, credit: <Credit />, risk: <Risk />, advice: <Advice />, funds: <Funds key={pageRoute} />, life: <Life />, appointments: <Appointments />, support: <Support />, profile: <Profile />, security: <Security />, messages: <Messages />, agent: <AgentCenter />, search: <ServiceDirectory search />, services: <ServiceDirectory /> });
   const operations = <>
-    {modal && !tx && !approval && <Modal title={modal.title} onClose={() => { if (!busy) setModal(null); }}>{modal.content}</Modal>}
-    {tx && !approval && <Modal title={tx.status === 'pending' ? '确认交易' : '交易详情'} onClose={() => { if (!busy) setTx(null); }}><div className="receipt"><span className={`receipt-icon ${tx.status}`} aria-hidden="true">{tx.status === 'completed' ? <Check size={30} /> : tx.status === 'pending' ? <Clock3 size={28} /> : <CircleX size={28} />}</span><h3>{tx.title}</h3><div className="receipt-amount">¥{yuan(tx.amount)}</div><span className={`status ${tx.status}`} data-testid="transaction-status">{statusLabel[tx.status]}</span><dl><dt>付款账户</dt><dd>储蓄卡（{tail(data.accounts.find(a => a.id === tx.account_id)?.number || '')}）</dd>{tx.payload.recipientName && <><dt>收款人</dt><dd>{tx.payload.recipientName}</dd><dt>收款账号</dt><dd className="mono">{tx.payload.recipientAccount}</dd><dt>收款银行</dt><dd>{tx.payload.bank}</dd></>}{tx.payload.billNumber && <><dt>缴费户号</dt><dd>{tx.payload.billNumber}</dd></>}{tx.payload.note && <><dt>附言</dt><dd>{tx.payload.note}</dd></>}{tx.payload.months && <><dt>借款期限</dt><dd>{tx.payload.months}个月</dd></>}<dt>交易编号</dt><dd className="mono" data-testid="transaction-id">{tx.id}</dd><dt>创建时间</dt><dd>{date(tx.created_at)}</dd>{tx.status !== 'pending' && <><dt>更新时间</dt><dd>{date(tx.updated_at)}</dd></>}</dl>{tx.error && <div className="inline-error">{tx.error}</div>}{tx.status === 'pending' ? <form className="stack-form" onSubmit={e => { e.preventDefault(); void confirm(); }}><Notice>请核对交易信息并输入支付密码，本次交易有效期至 {date(tx.expires_at)}。</Notice><button className="btn-primary" disabled={busy} data-testid="confirm-transaction">{busy && <LoaderCircle size={18} className="spin" />}确认{tx.type === 'loan_draw' ? '借款' : tx.type === 'redeem' ? '赎回' : '支付'}</button><button className="btn-text" type="button" disabled={busy} onClick={cancel} data-testid="cancel-transaction">取消交易</button></form> : <button className="btn-primary" onClick={() => { setTx(null); navigate('transactions'); }}>完成</button>}</div></Modal>}
-    {approval && <Approval actionId={approval.actionId} title={approval.title} onComplete={proof => { approval.resolve(proof); setApproval(null); }} onCancel={() => { approval.resolve(null); setApproval(null); }} />}
+    {/* Stays mounted under the approval so leaving it returns to the form as it was typed. */}
+    {modal && !tx && <div style={{ display: approval ? 'none' : 'contents' }}><Modal operation title={modal.title} onClose={() => { if (!busy) { setModal(null); setFormError(null); } }}>{modal.content}</Modal></div>}
+    {tx && !approval && <Modal operation title={tx.status === 'pending' ? '确认交易' : '交易详情'} onClose={() => { if (!busy) { setTx(null); setFormError(null); } }}><div className="receipt"><span className={`receipt-icon ${tx.status}`} aria-hidden="true">{tx.status === 'completed' ? <Check size={30} /> : tx.status === 'pending' ? <Clock3 size={28} /> : <CircleX size={28} />}</span><h3>{tx.title}</h3><div className="receipt-amount">¥{yuan(tx.amount)}</div><span className={`status ${tx.status}`} data-testid="transaction-status">{statusLabel[tx.status]}</span><dl><dt>付款账户</dt><dd>储蓄卡（{tail(data.accounts.find(a => a.id === tx.account_id)?.number || '')}）</dd>{tx.payload.recipientName && <><dt>收款人</dt><dd>{tx.payload.recipientName}</dd><dt>收款账号</dt><dd className="mono">{tx.payload.recipientAccount}</dd><dt>收款银行</dt><dd>{tx.payload.bank}</dd></>}{tx.payload.billNumber && <><dt>缴费户号</dt><dd>{tx.payload.billNumber}</dd></>}{tx.payload.note && <><dt>附言</dt><dd>{tx.payload.note}</dd></>}{tx.payload.months && <><dt>借款期限</dt><dd>{tx.payload.months}个月</dd></>}<dt>交易编号</dt><dd className="mono" data-testid="transaction-id">{tx.id}</dd><dt>创建时间</dt><dd>{date(tx.created_at)}</dd>{tx.status !== 'pending' && <><dt>更新时间</dt><dd>{date(tx.updated_at)}</dd></>}</dl>{tx.error && <div className="inline-error">{tx.error}</div>}{tx.status === 'pending' ? <form className="stack-form" onSubmit={e => { e.preventDefault(); void confirm(); }}><Notice>请核对交易信息并输入支付密码，本次交易有效期至 {date(tx.expires_at)}。</Notice><button className="btn-primary" disabled={busy} data-testid="confirm-transaction">{busy && <LoaderCircle size={18} className="spin" />}确认{tx.type === 'loan_draw' ? '借款' : tx.type === 'redeem' ? '赎回' : '支付'}</button><button className="btn-text" type="button" disabled={busy} onClick={cancel} data-testid="cancel-transaction">取消交易</button></form> : <button className="btn-primary" onClick={() => { setTx(null); setFormError(null); navigate('transactions'); }}>完成</button>}</div></Modal>}
+    {approval && <Approval actionId={approval.actionId} title={approval.title} submitting={approval.submitting} onComplete={approval.resolve} onCancel={() => { setFormError(null); approval.resolve(null); }} />}
   </>;
   const billModule = Object.hasOwn(billTitles, page) || (page === 'bill-report' && new URLSearchParams(route.split('?')[1]).get('origin') === 'bills');
   const activeTab = billModule ? 'bills' : themeForPage(page);
   const isTabPage = tabPages.includes(page);
   // 理财、生活 opened from a home entry carry ?from=home and get a back arrow; opened from the tab bar they have no left control.
   const openedFromHome = new URLSearchParams(route.split('?')[1] || '').get('from') === 'home';
-  return <BankContext.Provider value={{ data, busy, route: effectiveRoute, hidden, askAgent, formError, clearFormError: () => setFormError(null), navigate, navigatePage, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content }); }, closeModal: () => setModal(null), showTransaction: (transaction) => { setFormError(null); if (page === 'assistant') { setWorkspace({ route: 'transactions', feature: 'transfer', back: [] }); location.hash = 'home'; } setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); localStorage.setItem('bank-hide-balances', String(!hidden)); } }}><BankTheme theme={activeTab}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : page === 'home' ? ' home-mode' : ''}${page !== 'home' ? ' oak-mode' : ''}${!['home', 'wealth', 'assistant', 'life', 'profile'].includes(page) ? ' oak-secondary' : ''}`}>
-    {!billModule && page !== 'home' && page !== 'assistant' && <header className="page-header">{!isTabPage || openedFromHome ? <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button> : page === 'profile' ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <span className="icon-button" aria-hidden="true" />}<h1><ThemeGlyph size={21} />{titles[page] || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
-    {assistantOpened && <div className="assistant-slot" hidden={page !== 'assistant'}>{data.agent && data.agent.status !== 'enabled' ? <Enroll key={data.user.id} /> : <ChatApp key={data.user.id} request={agentRequest} />}</div>}
+  return <BankContext.Provider value={{ data, busy, route: effectiveRoute, hidden, askAgent, formError, clearFormError: () => setFormError(null), navigate, navigatePage, refresh, begin, mutate, openModal: (title, content) => { setFormError(null); setTx(null); setModal({ title, content, hash: location.hash }); }, closeModal: () => { setModal(null); setFormError(null); }, showTransaction: (transaction) => { setFormError(null); if (page === 'assistant') { setWorkspace({ route: 'transactions', feature: 'transfer', back: [] }); location.hash = 'home'; } setTx(transaction); }, toast, logout, toggleHidden: () => { setHidden(!hidden); try { localStorage.setItem('bank-hide-balances', String(!hidden)); } catch { /* Storage can be disabled. */ } } }}><BankTheme theme={activeTab}><div className={`app-shell${page === 'assistant' ? ' assistant-mode' : page === 'home' ? ' home-mode' : ''}${page !== 'home' ? ' oak-mode' : ''}${!['home', 'wealth', 'assistant', 'life', 'profile'].includes(page) ? ' oak-secondary' : ''}`}>
+    {!billModule && page !== 'home' && page !== 'assistant' && <header className="page-header">{!isTabPage || openedFromHome ? <button className="icon-button" aria-label="返回" onClick={() => navigated.current ? history.back() : navigate('home')}><ChevronLeft size={26} /></button> : page === 'profile' ? <button className="icon-button" aria-label="全部服务" onClick={() => navigate('services')}><Menu size={24} strokeWidth={1.8} /></button> : <span className="icon-button" aria-hidden="true" />}<h1><ThemeGlyph size={21} />{pageTitle || '页面未找到'}</h1><button className="icon-button" aria-label="帮助与客服" onClick={() => navigate('support')}><Headphones size={22} strokeWidth={1.8} /></button></header>}
+    {assistantOpened && <HiddenSlot.Provider value={page !== 'assistant'}><div className="assistant-slot" hidden={page !== 'assistant'}>{data.agent && data.agent.status !== 'enabled' ? <Enroll key={data.user.id} /> : <ChatApp key={data.user.id} request={agentRequest} onRequestTaken={() => setAgentRequest(null)} />}</div></HiddenSlot.Provider>}
     <div hidden={page !== 'home'}><InlinePresentation.Provider value={true}><WorkspaceBank route={workspace?.route || 'home'}><Home
       feature={workspace?.feature} workspaceRoute={workspace?.route} title={titles[routePage(workspace?.route || '')] || '服务'}
       onSelect={selectFeature} onClose={closeWorkspace} onBack={backWorkspace} canBack={Boolean(workspace?.back.length)}

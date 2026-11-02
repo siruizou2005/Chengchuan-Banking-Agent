@@ -30,6 +30,7 @@ export function ChannelRequest() {
     {final?.some(d => ['unknown', 'failed', 'expired'].includes(d.status)) && <Notice>结果保存在 App，{channelName}送达暂未确认。无需重复提交业务。</Notice>}
     {final?.some(d => d.status === 'api_accepted') && <p className="data-note">回复已提交给{channelName}；此状态不代表手机已收到。</p>}
     {result?.result && <><Markdown text={result.result.text} /><EventCards events={result.result.events || []} /></>}
+    {result?.status === 'completed' && !result.result && <Notice>结果内容已清空。</Notice>}
     <InlineError message={error} /><button className="pill" onClick={() => navigate('channels')}>返回消息渠道绑定</button>
   </Card></div>;
 }

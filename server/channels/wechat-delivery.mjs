@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { id } from '../db.mjs';
+import { requireThat } from '../errors.mjs';
 import { bindingFor, assertLease, resultLink, wechatResultText } from './wechat-state.mjs';
 import { channelText } from './preferences.mjs';
+import { accountUnavailable } from './refusal.mjs';
 import { REPORT_DELIVERY_MS, reportDeliveryNotice } from './reports.mjs';
 
-const transient=new Set(['ack','progress']);
+const transient=new Set(['ack','progress']),ACTION_RESULT_MS=900000;
+// Refusals and command replies must reach a depositor whose card is frozen; account data must not.
+const accountData=new Set(['final','report','action_result']);
 export function createWeChatDelivery(services,crypto,send,options={}) {
   const {bank}=services,owner=randomUUID(),active=new Map(),ttl=options.sendLeaseMs||15000;
   const concurrency=options.sendConcurrency||Number(process.env.WECHAT_SEND_CONCURRENCY)||4;
@@ -12,7 +16,7 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
   let stopped=false;
   function enqueue(binding,{requestId=null,kind,body,context=null,sourceOutboxId=null,expiresMs,partIndex=0}) {
     const time=Date.now(),deliveryId=id('WXOUT');
-    const duration=expiresMs??(kind==='ack'?3000:kind==='progress'?5000:kind==='action_result'?900000:kind==='report'?REPORT_DELIVERY_MS:300000);
+    const duration=expiresMs??(kind==='ack'?3000:kind==='progress'?5000:kind==='action_result'?ACTION_RESULT_MS:kind==='report'?REPORT_DELIVERY_MS:300000);
     bank.run(`INSERT OR IGNORE INTO wechat_deliveries(id,binding_id,binding_session_id,binding_generation,request_id,kind,part_index,client_id,body_cipher,context_token_cipher,priority,next_at,expires_at,created_at,source_outbox_id)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,deliveryId,binding.id,binding.binding_session_id,binding.binding_generation,requestId,kind,partIndex,id('wx'),crypto.encrypt(body),context,kind==='progress'?3:kind==='ack'?1:0,time,time+duration,time,sourceOutboxId);
     return deliveryId;
@@ -30,8 +34,13 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
   function cancelFeedback(requestId) {
     bank.run("UPDATE wechat_deliveries SET status='cancelled' WHERE request_id=? AND kind IN ('ack','progress') AND status IN ('pending','retry_wait')",requestId);
   }
+  // Notices wait here while the channel is switched off; once their delivery window has passed they must not all arrive when it returns.
+  function expireOutbox(at=Date.now()) {
+    bank.run("UPDATE channel_outbox SET status='expired' WHERE status='pending' AND binding_id IN (SELECT id FROM channel_bindings WHERE channel='wechat') AND next_at<=CASE WHEN kind='report' THEN ? ELSE ? END",new Date(at-REPORT_DELIVERY_MS).toISOString(),new Date(at-ACTION_RESULT_MS).toISOString());
+  }
   function bridge() {
     bank.atomic(()=>{
+      expireOutbox();
       for(const out of bank.all("SELECT o.* FROM channel_outbox o JOIN channel_bindings b ON b.id=o.binding_id WHERE b.channel='wechat' AND o.status='pending' LIMIT 50")) {
         const binding=bank.get('SELECT * FROM channel_bindings WHERE id=?',out.binding_id);
         // A report belongs to the binding generation it was written for; it carries its own App link.
@@ -58,7 +67,7 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
       for(const row of bank.all("SELECT d.* FROM wechat_deliveries d WHERE d.status IN ('pending','retry_wait') AND d.next_at<=? AND d.expires_at>? ORDER BY d.priority,d.created_at,d.rowid LIMIT 100",Date.now(),Date.now())) {
         if(active.has(row.binding_id)||bank.get("SELECT 1 FROM wechat_deliveries WHERE binding_id=? AND status='sending' AND lease_until>?",row.binding_id,Date.now()))continue;
         let binding;
-        try{binding=bindingFor(bank,row);}catch{bank.run("UPDATE wechat_deliveries SET status='cancelled',safe_error_code='BINDING_UNAVAILABLE' WHERE id=?",row.id);notice(row);continue;}
+        try{binding=bindingFor(bank,row);requireThat(!accountData.has(row.kind)||!accountUnavailable(bank,binding.user_id),'账户状态暂不支持渠道查询',403,'CHANNEL_ACCOUNT_UNAVAILABLE');}catch{bank.run("UPDATE wechat_deliveries SET status='cancelled',safe_error_code='BINDING_UNAVAILABLE' WHERE id=?",row.id);notice(row);continue;}
         const inbox=row.request_id&&bank.get('SELECT * FROM wechat_inbox WHERE id=?',row.request_id);
         if(transient.has(row.kind)&&(!inbox||!['queued','running'].includes(inbox.status))){bank.run("UPDATE wechat_deliveries SET status='cancelled' WHERE id=?",row.id);continue;}
         if(!row.context_token_cipher) {
@@ -129,5 +138,5 @@ export function createWeChatDelivery(services,crypto,send,options={}) {
   async function drain(){kick();while(active.size)await Promise.all([...active.values()].map(v=>v.task));}
   async function stop(){stopped=true;for(const v of active.values())v.abort.abort();await Promise.all([...active.values()].map(v=>v.task));}
   function revoke(bindingId){for(const [key,v] of active)if(key===bindingId)v.abort.abort();bank.run("UPDATE wechat_deliveries SET status=CASE WHEN status='sending' THEN 'unknown' ELSE 'cancelled' END,needs_review=CASE WHEN status='sending' THEN 1 ELSE needs_review END,lease_epoch=lease_epoch+1 WHERE binding_id=? AND status IN ('pending','retry_wait','sending')",bindingId);}
-  return {enqueue,cancelFeedback,kick,nextDue,drain,stop,revoke,maintain,start(){stopped=false;}};
+  return {enqueue,cancelFeedback,kick,nextDue,drain,stop,revoke,maintain,expireOutbox,start(){stopped=false;}};
 }

@@ -27,6 +27,22 @@ export function redact(value) {
   };
   return visit(redactIdentity(value));
 }
+// Patterns for text written by someone else (transfer notes, payer names, merchant remarks) and for text the assistant can post with no confirmation.
+const INSTRUCTION_LIKE=/调用|指令|提示词|prompt|(?:系统|管理员|开发者|银行|官方|平台)(?:通知|消息|提示|要求|规定|指示)|(?:助手|模型|ai|assistant)[,:]*(?:请|必须|应该|需要|要)|请(?:你|助手|模型)|你(?:必须|务必|应该|需要)|set_reminder|handover_to_human|propose_[a-z_]+|create_(?:plan|transfer_draft)|resolve_recipient|run_analysis|tool_calls?/i;
+const INDUCEMENT=/安全账户|账户.{0,4}(?:异常|风险|被?冻结)|(?:立即|立刻|马上|赶快|尽快|紧急).{0,8}(?:转账|转入|汇款|打款|付款|支付|操作|处理|联系|点击|验证|登录)|(?:转账|转入|汇款|打款)(?:到|至)|点击|验证码|密码|客服电话|联系.{0,6}客服|下载|(?:扫码|二维码)(?!付款)|中奖|刷单|返利/;
+const LINK=/https?:\/\/|www\.|[\w-]+\.(?:com|cn|net|org|io|top|xyz|cc|me|vip|shop|app|link|site|online)\b/i;
+const PHONE=/\d{7,}|1\d{2}-\d{4}-\d{4}|0\d{2,3}-\d{7,8}|[48]00-\d{3}-\d{4}/;
+// Spaces and zero-width characters must not split a phrase out of these patterns.
+const squeezed=text=>text.normalize('NFKC').replace(/[\s\p{Cf}]+/gu,'');
+export const instructionLike=text=>{const t=squeezed(text);return injectionFlags(t).length>0||INSTRUCTION_LIKE.test(t)||INDUCEMENT.test(t)||LINK.test(t);};
+export const unsafeReminder=text=>instructionLike(text)||PHONE.test(squeezed(text));
+export const thirdPartyText=text=>redact(text).split(' · ').map(part=>instructionLike(part)?'[第三方内容已隐藏]':part).join(' · ');
+const THIRD_PARTY_FIELDS=new Set(['title','merchant','counterparty','memo','note','name','key','recipientName','recipientLabel','beneficiaryName','error']);
+// The model's view of data holding such text. Cards and pages keep the original for the customer.
+export function thirdPartyData(value,everyField=false) {
+  const visit=(v,field)=>typeof v==='string'?(everyField||THIRD_PARTY_FIELDS.has(field)?thirdPartyText(v):v):Array.isArray(v)?v.map(x=>visit(x,field)):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,visit(x,k)])):v;
+  return visit(value);
+}
 export function validate(schema, input, path = '参数') {
   if (schema.type === 'object') {
     requireThat(input && typeof input === 'object' && !Array.isArray(input), `${path}须为对象`);
@@ -50,6 +66,7 @@ export function unsupportedSuccess(text, completed = false) {
 export function createGuard(bank, options = {}) {
   const disabled = () => (options.disabled ?? process.env.AGENT_DISABLED === 'true');
   function locked(userId) { const u=bank.get('SELECT agent_locked_until FROM users WHERE id=?',userId); return disabled() || (u?.agent_locked_until && u.agent_locked_until > now()); }
+  // Only for work the assistant starts. Bank pages and the customer's own approvals never come through here, so stopping or locking the assistant leaves the bank usable.
   function assertOpen(userId) { assertAgentControl(bank,userId); requireThat(!locked(userId), disabled() ? '智能助手暂时关闭，请使用银行业务页面' : '智能助手已安全锁定30分钟，可在安全中心使用支付密码解除',423,'AGENT_LOCKED'); }
   function record(userId, kind) {
     bank.run('INSERT INTO agent_security(user_id,kind,created_at) VALUES(?,?,?)',userId,kind,now());
@@ -62,7 +79,7 @@ export function createGuard(bank, options = {}) {
     const threshold = ['pin_failure','code_failure'].includes(kind) ? 8 : 3;
     if (kind !== 'action_success' && count >= threshold && !locked(userId)) {
       bank.run('UPDATE users SET agent_locked_until=? WHERE id=?',new Date(Date.now()+1800000).toISOString(),userId);
-      bank.audit(userId,'agent.locked','',{kind,count}); bank.notify(userId,'智能助手安全锁定','检测到连续异常，写操作与工具调用已暂停30分钟。可前往安全中心解除。');
+      bank.audit(userId,'agent.locked','',{kind,count}); bank.notify(userId,'智能助手安全锁定','检测到连续异常，助手的工具调用与提议已暂停30分钟，银行页面业务不受影响。到期的定时任务和订阅代扣暂缓，解除后继续。可前往安全中心解除。');
     }
   }
   function unlock(userId) { bank.atomic(()=>{bank.run('UPDATE users SET agent_locked_until=NULL WHERE id=?',userId);bank.run('DELETE FROM agent_security WHERE user_id=?',userId);bank.audit(userId,'agent.unlocked');}); }

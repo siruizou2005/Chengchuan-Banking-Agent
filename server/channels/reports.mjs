@@ -4,6 +4,7 @@ import { businessDate } from '../agent/policy.mjs';
 import { ledgerFor, resolveRange, billReport, detectAnomalies, utcBounds, addDays, isUnknownTag } from '../agent/analytics.mjs';
 import { redactIdentity } from '../privacy.mjs';
 import { channelNames } from './preferences.mjs';
+import { accountUnavailable } from './refusal.mjs';
 import { controlState } from '../puma/control.mjs';
 import { consentAllowed } from '../puma/consent.mjs';
 
@@ -86,10 +87,13 @@ export function createReportPush(services,options={}){
   let resume=null,pruned=0;
   const binding=(userId,channel)=>get("SELECT * FROM channel_bindings WHERE user_id=? AND channel=? AND status='active' AND auth_state='valid' ORDER BY created_at DESC LIMIT 1",userId,channel);
   function blocked(sub,b){
+    // Nothing forwards a switched-off channel's outbox, so its reports would pile up unseen.
+    if(options.channelEnabled?.(sub.channel)===false)return 'channel_disabled';
     if(controlState(bank,sub.user_id).stopped||!consentAllowed(bank,sub.user_id,'agent_tools')||!consentAllowed(bank,sub.user_id,'data_read'))return 'assistant_unavailable';
     if(!services.enrollment.available(sub.user_id))return 'assistant_unavailable';
     if(services.guard.locked(sub.user_id))return 'assistant_locked';
     if(!b)return 'binding_unavailable';
+    if(accountUnavailable(bank,sub.user_id))return 'account_unavailable';
     // WeChat can only push with the context of the user's latest message.
     return sub.channel==='wechat'&&!b.context_token?'no_context':null;
   }
@@ -141,12 +145,17 @@ export function createReportPush(services,options={}){
       }
     }finally{if(queued)options.kick?.();}
   }
+  function pushState(row){
+    if(row.status!=='queued')return row.status;
+    const delivery=row.outbox_id&&(get(`SELECT status FROM ${row.channel==='feishu'?'feishu_deliveries':'wechat_deliveries'} WHERE source_outbox_id=?`,row.outbox_id)?.status||get('SELECT status FROM channel_outbox WHERE id=?',row.outbox_id)?.status);
+    return delivery==='api_accepted'?'sent':delivery==='unknown'?'unknown':['failed','expired','cancelled'].includes(delivery)?'failed':'sending';
+  }
+  // Delivery rows are pruned long before the push row, so the outcome they show is written down first.
+  function settle(before){for(const row of all("SELECT * FROM report_pushes WHERE status='queued' AND created_at<?",before)){const state=pushState(row);if(state!=='sending')run('UPDATE report_pushes SET status=? WHERE id=?',state,row.id);}}
   function lastPush(userId,channel,kind){
     const row=get('SELECT * FROM report_pushes WHERE user_id=? AND channel=? AND kind=? ORDER BY slot_at DESC,created_at DESC LIMIT 1',userId,channel,kind);
     if(!row)return null;
-    const delivery=row.outbox_id&&(get(`SELECT status FROM ${channel==='feishu'?'feishu_deliveries':'wechat_deliveries'} WHERE source_outbox_id=?`,row.outbox_id)?.status||get('SELECT status FROM channel_outbox WHERE id=?',row.outbox_id)?.status);
-    const state=row.status!=='queued'?row.status:delivery==='api_accepted'?'sent':delivery==='unknown'?'unknown':['failed','expired','cancelled'].includes(delivery)?'failed':'sending';
-    return {from:row.period_from,to:row.period_to,slotAt:row.slot_at,state,reason:row.reason};
+    return {from:row.period_from,to:row.period_to,slotAt:row.slot_at,state:pushState(row),reason:row.reason};
   }
   function settings(userId){
     const rows=all('SELECT * FROM report_subscriptions WHERE user_id=?',userId);
@@ -171,5 +180,5 @@ export function createReportPush(services,options={}){
     route('get','/channels/reports','本人各渠道账单推送设置',(req,res)=>res.json(settings(req.user.id)));
     route('patch','/channels/reports/:channel','开关本人单个渠道的日报、周报、月报推送',(req,res)=>res.json(update(req.user,req.params.channel,req.body)));
   }
-  return {runDue,settings,update,routes,stop(){clearImmediate(resume);resume=null;}};
+  return {runDue,settings,update,routes,settle,stop(){clearImmediate(resume);resume=null;}};
 }

@@ -22,7 +22,7 @@ export const onboardingToolDefinitions=[
 export const ONBOARDING_OPENING='开通成功！想先花一分钟了解你，方便以后按你的习惯来服务，每个问题都可以说「跳过」。先问一下，我该怎么称呼你？';
 export const ONBOARDING_INSTRUCTIONS=`当前是用户开通智能助手后的首次引导，App已向用户显示开场白：「${ONBOARDING_OPENING}」。目标是用轻松自然的对话依次了解：称呼、关注业务、回复详略、理财目标；再问是否绑定飞书/微信、飞书/微信中是否隐藏金额、要不要账单推送；最后是风险测评。引导状态的remaining是还没处理的项目，按它的顺序问，不在remaining里的不要问。这些问题属于本行服务，回答引导问题时不要调用decline_off_topic。规则：
 1. 每次只问一到两项，语气亲切简短，不要一次列出全部问题；用户可以随时跳过，不要追问被跳过的问题。
-2. 用户回答后，用save_onboarding_answer保存；用户一句话里说了多项就分别保存；用户说跳过或不想答，用skip_onboarding。只保存用户本轮亲口表达的内容，不要猜测；含糊时先确认。
+2. 用户回答后，用save_onboarding_answer保存；用户一句话里说了多项就分别保存；用户说跳过或不想答，用skip_onboarding。只保存用户本轮亲口表达的内容，不要猜测；含糊时先确认。evidence要能看出用户选的是哪一项，单纯的“好的”“要”只能回答你上一句明确问到该选项的问题。
 3. 绑定飞书/微信：只提引导状态channels.available里的渠道，问用户绑微信、飞书还是两个都绑；用户选好后保存channels，并请用户在下方卡片输入支付密码、扫二维码完成绑定。绑定只能在卡片里完成：不要在对话中索要支付密码或验证码；是否绑好以channels.bound为准，不要自己说已绑定。
 4. 账单推送：日报每天、周报每周一、月报每月1日，都在上午8:00推送到已绑定的飞书/微信；问用户要哪几种，选好后保存reports。
 5. 风险测评是最后一项，由用户点下方卡片的「去测评」到专门页面完成；不要自己出题，也不要评估或记录用户的风险承受能力。用户不想做就用skip_onboarding跳过。
@@ -33,6 +33,26 @@ export const ONBOARDING_INSTRUCTIONS=`当前是用户开通智能助手后的首
 const NEXT_QUESTION={preferred_name:'我该怎么称呼你？',focus_areas:'你最关注哪些业务？可以多选。',answer_length:'希望我的回复简短、适中还是详细？',investment_goal:'你的理财目标是什么？',channels:'要不要绑定飞书或微信？绑定后可以在那边查询和接收推送。',mask_amounts:'在飞书、微信里要隐藏金额吗？',reports:'要不要账单推送？日报每天、周报每周一、月报每月1日上午8:00发送。',risk:'最后做一下风险测评吧，到专门页面答5道题，理财建议才能按结果来。不想做也可以跳过。'};
 const DONE_TEXT='首次设置就到这里，以后可以在「我的 → 个性化与记忆」修改偏好，在「消息渠道绑定」调整飞书、微信和账单推送。有什么可以帮你？';
 const compact=text=>String(text).normalize('NFKC').replace(/\s+/g,'').toLowerCase();
+// Any substring of the message would otherwise justify any choice, so an enumerated answer needs words that support it.
+const SUPPORT={
+ focus_areas:{账单分析:/账单|消费|花销|开销|支出|流水/,理财:/理财|投资|基金|存款|定期/,转账:/转账|汇款|打钱/,信用卡与贷款:/信用卡|贷款|还款|借款/,生活缴费:/缴费|水电|话费|燃气|物业|宽带/},
+ answer_length:{简短:/简短|简单|简洁|简要|精简|短|一句话/,适中:/适中|一般|中等|正常|普通/,详细:/详细|具体|展开|完整|多说/},
+ investment_goal:{备用金随用随取:/备用|随用|随取|随时|应急|灵活/,稳健增值:/稳/,长期增值:/长期|养老|多年/,暂不考虑理财:/暂不|不考虑|不理财|没打算/},
+ channels:{微信:/微信|wechat/,飞书:/飞书|feishu/,都绑:/都|两个|全部/},
+ mask_amounts:{隐藏:/(?<![不别]|不用|不要)隐藏|(?:不|别|不要)显示|打码/,显示:/(?<![不别]|不用|不要)显示|(?:不|别|不用|不要)隐藏/},
+ reports:{日报:/日报|每天|每日/,周报:/周报|每周/,月报:/月报|每月/},
+};
+const EVERY_CHOICE=/都要|都看|都关注|全部|全都/,SKIP_WORDS=/跳过|不想|不用|不要|不需要|不了|别了|算了|以后|下次|再说|别问|不答|不回答|暂时不|暂不|结束|没兴趣/;
+const ASSENT=/^(?:好的?|要的?|需要|可以|行|嗯+|是的?|对的?|ok|没问题)[啊吧呀哦了。.!！~～,，]*$/,DECLINE=/^(?:不用了?|不要了?|不需要|不了|别了?|算了)[啊吧呀哦。.!！~～,，]*$/;
+function supported(fieldName,value,said,input,asked) {
+ const table=SUPPORT[fieldName];
+ if(!table||(fieldName==='investment_goal'&&!GOAL_OPTIONS.includes(value)))return true; // Free text is held to the message itself.
+ const list=fieldName==='reports'?/[、,，;；\s和与]+/:fieldName==='focus_areas'?/[、,，;；\s]+/:null,choices=list?value.split(list).filter(Boolean):[value];
+ if((choices.length>1&&EVERY_CHOICE.test(compact(said)))||choices.every(c=>table[c]?.test(compact(said))))return true;
+ // A bare yes or no only answers the question just asked, and that question must have named the choice.
+ if(ASSENT.test(compact(input)))return choices.every(c=>compact(asked).includes(compact(c)));
+ return fieldName==='mask_amounts'&&DECLINE.test(compact(input))&&compact(asked).includes(value==='显示'?'隐藏':'显示');
+}
 
 export function createOnboarding(services) {
  const {bank}=services;
@@ -57,13 +77,14 @@ export function createOnboarding(services) {
  }
  function state(userId) {
   const status=bank.get('SELECT agent_onboarding FROM users WHERE id=?',userId)?.agent_onboarding||'pending',{unavailable,remaining,...rest}=progress(userId,read(userId));
-  return {status,...rest,remaining,unavailable,total:ONBOARDING_FIELDS.length-unavailable.length,next:remaining[0]||null,personalization:services.memory.enabled()};
+  return {status,...rest,remaining,unavailable,total:ONBOARDING_FIELDS.length-unavailable.length,next:remaining[0]||null,personalization:services.memory.enabled({user_id:userId})};
  }
  const active=(user,channel)=>channel==='app'&&state(user.id).status==='pending';
  function normalize(fieldName,value,input,current) {
   if(fieldName==='mask_amounts'){requireThat(['隐藏','显示'].includes(value),'mask_amounts须为隐藏或显示',400,'INVALID_ONBOARDING');return value==='隐藏';}
   if(fieldName==='channels'){
-   const choice=CHANNEL_CHOICES[value];requireThat(choice,'channels须为微信、飞书或都绑',400,'INVALID_ONBOARDING');
+   requireThat(Object.hasOwn(CHANNEL_CHOICES,value),'channels须为微信、飞书或都绑',400,'INVALID_ONBOARDING');
+   const choice=CHANNEL_CHOICES[value];
    const closed=choice.filter(c=>!current.channels.available.includes(c));
    requireThat(!closed.length,`${closed.map(c=>CHANNEL_LABEL[c]).join('、')}暂未开放绑定`,409,'CHANNEL_UNAVAILABLE');
    const open=choice.filter(c=>!current.channels.bound.includes(c));
@@ -72,10 +93,10 @@ export function createOnboarding(services) {
   }
   if(fieldName==='reports'){
    const names=[...new Set(value.split(/[、,，;；\s和与]+/).filter(Boolean))];
-   requireThat(names.length&&names.every(n=>REPORT_NAMES[n]),'reports只能是日报、周报、月报',400,'INVALID_ONBOARDING');
+   requireThat(names.length&&names.every(n=>Object.hasOwn(REPORT_NAMES,n)),'reports只能是日报、周报、月报',400,'INVALID_ONBOARDING');
    return Object.fromEntries(REPORT_KINDS.map(kind=>[kind,names.some(n=>REPORT_NAMES[n]===kind)]));
   }
-  requireThat(services.memory.enabled(),'个性化功能已关闭，只能设置隐藏金额',503,'PERSONALIZATION_DISABLED');
+  requireThat(current.personalization,'个性化功能已关闭，只能设置隐藏金额',503,'PERSONALIZATION_DISABLED');
   if(fieldName==='focus_areas'){
    const areas=[...new Set(value.split(/[、,，;；\s]+/).filter(Boolean))];
    requireThat(areas.length&&areas.every(a=>FOCUS_AREAS.includes(a)),`关注业务只能从${FOCUS_AREAS.join('、')}中选择`,400,'INVALID_ONBOARDING');
@@ -87,14 +108,16 @@ export function createOnboarding(services) {
   return services.memory.validate(fieldName,value).value;
  }
  // Validates a tool call against this turn's input and returns the staged change; nothing is written until the turn finishes.
- function stage(user,name,args,input,staged) {
+ function stage(user,name,args,input,staged,asked='') {
   requireThat(typeof args?.evidence==='string'&&args.evidence.trim()&&compact(input).includes(compact(args.evidence)),'evidence须逐字摘自本轮用户消息',400,'ONBOARDING_EVIDENCE_REQUIRED');
   let changes;const current=state(user.id);
   if(name==='save_onboarding_answer'){
    requireThat(saveField.enum.includes(args.field)&&typeof args.value==='string'&&args.value.trim().length>0&&args.value.length<=60,'引导字段无效',400,'INVALID_ONBOARDING');
    changes=[{field:args.field,value:normalize(args.field,args.value.trim(),input,current)}];
+   requireThat(supported(args.field,args.value.trim(),args.evidence,input,asked),'evidence要能支持所保存的取值；用户没有明确表态时先确认',400,'ONBOARDING_EVIDENCE_REQUIRED');
   }else{
    requireThat(args.all===true||(Array.isArray(args.fields)&&args.fields.length&&args.fields.every(f=>ONBOARDING_FIELDS.includes(f))),'请说明跳过哪些问题',400,'INVALID_ONBOARDING');
+   requireThat(SKIP_WORDS.test(compact(args.evidence)),'evidence要能看出用户不想回答；用户没有明确表态时先确认',400,'ONBOARDING_EVIDENCE_REQUIRED');
    changes=args.all===true?[{all:true}]:args.fields.map(f=>({field:f,skip:true}));
   }
   staged.push(...changes);
