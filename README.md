@@ -22,7 +22,7 @@
 
 ## 演示视频
 
-<!-- 演示视频：在 GitHub 网页上编辑本文件，把 Chengchuan-Banking-Agent-demo-720p.mp4 拖到这一行，生成的链接单独占一行就会显示成播放器。 -->
+https://github.com/user-attachments/assets/dec673ad-3618-4128-9a27-2463c5c17cef
 
 4 分 26 秒，依次介绍六大场景、飞书和微信渠道、记忆与安全防护，画面均为真实运行截图。
 
