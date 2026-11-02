@@ -1,0 +1,13 @@
+[Unit]
+Description=Chengchuan Bank GitHub webhook receiver (socket activated, exits when idle)
+Requires=chengchuan-bank-webhook.socket
+
+[Service]
+User=@USER@
+EnvironmentFile=/etc/chengchuan-bank/webhook.env
+Environment=DEPLOY_REQUEST_FILE=@HOME@/chengchuan-bank-deploy/request
+ExecStart=/opt/chengchuan-bank/runtime/bin/node /opt/chengchuan-bank/hooks/webhook.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=@HOME@/chengchuan-bank-deploy

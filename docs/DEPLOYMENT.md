@@ -29,6 +29,8 @@ npm start                      # http://127.0.0.1:3000，提供 dist/ 和全部 
 
 ## 单机部署（Caddy + systemd）
 
+`deploy/` 下的其余脚本是本团队服务器在用的自动部署流水线：GitHub 推送到 main 后由 webhook 触发，在服务器上拉取代码、构建、运行测试、切换版本并做健康检查，失败自动回滚。里面写的是我们自己的域名和路径，仅供参考。
+
 `deploy/examples/` 下有两份模板，替换其中的 `bank.example.com`、用户名和路径后使用：
 
 - `Caddyfile.example`：HTTPS、反向代理、安全响应头、请求体大小限制（语音上传 8MB，飞书事件 256KB，其余 128KB）。

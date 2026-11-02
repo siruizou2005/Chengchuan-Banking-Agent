@@ -1,0 +1,10 @@
+[Unit]
+Description=Build and deploy Chengchuan Bank from GitHub main
+
+[Service]
+Type=oneshot
+User=@USER@
+Environment=PATH=/opt/chengchuan-bank/runtime/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/chengchuan-bank/hooks/auto-deploy.sh
+TimeoutStartSec=30min
+Nice=10
