@@ -1,12 +1,63 @@
+<div align="center">
+
 # 澄川银行智能体 · ChengChuan Bank Agent
 
-一个可以直接运行的中文手机银行模拟器，内置一个能办业务的银行 AI 智能体。客户用一句话发起转账、分析账单、配置理财、管理卡片和订阅，或者让它把几件事串成一个按期执行的计划。
+![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2024-4a6cf7?style=flat-square&logo=nodedotjs&logoColor=white) ![React](https://img.shields.io/badge/React-19-4a6cf7?style=flat-square&logo=react&logoColor=white) ![Express](https://img.shields.io/badge/Express-5-4a6cf7?style=flat-square&logo=express&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-node%3Asqlite-4a6cf7?style=flat-square&logo=sqlite&logoColor=white) ![测试](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-426%20%E9%A1%B9%E9%80%9A%E8%BF%87-22a06b?style=flat-square) ![2026 深圳国际金融科技大赛](https://img.shields.io/badge/2026%20%E6%B7%B1%E5%9C%B3%E5%9B%BD%E9%99%85%E9%87%91%E8%9E%8D%E7%A7%91%E6%8A%80%E5%A4%A7%E8%B5%9B-%E5%8F%82%E8%B5%9B%E4%BD%9C%E5%93%81-e5484d?style=flat-square)
 
-**模型负责听懂和规划，服务端规则负责把关，最后由客户在 App 里确认。** 权限级别由服务端按金额和操作类型判定，模型改不了；聊天里永远不能直接动钱。
+### 一句话办业务，每一步都在安全框架之内
 
-2026 深圳国际金融科技大赛 · 人工智能赛道参赛作品。团队：磐石金策（邹思瑞、万锦奇）。
+可以直接运行的中文手机银行模拟器，内置一个能办业务的银行 AI 智能体。
+
+<img src="docs/images/hero.jpg" alt="六台手机并排展示首页、账单分析、可信页面核对、理财、跨场景联动和决策链路" width="100%">
+
+[**演示视频**](#演示视频) &nbsp;·&nbsp; [**五分钟上手**](#五分钟上手) &nbsp;·&nbsp; [**演示指南**](docs/DEMO_GUIDE.md) &nbsp;·&nbsp; [**部署说明**](docs/DEPLOYMENT.md)
+
+<sub>2026 深圳国际金融科技大赛 · 人工智能赛道参赛作品 · 团队：磐石金策（邹思瑞、万锦奇）</sub>
+
+</div>
+
+客户用一句话发起转账、分析账单、配置理财、管理卡片和订阅，或者让它把几件事串成一个按期执行的计划。**模型负责听懂和规划，服务端规则负责把关，最后由客户在 App 里确认。** 权限级别由服务端按金额和操作类型判定，模型改不了；聊天里永远不能直接动钱。
 
 > 资金、交易、人脸和短信验证都是模拟的，不连接任何真实银行。两个公开演示账户的流水来自团队成员本人的对账单，个人姓名已替换为化名，详见 [演示数据](docs/DATA.md)。基金净值和业绩来自东方财富公开数据。
+
+## 演示视频
+
+<div align="center">
+
+<a href="docs/media/demo.mp4"><img src="docs/images/video-poster.jpg" alt="演示视频封面，点击播放" width="88%"></a>
+
+<sub>4 分 26 秒，依次介绍六大场景、飞书和微信渠道、记忆与安全防护，画面均为真实运行截图。点击封面在 GitHub 中播放（720p，约 10MB）。</sub>
+
+</div>
+
+## 界面一览
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/scene-bill.jpg" alt="账单分析：月度账单、分类占比和数据来源"></td>
+<td width="50%"><img src="docs/images/scene-transfer.jpg" alt="智能转账：三级权限，超过一千元需要模拟人脸、短信和支付密码"></td>
+</tr>
+<tr>
+<td align="center"><b>账单分析</b>：月报和分类占比由服务端按流水计算，每条回答标明数据来源</td>
+<td align="center"><b>智能转账 · 权限分级</b>：确认前钱不动，大额需要加强验证</td>
+</tr>
+<tr>
+<td><img src="docs/images/scene-wealth.jpg" alt="理财：真实基金数据、风险匹配拦截和产品对比"></td>
+<td><img src="docs/images/scene-plan.jpg" alt="跨场景联动：生日计划拆成四步，授权一次后按期执行"></td>
+</tr>
+<tr>
+<td align="center"><b>理财操作</b>：接入真实基金数据，超出测评等级的产品会被拦下</td>
+<td align="center"><b>跨场景联动</b>：一句话拆成带依赖的计划，可中断或转人工</td>
+</tr>
+<tr>
+<td><img src="docs/images/scene-channels.jpg" alt="飞书和微信真机截图：查账单、提议转账，确认只能回 App"></td>
+<td><img src="docs/images/scene-safety.jpg" alt="安全防护：故障注入下，模型谎称转账成功被服务端纠正"></td>
+</tr>
+<tr>
+<td align="center"><b>飞书、微信</b>：聊天里查账单、提议转账，确认只能回 App</td>
+<td align="center"><b>安全防护</b>：注入防御、幻觉纠正、决策链路可追溯</td>
+</tr>
+</table>
 
 ## 五分钟上手
 
@@ -110,8 +161,8 @@ src/        前端页面与智能助手界面
 server/     服务端：银行业务、智能体、风控、渠道、种子数据
 tests/      自动化测试（node:test）
 scripts/    测试运行器、演示与检查脚本、种子数据生成
-docs/       文档
-deploy/     部署配置模板
+docs/       文档；docs/images/ 截图，docs/media/ 演示视频
+deploy/     部署脚本（本团队服务器的自动部署流水线）与通用模板 deploy/examples/
 examples/   外部程序调用示例
 ```
 
