@@ -1,7 +1,7 @@
 {
   "name": "chengchuan-bank-simulator",
   "version": "1.0.0",
-  "description": "澄川银行智能体（ChengChuan Bank Agent）：中文手机银行模拟器与银行 AI 智能体，2026 深圳国际金融科技大赛参赛作品",
+  "description": "澄川银行智能体（Chengchuan Banking Agent）：中文手机银行模拟器与银行 AI 智能体，2026 深圳国际金融科技大赛参赛作品",
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",

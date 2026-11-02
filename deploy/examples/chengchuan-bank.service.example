@@ -1,6 +1,6 @@
 # systemd 服务模板。按需修改用户、路径、端口和域名；密钥（CHAT_API_KEY 等）放在 /etc/chengchuan-bank/env，权限 600。
 [Unit]
-Description=ChengChuan Bank Agent
+Description=Chengchuan Banking Agent
 After=network.target
 
 [Service]

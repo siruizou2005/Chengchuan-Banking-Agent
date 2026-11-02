@@ -1,6 +1,6 @@
 # 智能体设计
 
-澄川银行智能体（ChengChuan Bank Agent）的工作方式、权限、记忆、渠道和配置。上手步骤见 [README](../README.md)，接口见 [API.md](API.md)。
+澄川银行智能体（Chengchuan Banking Agent）的工作方式、权限、记忆、渠道和配置。上手步骤见 [README](../README.md)，接口见 [API.md](API.md)。
 
 ## 概述
 
