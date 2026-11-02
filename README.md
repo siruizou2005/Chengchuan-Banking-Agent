@@ -22,7 +22,7 @@
 
 ## 演示视频
 
-https://github.com/user-attachments/assets/dec673ad-3618-4128-9a27-2463c5c17cef
+https://github.com/user-attachments/assets/7b9d232c-fd62-47f1-bafb-f0e73e5c057d
 
 4 分 26 秒，依次介绍六大场景、飞书和微信渠道、记忆与安全防护，画面均为真实运行截图。
 
