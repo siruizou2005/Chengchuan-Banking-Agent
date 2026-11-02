@@ -2,13 +2,12 @@
 
 **1. 启动项目**
 
-在项目目录打开 PowerShell，确认使用 **Node.js 24 或更新版本**：
+在项目目录打开终端，确认使用 **Node.js 24 或更新版本**：
 
-```powershell
-cd D:\projects\AI-Banking
+```sh
 node -v
-npm.cmd install
-npm.cmd run dev
+npm ci
+npm run dev
 ```
 
 浏览器打开：<http://127.0.0.1:5173>

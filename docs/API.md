@@ -1,6 +1,6 @@
 # 银行 Agent API
 
-本地：`http://127.0.0.1:5173/api`（开发）或 `http://127.0.0.1:3000/api`（生产）；云端：`https://bank.siruizou.com/api`。
+本地：`http://127.0.0.1:5173/api`（开发）或 `http://127.0.0.1:3000/api`（生产）；部署到服务器后为 `https://你的域名/api`。
 
 所有写请求（POST、PUT、PATCH、DELETE）必须为 `Content-Type: application/json`（语音接口除外）。请求体上限 32KB，聊天接口 64KB，头像 256KB，超出返回 413 `BODY_TOO_LARGE`。登录失败按 IP 和手机号分别计数，15 分钟内各 8 次，超出返回 429；成功登录只清该手机号的计数，IP 计数只按窗口到期。两个公开演示账户不按手机号计数，登录密码和支付密码也不能修改（403 `DEMO_CREDENTIALS_FIXED`）。登录返回会话 Cookie 及 24 小时有效的 `token`，程序可使用 `Authorization: Bearer <token>`。不要将 token 记录到日志或提交到版本库。金额请求为元字符串，响应为整数分。
 

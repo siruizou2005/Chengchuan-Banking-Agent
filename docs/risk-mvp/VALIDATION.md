@@ -21,8 +21,7 @@ integrates current `main` (`38d927c`), retaining enrollment, onboarding and repo
 its PR diff contains only the risk MVP additions and small integration changes. The
 merged branch was rebuilt and browser-tested again. Node 24 was downloaded from the
 official Node distribution and verified against its SHA-256 manifest, only under ignored
-test-results. GitHub's Linux/Node 24 checks are linked from
-[PR #30](https://github.com/siruizou2005/AI-Banking/pull/30).
+test-results. GitHub's Linux/Node 24 checks ran on the team's private repository (PR #30).
 
 The dependency findings affect `@larksuiteoapi/node-sdk`, `axios`, `body-parser`,
 `express`, `follow-redirects`, `qs`, and `vite`. This PR adds no runtime dependency and
