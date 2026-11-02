@@ -18,7 +18,7 @@ test('演示模式只有邹瑞和万奇，流水与余额逐笔一致', t => {
   const bank = createBank(':memory:', { accounts: 'demo' });
   t.after(() => bank.db.close());
   assert.deepEqual(bank.all('SELECT phone,name FROM users ORDER BY name').map(u => u.name).sort(), ['万奇', '邹瑞'].sort());
-  for (const [phone, rows, closing] of [[ZOU, 506, 10252606], [WANQI, 979, 15000054]]) {
+  for (const [phone, rows, closing] of [[ZOU, 518, 10228206], [WANQI, 979, 15000054]]) {
     const account = bank.get("SELECT a.* FROM accounts a JOIN users u ON u.id=a.user_id WHERE u.phone=? AND a.type='debit'", phone);
     assert.equal(account.balance, closing); assert.match(account.number, /^621880\d{13}$/);
     const ledger = bank.all('SELECT * FROM ledger WHERE account_id=? ORDER BY id', account.id);
@@ -45,6 +45,23 @@ test('演示账户互为收款人：缺失时按账户对补齐，重启幂等�
   // Once in place, a payee the customer removes stays removed.
   bank.run('DELETE FROM payees WHERE user_id=?', user(bank, ZOU).id); bank.db.close();
   bank = open(); assert.equal(payees().length, 1); bank.db.close();
+});
+
+test('邹瑞有三个按月扣费的订阅：扣款已在流水里且有标注，下次扣款在每月 14 日', t => {
+  const bank = createBank(':memory:', { accounts: 'demo' });
+  t.after(() => bank.db.close());
+  const zou = user(bank, ZOU);
+  const subs = bank.all('SELECT s.merchant,s.amount,s.next_at,m.status,m.period FROM subscriptions s JOIN subscription_mandates m ON m.subscription_id=s.id WHERE s.user_id=? ORDER BY s.amount', zou.id);
+  assert.deepEqual(subs.map(s => [s.merchant, s.amount, s.status, s.period]), [['音乐', 1500, 'active', 'monthly'], ['云盘', 2100, 'active', 'monthly'], ['视频会员', 2500, 'active', 'monthly']]);
+  assert.ok(subs.every(s => s.next_at > new Date().toISOString() && new Date(s.next_at).getUTCDate() === 14), JSON.stringify(subs));
+  assert.equal(bank.get('SELECT COUNT(*) n FROM subscriptions WHERE user_id=?', user(bank, WANQI).id).n, 0);
+  const charges = ledgerFor(bank, zou.id).filter(r => r.title.startsWith('消费 · 订阅 · '));
+  assert.equal(charges.length, 12);
+  assert.ok(charges.every(r => /演示订阅/.test(r.source_detail) && classifyRow(r).tag === '教育文娱'));
+  // October as the film shows it: 9,579.43 spent, with the subscriptions under 教育文娱.
+  const october = billReport(ledgerFor(bank, zou.id), resolveRange({ period: '2026-10' }, '2026-11-01'));
+  assert.equal(october.totals.consumption, 957943);
+  assert.equal(october.categories.find(c => c.name === '教育文娱').amount, 281970);
 });
 
 test('演示数据的日期：邹瑞对账单到 11 月 1 日，万奇整体后移 31 天，没有未来流水', t => {
@@ -180,8 +197,11 @@ test('切换到演示模式清空全部旧数据，只执行一次，并保留�
   const first = createApp(path, { accounts: 'demo', products: { remote: false } });
   const { bank } = first;
   assert.deepEqual(bank.all('SELECT name FROM users').map(u => u.name).sort(), ['万奇', '邹瑞'].sort());
-  for (const table of ['sessions', 'agent_sessions', 'agent_memory', 'channel_bindings', 'transactions', 'subscriptions'])
+  for (const table of ['sessions', 'agent_sessions', 'agent_memory', 'channel_bindings', 'transactions'])
     assert.equal(bank.get(`SELECT COUNT(*) n FROM ${table}`).n, 0, table);
+  // Only the demo customer's own three subscriptions remain, none from before the reset.
+  assert.deepEqual(bank.all('SELECT DISTINCT user_id FROM subscriptions').map(r => r.user_id), [user(bank, ZOU).id]);
+  assert.equal(bank.get('SELECT COUNT(*) n FROM subscriptions').n, 3);
   assert.equal(bank.get('SELECT COUNT(*) n FROM holdings').n, 1);
   assert.equal(bank.get('SELECT COUNT(*) n FROM accounts WHERE user_id IS NULL').n, 1);
   assert.equal(bank.get('SELECT tag FROM merchant_categories').tag, '食品');

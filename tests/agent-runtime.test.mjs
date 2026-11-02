@@ -295,6 +295,12 @@ test('模型返回截断或畸形时不向用户显示原始JSON和内部错误'
   assert.deepEqual(f.bank.all('SELECT key FROM memory_candidates WHERE user_id=? ORDER BY key', f.user.id).map(r => r.key), ['k1', 'k2', 'k3']);
   f.queue.push(reply('```json\n{"answer":"围栏里的回答","memory_candidates":[]}\n```'));
   assert.equal((await say(f, '本月账单')).data.text, '围栏里的回答');
+  // Seen with a real model: a sentence first, then the envelope repeating it with the memory candidates.
+  f.queue.push(reply('好的，小邹。以后我会简短回答。\n\n{"answer":"好的，小邹。以后我会简短回答。","memory_candidates":[{"key":"preferred_name","value":"小邹","evidence":"以后都叫我小邹"}]}'));
+  assert.equal((await say(f, '以后都叫我小邹，回答简短一点')).data.text, '好的，小邹。以后我会简短回答。');
+  assert.ok(f.bank.get("SELECT 1 FROM memory_candidates WHERE user_id=? AND key='preferred_name'", f.user.id));
+  f.queue.push(reply('先说结论。\n```json\n{"answer":"","memory_candidates":[]}\n```'));
+  assert.equal((await say(f, '本月账单')).data.text, '先说结论。');
   f.queue.push(reply(JSON.stringify({ answer: '只有回答' })));
   assert.equal((await say(f, '本月账单')).data.text, '只有回答');
   f.queue.push(reply('{"balance":100}'));

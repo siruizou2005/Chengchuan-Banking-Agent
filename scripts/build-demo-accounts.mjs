@@ -20,6 +20,18 @@ const WANQI_PERIOD = `2025-11-02—2026-10-30（原 2025-10-02—2026-09-29，�
 const DEMO_FUNDS_NOTE = '演示资金，不在原对账单内';
 // Rows are posted in order, so an added row must sit in time order for every later running balance to include it.
 const insertByTime = (rows, row) => { const at = rows.findIndex(other => other[0] > row[0]); rows.splice(at < 0 ? rows.length : at, 0, row); return rows; };
+// 邹瑞's monthly subscriptions, so the subscription scenario has something to show. They are not on the statement: four months of charges go in by time, marked in source_detail.
+const DEMO_SUBSCRIPTIONS = [{ merchant: '视频会员', amount: 2500, day: 14 }, { merchant: '音乐', amount: 1500, day: 14 }, { merchant: '云盘', amount: 2100, day: 14 }];
+const SUBSCRIPTION_MONTHS = ['2026-07', '2026-08', '2026-09', '2026-10'];
+export function addSubscriptions(user) {
+  if (user.subscriptions) return user;
+  for (const month of SUBSCRIPTION_MONTHS) for (const { merchant, amount, day } of DEMO_SUBSCRIPTIONS) {
+    insertByTime(user.rows, [`${month}-${String(day).padStart(2, '0')}T02:00:00.000Z`, -amount, `消费 · 订阅 · ${merchant}`, 'payment', '消费', '订阅扣款', null, null, merchant, '澄川银行', null, null, 'second', { 说明: '演示订阅，不在原对账单内' }]);
+  }
+  user.closing -= SUBSCRIPTION_MONTHS.length * DEMO_SUBSCRIPTIONS.reduce((sum, s) => sum + s.amount, 0);
+  user.subscriptions = DEMO_SUBSCRIPTIONS;
+  return user;
+}
 
 export const aliases = new Map();
 const rename = text => text == null ? null : [...aliases].reduce((value, [real, alias]) => value.replaceAll(real, alias), text);
@@ -198,6 +210,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const pair of process.argv.slice(3)) { const [real, alias] = pair.split('='); aliases.set(real, alias); }
     output = { columns: fixtures.columns, users: [buildZou(process.argv[2]), buildWanqi(fixtures)] };
   }
+  addSubscriptions(output.users.find(u => u.phone === DEMO_ZOU.phone));
   maskIdentifiers(output.users, output.columns);
   console.log('私人转账对象', maskPrivateTransfers(output.users, output.columns), '人；个人收款码', maskPersonalMerchants(output.users, output.columns), '人');
   // One row per line keeps later regenerations reviewable as diffs.

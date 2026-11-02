@@ -301,6 +301,14 @@ export function createBank(path, { accounts = 'fixtures' } = {}) {
       }
       if (get('SELECT balance FROM accounts WHERE id=?', account).balance !== s.closing) throw new Error(`导入流水余额不符：${s.name}`);
       for (const h of s.holdings || []) run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at,product_snapshot) VALUES(?,?,?,?,?,?,?)', id('H'), userId, h.product_id, h.principal, h.created_at, new Date(Date.parse(h.created_at) + h.product_snapshot.days * 86400000).toISOString(), JSON.stringify(h.product_snapshot));
+      // Monthly subscriptions the customer authorised. Their past charges are among the rows; the next one falls on the same day of the month, 10:00 Beijing.
+      for (const sub of s.subscriptions || []) {
+        const next = new Date(); next.setUTCDate(sub.day); next.setUTCHours(2, 0, 0, 0);
+        if (next <= new Date()) next.setUTCMonth(next.getUTCMonth() + 1, sub.day);
+        const subscription = id('SUB');
+        run('INSERT INTO subscriptions(id,user_id,merchant,amount,next_at) VALUES(?,?,?,?,?)', subscription, userId, sub.merchant, sub.amount, next.toISOString());
+        run('INSERT INTO subscription_mandates VALUES(?,?,?,?,?,?,?,?)', subscription, userId, sub.merchant, sub.amount, 'monthly', 'explicit_demo_seed', 'active', now());
+      }
       audit(userId, 'statement.imported', account, { sourceBank: s.source_bank, period: s.period, rows: s.rows.length });
     });
   }
