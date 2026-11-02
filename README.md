@@ -123,11 +123,96 @@ npm run build && npm start  # 生产模式，http://127.0.0.1:3000
 
 ## 架构
 
-<div align="center">
-<img src="docs/images/architecture.svg" alt="系统架构：接入层、服务入口、智能体运行时（输入防护、上下文、意图理解与规划、输出防护、决策链路）、安全边界、规则层、业务层、数据层和外部服务，底部是一句话转账的六步" width="100%">
-</div>
+```mermaid
+flowchart TB
+  subgraph ACCESS["接入层"]
+    direction LR
+    A1["手机银行 App<br/>银行页面 · 智能助手"]
+    A2["飞书机器人<br/>共享与专属机器人"]
+    A3["微信 ClawBot<br/>iLink 长轮询"]
+    A4["外部程序<br/>OpenAPI 3.1 · 能力清单"]
+    A1 ~~~ A2 ~~~ A3 ~~~ A4
+  end
 
-智能体负责理解和规划，只能提出动作；虚线以下的规则层由服务端判定权限，资金操作须客户在 App 内确认后，才由业务层在一个 SQLite 事务内执行。各环节的细节见 [智能体设计](docs/AGENT.md)。
+  GW["服务入口 · Express 5<br/>认证 · 来源校验 · 限频<br/>幂等键 · 资源归属校验"]
+
+  subgraph AGENT["智能体运行时 · 理解与规划"]
+    direction LR
+    S1["① 输入防护<br/>话题闸门 · 注入检测"] --> S2["② 上下文组装<br/>记忆 · 9 个金融 Skills"] --> S3["③ 意图理解与规划<br/>函数调用 · 工具循环"] --> S4["④ 输出防护<br/>幻觉检测 · 先纠正再替换"] --> S5["⑤ 决策链路<br/>每轮输入与工具调用"]
+  end
+
+  FENCE["安全边界：模型只能提议<br/>权限由服务端判定<br/>资金操作须在 App 内确认"]
+
+  subgraph RULES["规则层 · 服务端判定"]
+    direction LR
+    R1["权限分级 · 三级<br/>按操作和当日金额判定"]
+    R2["确认与加强验证<br/>支付密码 · 人脸 · 短信"]
+    R3["风控<br/>转账草稿 · 复核 · 拦截"]
+    R1 ~~~ R2 ~~~ R3
+  end
+
+  subgraph BIZ["业务层 · 确定性计算"]
+    direction LR
+    B1["账户与转账<br/>行内 · 跨行 · 定时 · AA"]
+    B2["账单分析<br/>报告 · 统计 · 异常"]
+    B3["理财<br/>真实基金 · 风险匹配"]
+    B4["卡片与订阅<br/>虚拟卡 · 挂失 · 代扣"]
+    B5["渠道推送<br/>结果回推 · 定时报告"]
+    B1 ~~~ B2 ~~~ B3 ~~~ B4 ~~~ B5
+  end
+
+  DB[("SQLite<br/>账户流水 · 动作计划<br/>授权记录 · 审计日志")]
+
+  subgraph EXT["外部服务 · 均可不配置"]
+    direction LR
+    E1["大模型 · OpenAI 兼容"] ~~~ E2["百炼语音识别"] ~~~ E3["东方财富 · 基金数据"] ~~~ E4["飞书 · 微信开放平台"]
+  end
+
+  ACCESS --> GW
+  GW -- 智能助手 --> AGENT
+  AGENT --- FENCE
+  FENCE -- 提议 --> RULES
+  RULES -- 确认后执行 --> BIZ
+  BIZ --> DB
+  DB ~~~ EXT
+
+  classDef access fill:#eef2ff,stroke:#c9d4fb,color:#1a2036
+  classDef gate fill:#1a2036,stroke:#1a2036,color:#ffffff
+  classDef guard fill:#fff4ec,stroke:#ffb98a,color:#1a2036
+  classDef step fill:#ffffff,stroke:#c9d4fb,color:#1a2036
+  classDef fence fill:#ffffff,stroke:#ff7a2f,color:#c2410c,stroke-dasharray:6 4
+  classDef rule fill:#ecfdf3,stroke:#a7e3c3,color:#1a2036
+  classDef biz fill:#ffffff,stroke:#d5dae6,color:#1a2036
+  classDef data fill:#ffffff,stroke:#8a93a8,color:#1a2036
+  classDef ext fill:#ffffff,stroke:#b8bfcc,color:#566078,stroke-dasharray:5 4
+  class A1,A2,A3,A4 access
+  class GW gate
+  class S1,S4 guard
+  class S2,S3,S5 step
+  class FENCE fence
+  class R1,R2,R3 rule
+  class B1,B2,B3,B4,B5 biz
+  class DB data
+  class E1,E2,E3,E4 ext
+  style ACCESS fill:#f6f8fd,stroke:#e6eaf3,color:#1a2036
+  style AGENT fill:#f6f8fd,stroke:#e6eaf3,color:#1a2036
+  style RULES fill:#f6f8fd,stroke:#e6eaf3,color:#1a2036
+  style BIZ fill:#f6f8fd,stroke:#e6eaf3,color:#1a2036
+  style EXT fill:#f6f8fd,stroke:#e6eaf3,color:#1a2036
+```
+
+智能体负责理解和规划，只能提出动作；安全边界以下的规则层由服务端判定权限，资金操作须客户在 App 内确认后，才由业务层在一个 SQLite 事务内执行。银行页面上的操作不经过智能体，同样要输入支付密码，重要操作同样要加强验证。各环节的细节见 [智能体设计](docs/AGENT.md)。
+
+### 一句话转账的六步
+
+```mermaid
+flowchart LR
+  F1["说一句话"] --> F2["识别收款人<br/>生成转账草稿"] --> F3["钱没动<br/>服务端分级"] --> F4["在 App 内<br/>核对与验证"] --> F5["一个事务内记账<br/>生成回单"] --> F6["全程写入<br/>决策链路"]
+  classDef end1 fill:#4a6cf7,stroke:#4a6cf7,color:#ffffff
+  classDef mid fill:#eef2ff,stroke:#c9d4fb,color:#1a2036
+  class F1,F6 end1
+  class F2,F3,F4,F5 mid
+```
 
 ## 测试
 
