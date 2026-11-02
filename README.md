@@ -203,15 +203,61 @@ flowchart TB
 
 智能体负责理解和规划，只能提出动作；安全边界以下的规则层由服务端判定权限，资金操作须客户在 App 内确认后，才由业务层在一个 SQLite 事务内执行。银行页面上的操作不经过智能体，同样要输入支付密码，重要操作同样要加强验证。各环节的细节见 [智能体设计](docs/AGENT.md)。
 
-### 一句话转账的六步
+### 一句话转账的处理过程
+
+客户说一句“帮我给万奇转200元，备注聚餐”之后，各部分依次做了什么。`opt`、`alt` 框里是只在特定情况下才发生的分支。
 
 ```mermaid
-flowchart LR
-  F1["说一句话"] --> F2["识别收款人<br/>生成转账草稿"] --> F3["钱没动<br/>服务端分级"] --> F4["在 App 内<br/>核对与验证"] --> F5["一个事务内记账<br/>生成回单"] --> F6["全程写入<br/>决策链路"]
-  classDef end1 fill:#4a6cf7,stroke:#4a6cf7,color:#ffffff
-  classDef mid fill:#eef2ff,stroke:#c9d4fb,color:#1a2036
-  class F1,F6 end1
-  class F2,F3,F4,F5 mid
+sequenceDiagram
+  autonumber
+  actor U as 客户
+  participant C as App · 飞书 · 微信
+  participant A as 智能体运行时
+  participant M as 聊天模型
+  participant R as 权限与风控
+  participant B as 银行核心 · SQLite
+
+  U->>C: 帮我给万奇转200元，备注聚餐
+  C->>A: 进入该客户的执行队列，App 与 IM 串行处理
+  A->>A: 输入防护：话题闸门、注入检测、号码脱敏
+  opt 命中注入特征
+    A->>B: 记入审计；15 分钟内 3 次则锁定助手 30 分钟
+    Note over A: 本轮不学习记忆，并要求模型只按原有权限处理
+  end
+  A->>M: 系统指令 + 记忆 + 金融 Skills + 过滤后的上下文
+  loop 工具循环 · 每轮对话最多 6 次模型调用
+    M-->>A: 调用 resolve_recipient
+    A->>B: 只读查询收款人
+    B-->>A: 万奇 · 尾号 2169
+    A->>M: 返回查询结果
+    M-->>A: 调用 create_transfer_draft · 200 元
+    A->>R: 提交转账草稿
+    R->>R: 按操作类型和当日累计金额分级；检查首次收款、金额偏离
+    R->>B: 写入草稿，15 分钟内有效，钱没动
+    R-->>A: 需授权确认 · 首次向该账户付款
+    A->>M: 返回草稿状态
+  end
+  M-->>A: 生成回复
+  opt 回复声称已办成，但没有回单
+    A->>M: 要求纠正
+    M-->>A: 重新回答
+    Note over A: 仍不对，就替换为“本轮没有执行银行写操作”
+  end
+  A-->>C: 回复 + 草稿卡片 + 可信核对页链接
+  Note over U,C: 飞书、微信里只能取消，确认必须回到 App
+  U->>C: 打开可信核对页，核对收款信息
+  alt 当日累计不超过 1,000 元
+    U->>C: 输入支付密码
+  else 超过 1,000 元
+    U->>C: 模拟人脸 + 短信验证码 + 支付密码
+  end
+  C->>R: 提交授权，服务端复核草稿、余额与额度
+  R->>B: 一个事务内双边记账，生成回单
+  B-->>C: 转账完成
+  opt 从飞书或微信发起
+    C-->>U: 结果回推到聊天
+  end
+  Note over A,B: 每轮输入、注入标记和工具调用都写入决策链路；客户可一键停止，撤销所有未执行的授权
 ```
 
 ## 测试
