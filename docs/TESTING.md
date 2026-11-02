@@ -16,7 +16,7 @@ node --test --test-name-pattern='注入' tests/agent-runtime.test.mjs   # 按名
 
 ## 本次结果
 
-2026-11-02，macOS，Node v26.8.2：426 项全部通过，失败 0，用时约 36 秒。完整输出见 [test-report/2026-11-02-npm-test.txt](test-report/2026-11-02-npm-test.txt)。
+2026-11-02，macOS，Node v26.8.2，代码为 v1.0.0：426 项全部通过，失败 0，用时约 34 秒。完整输出见 [test-report/2026-11-02-npm-test.txt](test-report/2026-11-02-npm-test.txt)。
 
 ## 赛题场景与测试的对应
 
