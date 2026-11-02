@@ -33,8 +33,10 @@ import { createOnboarding } from './agent/onboarding.mjs';
 
 
 import { businessDate, dailyTotal } from './agent/policy.mjs';
-import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport } from './agent/analytics.mjs';
+import { enrich, selectLedger, resolveRange, utcBounds, KIND_LABEL, ledgerFor, billReport, withCategoryTags } from './agent/analytics.mjs';
+import { createMerchantCategories } from './agent/merchant-categories.mjs';
 import { billView } from './agent/bill-view.mjs';
+import { createHiddenSpend } from './agent/hidden-spend.mjs';
 import { reportAnomalies } from './channels/reports.mjs';
 import { canonical } from './authorization.mjs';
 import { BusinessError, fail, requireThat, hash, textField, cents } from './errors.mjs';
@@ -52,7 +54,7 @@ const money = n => (n / 100).toFixed(2);
 export const riskLevelFor = answers => [7, 10, 13, 16].filter(cut => answers.reduce((a, b) => a + b, 0) > cut).length + 1;
 
 export function createApp(dbPath = ':memory:', options = {}) {
-  const bank = createBank(dbPath);
+  const bank = createBank(dbPath, { accounts: options.accounts });
   const { get, all, run, atomic, audit, notify, post } = bank;
   const catalog = createProductCatalog(bank, options.products);
   const earnings = createEarnings(bank, catalog);
@@ -304,7 +306,7 @@ export function createApp(dbPath = ':memory:', options = {}) {
     earnings.settle(user.id);
     const yesterdays = earnings.byHolding(user.id);
     const holdings = all('SELECT * FROM holdings WHERE user_id=? AND principal+earnings>0 ORDER BY created_at DESC', user.id).map(({ product_snapshot, accrual_carry, settled_through, ...h }) => ({ ...h, value: h.principal + h.earnings, yesterdayEarning: yesterdays.get(h.id) || 0, product: catalog.forHolding({ ...h, product_snapshot }) }));
-    const ledger = all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id).map(enrich);
+    const ledger = withCategoryTags(bank, user.id, all('SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 500', user.id)).map(enrich);
     return {
       ...(services ? services.snapshot(user) : {}),
       ...(enforcing(services?.puma?.policy.flags.risk_adaptive_auth) ? { adaptiveTransfers: true } : {}),
@@ -339,6 +341,8 @@ export function createApp(dbPath = ':memory:', options = {}) {
   registerPumaRoutes(route, bank, services, riskTransfers);
   services.enrollment = createEnrollment(services, { agreements: options.agreements });
   services.onboarding = createOnboarding(services);
+  services.merchantCategories = createMerchantCategories(services, options.merchantCategories);
+  services.hiddenSpend = createHiddenSpend(services, options.chat);
   const agent = createAgent(services, options.chat);
   const scheduler = createScheduler(services);
   registerChat(route, state, options.chat);
@@ -465,13 +469,19 @@ export function createApp(dbPath = ':memory:', options = {}) {
     const q = key => query[key] === undefined ? undefined : String(query[key]);
     const range = q('preset') || q('period') || q('from') || q('to') ? resolveRange({ preset: q('preset'), period: q('period'), from: q('from'), to: q('to') }, businessDate()) : null;
     const rows = all(`SELECT l.*,a.number FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=?${range ? ' AND l.created_at>=? AND l.created_at<?' : ''} ORDER BY l.created_at DESC,l.id DESC`, user.id, ...(range ? utcBounds(range) : []));
-    return selectLedger(rows.map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), keyword: q('q') });
+    return selectLedger(withCategoryTags(bank, user.id, rows).map(enrich), { direction: ['income', 'expense'].includes(q('direction')) ? q('direction') : undefined, kind: q('kind'), category: q('category'), platform: q('platform'), keyword: q('q') });
   }
   route('get', '/ledger', '收支流水，支持时段（preset/period/from/to，北京时间）、方向、类型、分类与关键字过滤', (req, res) => res.json(ledgerQuery(req.user, req.query).slice(0, 2000)));
   // Same statistics as the assistant's bill card and the scheduled Feishu/WeChat reports, so their numbers agree.
   route('get', '/ledger/bills', '本人月度账单与只读消费洞察', (req, res) => {
     res.set('Cache-Control', 'no-store').json(billView(bank, services, req.user, String(req.query.period || businessDate().slice(0, 7))));
   });
+  route('post', '/ledger/bills/hidden', '由模型分析本人当月隐形消费，金额由服务端按流水计算，流水不变时直接返回已存结果', async (req, res) => {
+    res.set('Cache-Control', 'no-store').json(await services.hiddenSpend.analyze(req.user, req.body.period));
+  }, true, { required: ['period'], properties: { period: { type: 'string' } } });
+  route('put', '/ledger/:id/category', '手动修改消费流水分类，可应用到本人的同一商户', (req, res) => res.json(services.merchantCategories.setCategory(req.user, req.params.id, req.body)), true,
+    { required: ['category'], properties: { category: { type: 'string' }, applyToMerchant: { type: 'boolean' } } });
+  route('delete', '/ledger/:id/category', '撤销手动修改，恢复自动分类', (req, res) => res.json(services.merchantCategories.resetCategory(req.user, req.params.id)));
   route('get', '/ledger/report', '账单报告与异常支出（preset/period/from/to，北京时间）', (req, res) => {
     const q = key => req.query[key] === undefined ? undefined : String(req.query[key]);
     if (q('origin') === 'bills') requireThat(services.puma.consents.allowed(req.user, 'data_read'), '未获授权读取账单数据', 403, 'DATA_READ_DENIED');
@@ -601,5 +611,5 @@ export function createApp(dbPath = ':memory:', options = {}) {
     if(_req.user) audit(_req.user.id,'request.rejected',_req.resourceId||'',{path:_req.path,code:error.code||'INTERNAL_ERROR',outcome:requirement?'require_verification':'deny',...(decision?{decision}:{})});
     res.status(status).json({ error: { code: error.code || (status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR'), message: status === 500 ? '服务暂时不可用，请稍后重试' : error.message, ...(decision?{decision}:{}) } });
   });
-  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); services.risk.expire(); riskTransfers.executor.reconcile(); } };
+  return { app, bank, services, agent, scheduler, channels, maintenance: () => { expire(); scheduler.runDue(); services.memory.cleanup(); channels.reports.runDue(); services.risk.expire(); riskTransfers.executor.reconcile(); services.merchantCategories.runDue(); } };
 }

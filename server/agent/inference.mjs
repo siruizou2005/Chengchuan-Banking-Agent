@@ -3,6 +3,21 @@ import { BusinessError, requireThat } from '../errors.mjs';
 import { assertPrincipal } from './principal.mjs';
 
 const positive = (value, fallback) => Number.isFinite(Number(value))&&Number(value)>0?Math.floor(Number(value)):fallback;
+export function inferenceCost(usage={}) {
+  const count=n=>Number.isInteger(n)&&n>=0?n:null,input=count(usage.prompt_tokens),output=count(usage.completion_tokens);
+  const inputRate=Number(process.env.INFERENCE_INPUT_PRICE_PER_MILLION),outputRate=Number(process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION);
+  return input!==null&&output!==null&&process.env.INFERENCE_INPUT_PRICE_PER_MILLION?.trim()&&process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION?.trim()&&Number.isFinite(inputRate)&&Number.isFinite(outputRate)&&inputRate>=0&&outputRate>=0?(input*inputRate+output*outputRate)/1e6:null;
+}
+async function requestProvider(providerFetch,config,payload,signal) {
+  const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal,headers:{'Content-Type':'application/json',Authorization:`Bearer ${config.apiKey}`},body:JSON.stringify(payload)});
+  if(!response.ok){
+    const detail=await response.json().catch(()=>null);
+    if(detail?.error?.code==='model_not_found')throw new BusinessError('当前聊天模型不可用',502,'MODEL_UNAVAILABLE');
+    const [code,message]=({401:['PROVIDER_AUTH','模型服务认证失败'],402:['PROVIDER_BALANCE','模型服务余额不足'],429:['PROVIDER_RATE_LIMIT','模型服务请求繁忙']})[response.status]||['PROVIDER_ERROR','模型服务暂时不可用'];
+    throw new BusinessError(message,502,code);
+  }
+  return response.json();
+}
 export function createInferenceManager(bank, options={}) {
   const maxInput=positive(options.maxInputTokens??process.env.INFERENCE_MAX_INPUT_TOKENS,64000);
   const maxOutput=positive(options.maxOutputTokens??process.env.INFERENCE_MAX_OUTPUT_TOKENS,2200);
@@ -36,21 +51,13 @@ export function createInferenceManager(bank, options={}) {
       });
       const data=await Promise.race([(async()=>{
         controller.signal.throwIfAborted();assertAuthorized();
-        const response=await providerFetch(`${config.baseUrl.replace(/\/$/,'')}/chat/completions`,{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json',Authorization:`Bearer ${config.apiKey}`},body:JSON.stringify(payload)});
-        if(!response.ok){
-          const detail=await response.json().catch(()=>null);
-          if(detail?.error?.code==='model_not_found')throw new BusinessError('当前聊天模型不可用',502,'MODEL_UNAVAILABLE');
-          const [code,message]=({401:['PROVIDER_AUTH','模型服务认证失败'],402:['PROVIDER_BALANCE','模型服务余额不足'],429:['PROVIDER_RATE_LIMIT','模型服务请求繁忙']})[response.status]||['PROVIDER_ERROR','模型服务暂时不可用'];
-          throw new BusinessError(message,502,code);
-        }
-        return response.json();
+        return requestProvider(providerFetch,config,payload,controller.signal);
       })(),cancelled]);
       assertAuthorized();
       requireThat(data?.choices?.[0]?.message&&(typeof data.choices[0].message.content==='string'||Array.isArray(data.choices[0].message.tool_calls)),'模型服务返回为空，请重试',502,'EMPTY_RESPONSE');
       const usage=data.usage||{},count=n=>Number.isInteger(n)&&n>=0?n:null;
       const input=count(usage.prompt_tokens),output=count(usage.completion_tokens);
-      const inputRate=Number(process.env.INFERENCE_INPUT_PRICE_PER_MILLION),outputRate=Number(process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION);
-      const cost=trigger!=='voice'&&input!==null&&output!==null&&process.env.INFERENCE_INPUT_PRICE_PER_MILLION?.trim()&&process.env.INFERENCE_OUTPUT_PRICE_PER_MILLION?.trim()&&Number.isFinite(inputRate)&&Number.isFinite(outputRate)&&inputRate>=0&&outputRate>=0?(input*inputRate+output*outputRate)/1e6:null;
+      const cost=trigger==='voice'?null:inferenceCost(usage);
       bank.run("UPDATE inference_calls SET status='succeeded',input_tokens=?,output_tokens=?,cost=?,finished_at=? WHERE id=? AND status='running'",input,output,cost,now(),callId);
       return data;
     } catch(error) {
@@ -59,5 +66,19 @@ export function createInferenceManager(bank, options={}) {
       throw safe;
     } finally { clearTimeout(timer);signal?.removeEventListener('abort',abortListener); }
   }
-  return {complete};
+  // Bank-side batch work with no customer request behind it. Callers send no customer identity and keep their own usage records.
+  async function completeSystem({config,body,signal,fetch:providerFetch=fetch,timeoutMs=45000}) {
+    requireThat(Buffer.byteLength(JSON.stringify(body.messages))<=maxInput,'模型输入超过额度',413,'INFERENCE_INPUT_LIMIT');
+    const payload={...body,max_tokens:Math.min(positive(body.max_tokens,maxOutput),maxOutput)},controller=new AbortController();
+    const abort=()=>controller.abort(),timer=setTimeout(abort,timeoutMs);
+    signal?.addEventListener('abort',abort,{once:true});
+    try {
+      const data=await requestProvider(providerFetch,config,payload,controller.signal);
+      requireThat(typeof data?.choices?.[0]?.message?.content==='string','模型服务返回为空',502,'EMPTY_RESPONSE');
+      return data;
+    } catch(error) {
+      throw error instanceof BusinessError?error:new BusinessError('模型服务连接失败',502,'PROVIDER_ERROR');
+    } finally { clearTimeout(timer);signal?.removeEventListener('abort',abort); }
+  }
+  return {complete,completeSystem};
 }

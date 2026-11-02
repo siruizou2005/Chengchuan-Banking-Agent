@@ -47,6 +47,7 @@ export function createEnrollment(services,options={}) {
   // Removing a candidate records a rejection; a full reset should not keep blocking those suggestions.
   for(const table of ['memory_rejections','memory_evidence','behavior_hypotheses','behavior_events','memory_module_summaries','user_memory_modules','memory_module_suggestions'])run(`DELETE FROM ${table} WHERE tenant_id=? AND user_id=?`,...scope);
   run("UPDATE agent_sessions SET archived=CASE WHEN channel='app' THEN 1 ELSE archived END,history='[]',task_context='{}' WHERE user_id=?",user.id);
+  run('DELETE FROM hidden_spend_analyses WHERE user_id=?',user.id);
   services.memory.invalidate(p,{reason:'assistant_data_cleared'});
   run("UPDATE users SET agent_onboarding='pending',agent_onboarding_state='{}' WHERE id=?",user.id);
  }

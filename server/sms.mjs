@@ -1,4 +1,4 @@
-import { isDemoUser, UNLIMITED_EMAILS } from './demo-users.mjs';
+import { isDemoUser } from './demo-users.mjs';
 import { isReservedEmail, maskEmail } from './email.mjs';
 import { hash, requireThat } from './errors.mjs';
 
@@ -32,7 +32,6 @@ export function createSmsDelivery(bank, { provider, email: emailProvider, limits
     const key = hash(`${channel}:${target}`), now = Date.now(), day = beijingDate(now);
     const last = bank.get('SELECT MAX(created_at) AS at FROM otp_sends WHERE target_hash=?', key).at;
     requireThat(!last || now - last >= intervalMs, `验证码发送过于频繁，请${Math.ceil((intervalMs - (now - last)) / 1000)}秒后再试`, 429, 'RATE_LIMITED');
-    if (UNLIMITED_EMAILS.has(target)) return bank.run('INSERT INTO otp_sends(target_hash,channel,day,created_at) VALUES(?,?,?,?)', key, channel, day, now);
     requireThat(bank.get('SELECT COUNT(*) AS n FROM otp_sends WHERE target_hash=? AND day=?', key, day).n < perTarget, '今日验证码发送次数已达上限，请明天再试', 429, 'RATE_LIMITED');
     requireThat(bank.get('SELECT COUNT(*) AS n FROM otp_sends WHERE channel=? AND day=?', channel, day).n < daily, '今日验证码发送量已达上限，请稍后再试', 429, 'RATE_LIMITED');
     bank.run('INSERT INTO otp_sends(target_hash,channel,day,created_at) VALUES(?,?,?,?)', key, channel, day, now);

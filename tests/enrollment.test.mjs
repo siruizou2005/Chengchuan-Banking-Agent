@@ -34,7 +34,7 @@ test('未开通时对话、语音、渠道绑定都被拒绝且不调用模型�
   assert.deepEqual(status.documents.map(d => d.title), ['智能助手服务协议', '个人信息处理授权书', '风险提示书']);
   assert.ok(status.documents.every(d => !d.body));
   const doc = (await f.call('/agent/agreements/privacy')).data;
-  assert.equal(doc.version, '1.0'); assert.match(doc.body, /委托处理/);
+  assert.equal(doc.version, '1.1'); assert.match(doc.body, /委托处理/);
   assert.equal((await f.call('/agent/agreements/unknown')).status, 404);
 
   assert.equal((await f.call('/agent/enrollment', { documents: current(status.documents).slice(1) })).data.error.code, 'AGREEMENT_VERSION_MISMATCH');
@@ -44,9 +44,9 @@ test('未开通时对话、语音、渠道绑定都被拒绝且不调用模型�
 
   const enabled = (await f.call('/agent/enrollment', { documents: current(status.documents) })).data;
   assert.equal(enabled.status, 'enabled'); assert.equal(enabled.onboarding, 'pending');
-  assert.deepEqual(enabled.accepted.map(a => [a.id, a.version]), [['privacy', '1.0'], ['risk', '1.0'], ['service', '1.0']]);
+  assert.deepEqual(enabled.accepted.map(a => [a.id, a.version]), [['privacy', '1.1'], ['risk', '1.0'], ['service', '1.0']]);
   const [record] = audits(f, 'agent.enabled');
-  assert.deepEqual(record.detail.documents.map(d => `${d.title}@${d.version}`), ['智能助手服务协议@1.0', '个人信息处理授权书@1.0', '风险提示书@1.0']);
+  assert.deepEqual(record.detail.documents.map(d => `${d.title}@${d.version}`), ['智能助手服务协议@1.0', '个人信息处理授权书@1.1', '风险提示书@1.0']);
   assert.equal(record.detail.acceptedAt, enabled.enabledAt);
   // Accepting again is a no-op rather than a second consent record.
   await f.call('/agent/enrollment', { documents: current(status.documents) });

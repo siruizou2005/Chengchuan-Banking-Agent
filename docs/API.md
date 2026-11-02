@@ -6,7 +6,7 @@
 
 ## 最短工作流
 
-1. `POST /auth/login`：`{"phone":"13800138000","password":"Bank123456"}`。
+1. `POST /auth/login`：`{"phone":"18662995523","password":"Bank123456"}`。
 2. `GET /accounts`：读取账户、账面余额 `balance`、预留 `held`、可用余额 `available`，单位为分。
 3. `POST /transactions`，传请求头 `Idempotency-Key: <8至100字符唯一键>`：
 
@@ -14,8 +14,8 @@
 {
   "type": "transfer",
   "amount": "100.50",
-  "recipientName": "陈屿",
-  "recipientAccount": "6218808888000088096",
+  "recipientName": "万奇",
+  "recipientAccount": "6218807752838722169",
   "bank": "澄川银行",
   "note": "模拟测试"
 }
@@ -54,7 +54,10 @@
 | GET /me | 当前用户 |
 | GET /dashboard | 账户、持仓、贷款、信用卡、最近 500 条流水/100 条交易、消息，以及 agentActions、agentPlans、subscriptions、virtualCards、reservations、scheduledTasks、bindings、agentLockedUntil |
 | GET /transactions?status=pending | 最近最多 500 条交易，可筛选状态 |
-| GET /ledger?preset=last_30_days&direction=expense&category=餐饮美食&q=美团 | 最多 2000 条匹配流水。时段（北京时间）用 `preset`（同智能体工具取值）、`period`（YYYY / YYYY-MM / YYYY-MM-DD）或 `from`+`to`，不传为全部；`direction` 为 income/expense；`kind`（`spend` 表示消费加退款）、`category`、`platform`（如 支付宝、银行卡快捷支付、澄川银行）按统一口径筛选；`q` 匹配摘要、对方、商户、附言、交易编号。每行附带 `kind`、`tag`、`bj_time`，导入流水另含 `txn_type`、`counterparty`、`merchant`、`platform` 等统一字段，见 README |
+| GET /ledger?preset=last_30_days&direction=expense&category=食品&q=美团 | 最多 2000 条匹配流水。时段（北京时间）用 `preset`（同智能体工具取值）、`period`（YYYY / YYYY-MM / YYYY-MM-DD）或 `from`+`to`，不传为全部；`direction` 为 income/expense；`kind`（`spend` 表示消费加退款）、`category`、`platform`（如 支付宝、银行卡快捷支付、澄川银行）按统一口径筛选；`q` 匹配摘要、对方、商户、附言、交易编号。每行附带 `kind`、`tag`、`bj_time`，导入流水另含 `txn_type`、`counterparty`、`merchant`、`platform` 等统一字段，见 README |
+| POST /ledger/bills/hidden | `{period: "YYYY-MM"}` 由模型分析本人当月隐形消费，返回 `{period, total, summary, tips, groups:[{type, name, amount, findings:[{title, reason, amount, ids}]}]}`。模型只指出流水，金额由服务端按流水计算（整数分）；发送内容不含身份、账号和个人姓名。流水不变时返回已存结果，不再调用模型；无消费的月份也不调用。需已开通智能助手（403 `AGENT_NOT_ENABLED`）和数据读取授权（403 `DATA_READ_DENIED`），模型调用计入每日额度 |
+| PUT /ledger/:id/category | `{category, applyToMerchant?}` 手动修改消费或退款流水的分类，返回 `{tag, tag_source}`。`category` 为 CHFS 8 大类之一，`applyToMerchant` 时对本人同一商户生效，没有商户信息的流水返回 409 `MERCHANT_REQUIRED`。非消费流水返回 409 `CATEGORY_NOT_EDITABLE`，撤回数据读取授权后返回 403 |
+| DELETE /ledger/:id/category | 撤销当前生效的手动修改（先单笔，再同商户规则），返回 `{tag, tag_source}` |
 | GET /ledger/report?from=2026-10-22&to=2026-10-22 | `{report, anomalies}`：与智能体 `bill_report` 卡片和飞书/微信定时推送相同的账单统计（时段参数同 `/ledger`，不传为本月），异常支出以前 90 天流水为基准判断；App 页面 `/#bill-report?from=…&to=…` |
 | GET /ledger/export | 按与 `/ledger` 相同的筛选导出 CSV：交易编号、北京时间、摘要、金额、余额、分类、类型、交易类型、对方户名、商户、支付平台、附言、来源银行 |
 | PATCH /accounts/{id} | status=active/frozen/lost、pin；解冻（lost/frozen→active）与挂失为红色，需附 verificationActionId + verificationToken |
@@ -103,7 +106,7 @@
 `POST /agent/chat`（`POST /chat` 为兼容别名）：
 
 ```json
-{ "messages": [{ "role": "user", "content": "给陈屿转 200 备注午饭" }], "sessionId": "SESSION…", "expectedUserId": "U…" }
+{ "messages": [{ "role": "user", "content": "给万奇转 200 备注午饭" }], "sessionId": "SESSION…", "expectedUserId": "U…" }
 ```
 
 - `messages` 只接受 user/assistant 角色，最多 24 条、单条 6000 字、合计 12000 字，最后一条必须是 user。历史 assistant 消息不构成已执行的证据。

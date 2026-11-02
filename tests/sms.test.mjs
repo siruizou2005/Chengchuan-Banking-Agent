@@ -39,8 +39,7 @@ test('注入外部适配器后所有内置演示账户仍强制模拟', async t 
   const delivery = createSmsDelivery(f.bank, { provider: { channel: 'tencent_sms', async sendVerificationCode() { calls++; } } });
   for (const user of f.bank.all('SELECT * FROM users')) {
     assert.equal(delivery.forUser(user).channel, 'simulated_sms');
-    // example.com addresses are reserved demo mail; 邹瑞's real address needs an email adapter, and SMS stays simulated for demo phones.
-    assert.equal(delivery.forUser(user).reason, user.phone === '19900000000' ? 'demo_account' : 'demo_email');
+    assert.equal(delivery.forUser(user).reason, 'demo_email');
   }
   const action = (await f.propose('propose_virtual_card', { limit: '100' })).data;
   const r = await f.call('/verify/start', { actionId: action.id });

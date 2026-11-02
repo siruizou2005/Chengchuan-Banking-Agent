@@ -1,3 +1,4 @@
+import { SPEND_CATEGORIES } from './billData';
 import { Fragment, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { ShieldCheck, Copy, Download, Search, Plus, ScanLine, Upload } from 'lucide-react';
@@ -61,7 +62,7 @@ export function Transfer() {
 }
 
 const PERIODS = [['last_7_days', '近7天'], ['last_30_days', '近30天'], ['this_month', '本月'], ['last_month', '上月'], ['last_3_months', '近3个月'], ['month', '按月'], ['custom', '自定义']];
-const CATEGORY_GROUPS: [string, string[]][] = [['消费', ['餐饮美食', '超市便利', '购物', '交通出行', '旅游酒店', '住房缴费', '通讯', '医疗健康', '校园教育', '休闲娱乐', '订阅会员', '个人收款码', '支付宝支出', '微信支付支出', '未识别商户', '其他消费']], ['资金往来', ['转账给他人', '本人账户互转', '充值提现', '理财存款', '信用卡/贷款']], ['收入', ['工资收入', '转账收入', '利息', '其他收入']]];
+const CATEGORY_GROUPS: [string, string[]][] = [['消费', [...SPEND_CATEGORIES, '个人收款码', '支付宝支出', '微信支付支出']], ['资金往来', ['转账给他人', '本人账户互转', '充值提现', '理财存款', '信用卡/贷款']], ['收入', ['工资收入', '转账收入', '利息', '其他收入']]];
 export const KIND_LABEL: Record<string, string> = { consumption: '消费', refund: '退款', income: '收入', transfer_out: '转账给他人', self: '本人账户互转', wallet: '充值提现', investment: '理财存款', debt: '信用卡/贷款', opening: '期初余额' };
 const bjToday = (offset = 0) => new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 

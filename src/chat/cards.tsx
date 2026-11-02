@@ -54,7 +54,7 @@ const STATS_LABEL: Record<string, string> = { category: '按分类', merchant: '
 const KIND_TEXT: Record<string, string> = { consumption: '消费', income: '收入', transfer_out: '转账给他人', self: '本人账户互转', wallet: '充值提现', investment: '理财存款', debt: '信用卡/贷款', refund: '退款' };
 // Reference categorical slots in fixed order; the folded tail is neutral gray.
 const SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'], OTHER = '#b8b7b2';
-const isUnknownTag = (tag: string) => tag === '未识别商户' || /^(支付宝|微信支付|京东支付|抖音支付)支出$/.test(tag);
+const isUnknownTag = (tag: string) => /^(支付宝|微信支付|京东支付|抖音支付)支出$/.test(tag);
 const dayText = (d: string) => `${+d.slice(5, 7)}月${+d.slice(8, 10)}日`;
 type Bucket = { key: string; amount: number; count: number; share: number };
 type Part = { name: string; amount: number; count?: number; share: number };

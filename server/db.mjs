@@ -11,8 +11,10 @@ import { migrateProducts, DEPOSITS, holdingSnapshot } from './products.mjs';
 import { migrateEarnings } from './earnings.mjs';
 import { migrateRisk } from './risk/schema.mjs';
 import { migratePuma } from './puma/schema.mjs';
+import { migrateMerchantCategories } from './agent/category-schema.mjs';
+import { migrateHiddenSpend } from './agent/hidden-spend-schema.mjs';
 import { mirrorAudit } from './puma/evidence.mjs';
-import { DEMO_EMAILS, OWNER_PHONE, OWNER_PASSWORD_HASH } from './demo-users.mjs';
+import { DEMO_EMAILS } from './demo-users.mjs';
 
 export const id = (prefix = '') => prefix + randomUUID().replaceAll('-', '');
 export const now = () => new Date().toISOString();
@@ -29,7 +31,25 @@ export function verifyPassword(value, stored) {
 // Optional, source-neutral ledger details; native rows leave them NULL.
 export const LEDGER_DETAIL = ['txn_type','bank_summary','counterparty','counterparty_account','merchant','platform','channel','memo','time_precision','source_bank','source_detail'];
 
-export function createBank(path) {
+// Global data that belongs to no customer and survives a reset to the demo accounts.
+const SHARED_TABLES = new Set(['schema_migrations', 'product_cache', 'product_history', 'product_sync', 'personalization_instance', 'risk_mock_secret', 'merchant_categories', 'merchant_category_runs']);
+// Runs once per database. Triggers guard audit tables against ordinary deletes, so they are set aside and restored.
+function resetToDemoAccounts(db) {
+  if (db.prepare("SELECT 1 FROM schema_migrations WHERE version='demo-accounts-v3'").get()) return;
+  const triggers = db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger'").all();
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map(t => t.name).filter(name => !SHARED_TABLES.has(name));
+  db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
+  try {
+    for (const { name } of triggers) db.exec(`DROP TRIGGER "${name}"`);
+    for (const name of tables) db.exec(`DELETE FROM "${name}"`);
+    for (const { sql } of triggers) db.exec(sql);
+    db.prepare('INSERT INTO schema_migrations VALUES(?,?)').run('demo-accounts-v3', now());
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; } finally { db.exec('PRAGMA foreign_keys=ON'); }
+}
+
+// accounts: 'demo' is the running product (邹瑞 and 万奇 only); 'fixtures' is the default that tests and check scripts build on.
+export function createBank(path, { accounts = 'fixtures' } = {}) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec(`
@@ -173,6 +193,8 @@ export function createBank(path) {
   migrateEarnings(db);
   migrateRisk(db);
   migratePuma(db);
+  migrateMerchantCategories(db);
+  migrateHiddenSpend(db);
   if (!all('PRAGMA table_info(users)').some(c => c.name === 'email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   // Assistant enrollment: every user starts disabled until they accept the current agreements themselves.
   for (const [column, ddl] of [['agent_enabled_at', 'TEXT'], ['agent_onboarding', "TEXT NOT NULL DEFAULT 'pending'"], ['agent_onboarding_state', "TEXT NOT NULL DEFAULT '{}'"]])
@@ -214,9 +236,11 @@ export function createBank(path) {
     audit(userId, 'user.created', userId);
     return userId;
   }
+  if (accounts === 'demo') resetToDemoAccounts(db);
   if (!get("SELECT id FROM accounts WHERE id='system'")) {
     atomic(() => {
       run("INSERT INTO accounts(id,number,name,type) VALUES('system','SYSTEM','模拟清算账户','system')");
+      if (accounts === 'demo') return;
       const first = newUser('13800138000', '林知夏', 'Bank123456', '123456', '6218808888000012068');
       const second = newUser('13900139000', '陈屿', 'Bank123456', '123456', '6218808888000088096');
       run('INSERT INTO payees(id,user_id,name,number,bank) VALUES(?,?,?,?,?)', id('P'), first, '陈屿', '6218808888000088096', '澄川银行');
@@ -231,7 +255,7 @@ export function createBank(path) {
     });
   }
   // Balanced, once-only demo history, including upgrades of previously seeded databases.
-  for (const user of all("SELECT * FROM users WHERE phone IN ('13800138000','13900139000')")) {
+  for (const user of accounts === 'demo' ? [] : all("SELECT * FROM users WHERE phone IN ('13800138000','13900139000')")) {
     if (get("SELECT id FROM audit WHERE user_id=? AND action='demo.history.v2'", user.id)) continue;
     atomic(() => {
       const account = get("SELECT id FROM accounts WHERE user_id=? AND type='debit'", user.id).id;
@@ -254,9 +278,9 @@ export function createBank(path) {
   }
   // Statements imported from other banks: renamed holders, simulated card numbers, masked counterparty accounts.
   // Rows start with a back-computed opening balance, so balance_after reproduces the source statement.
-  const imported = JSON.parse(readFileSync(new URL('./seed/imported-statements.json', import.meta.url), 'utf8'));
-  for (const s of imported.users) {
-    if (get('SELECT id FROM users WHERE phone=?', s.phone)) continue;
+  const imported = JSON.parse(readFileSync(new URL(`./seed/${accounts === 'demo' ? 'demo-accounts' : 'fixture-statements'}.json`, import.meta.url), 'utf8'));
+  const missing = imported.users.filter(s => !get('SELECT id FROM users WHERE phone=?', s.phone));
+  for (const s of missing) {
     atomic(() => {
       const userId = newUser(s.phone, s.name, 'Bank123456', '123456', s.card, 0);
       const account = get("SELECT id FROM accounts WHERE user_id=? AND type='debit'", userId).id;
@@ -266,15 +290,14 @@ export function createBank(path) {
         post(id('IMP'), r.amount > 0 ? 'system' : account, r.amount > 0 ? account : 'system', Math.abs(r.amount), r.title, r.category, r.created_at, detail);
       }
       if (get('SELECT balance FROM accounts WHERE id=?', account).balance !== s.closing) throw new Error(`导入流水余额不符：${s.name}`);
+      for (const h of s.holdings || []) run('INSERT INTO holdings(id,user_id,product_id,principal,created_at,unlock_at,product_snapshot) VALUES(?,?,?,?,?,?,?)', id('H'), userId, h.product_id, h.principal, h.created_at, new Date(Date.parse(h.created_at) + h.product_snapshot.days * 86400000).toISOString(), JSON.stringify(h.product_snapshot));
       audit(userId, 'statement.imported', account, { sourceBank: s.source_bank, period: s.period, rows: s.rows.length });
     });
   }
-  // Move the owner's account off the shared demo password once; a password changed later is left alone.
-  const owner = get('SELECT id,password_hash FROM users WHERE phone=?', OWNER_PHONE);
-  if (owner && verifyPassword('Bank123456', owner.password_hash)) atomic(() => {
-    run('UPDATE users SET password_hash=? WHERE id=?', OWNER_PASSWORD_HASH, owner.id);
-    run('DELETE FROM sessions WHERE user_id=?', owner.id);
-    audit(owner.id, 'password.changed', owner.id, { reason: 'owner_account' });
+  // The two demo accounts can pay each other straight away.
+  if (accounts === 'demo' && missing.length === imported.users.length) atomic(() => {
+    const [first, second] = imported.users.map(s => ({ ...s, id: get('SELECT id FROM users WHERE phone=?', s.phone).id }));
+    for (const [from, to] of [[first, second], [second, first]]) run('INSERT INTO payees(id,user_id,name,number,bank) VALUES(?,?,?,?,?)', id('P'), from.id, to.name, to.card, '澄川银行');
   });
   if (!get("SELECT version FROM schema_migrations WHERE version='permissions-v2'")) atomic(()=>{
     for(const a of all("SELECT * FROM agent_actions WHERE status IN ('confirmed','executing')")) {

@@ -15,52 +15,91 @@ const weekday = date => (new Date(date + 'T00:00:00Z').getUTCDay() + 6) % 7;
 
 export const PRESETS = { today: '今天', yesterday: '昨天', this_week: '本周', last_week: '上周', last_7_days: '近7天', last_30_days: '近30天', this_month: '本月', last_month: '上月', last_3_months: '近3个月', this_year: '今年' };
 export const KIND_LABEL = { consumption: '消费', refund: '退款', income: '收入', transfer_out: '转账给他人', self: '本人账户互转', wallet: '充值提现', investment: '理财存款', debt: '信用卡/贷款', opening: '期初余额' };
-export const SPEND_CATEGORIES = ['餐饮美食', '超市便利', '购物', '交通出行', '旅游酒店', '住房缴费', '通讯', '医疗健康', '校园教育', '休闲娱乐', '订阅会员', '个人收款码', '支付宝支出', '微信支付支出', '未识别商户', '其他消费'];
+// The eight CHFS consumption categories. 其他消费 holds whatever the rules cannot place with confidence.
+export const OTHER_CATEGORY = '其他消费';
+export const SPEND_CATEGORIES = ['食品', '衣着', '居住', '家庭设备及服务', '交通通信', '教育文娱', '医疗保健', OTHER_CATEGORY];
 // Spending whose source bank only shows the payment platform, never the real merchant.
-export const isUnknownTag = tag => tag === '未识别商户' || /^(支付宝|微信支付|京东支付|抖音支付)支出$/.test(tag);
+export const isUnknownTag = tag => /^(支付宝|微信支付|京东支付|抖音支付)支出$/.test(tag);
+// Shopping platforms and vague company words (淘宝, 京东, 商贸, 供应链...) name no category, so they are left out on purpose:
+// a merchant known only by them stays in 其他消费, while 京东便利店 still reaches 食品 through 便利.
 const SPEND = [
-  ['订阅会员', /订阅|会员|音乐|云盘|健身/],
-  ['通讯', /通讯|话费|宽带|电信|联通|联合网络|移动通信|中国移动/],
-  ['住房缴费', /房租|房费|物业|水电|水费|电费|燃气|居住/],
-  ['交通出行', /交通|地铁|公交|打车|加油|滴滴|出行|哈啰|高德|铁路|12306|航空|机场|石化|石油|停车|单车/],
-  ['旅游酒店', /旅行|旅游|携程|程付通|华程|赫程|同程|飞猪|酒店|宾馆|民宿|景区|门票/],
-  ['医疗健康', /医院|医药|医疗|药房|药店|快药|诊所|一心堂/],
-  ['超市便利', /超市|便利|全家|罗森|LAWSON|SEVEN|7-11|生鲜|永辉|盒马|物美|百货|鲜果|水果|果业|蔬|农业|老邻居|智购/],
-  ['购物', /购物|淘宝|天猫|京东|拼多多|旗舰店|专卖店|抖音|淘天|电子商务|唯品会|得物|闲鱼|供应链|商贸|贸易|迪卡侬|绿联|嘉立创|电子有限|照明|办公用品|文具/],
-  ['餐饮美食', /餐饮|餐厅|饭|面馆|小面|米粉|烧烤|烤鱼|火锅|小吃|食品|乳业|零食|卤|鸡排|奶茶|咖啡|茶饮|清饮|蜜雪|蛋糕|甜品|面包|Tart|肯德基|麦当劳|汉堡|老乡鸡|三快|美团|点评|拉扎斯|饿了么|外卖|小馆|酒家|凉茶|涼茶|食堂|馒|鸭|椰|捞派|瑞幸|星巴克|冰室|牛约堡|小朵颐|丰收日/],
-  ['休闲娱乐', /爱奇艺|腾讯视频|优酷|网易|游戏|电影|影城|影院|KTV|游泳|球馆|公园|华为软件|哔哩|娱乐/],
-  ['校园教育', /大学|学院|学校|教育|培训|考试|书店|学费/],
+  ['居住', /房租|房费|物业|水电|水费|电费|燃气|居住/],
+  ['交通通信', /交通|地铁|公交|打车|加油|滴滴|出行|哈啰|高德|铁路|12306|航空|机场|中国石油|中石油|中国石化|中石化|石油有限|石化有限|石油分公司|石化分公司|停车|单车|通讯|话费|宽带|电信|联通|联合网络|移动通信|中国移动/],
+  ['医疗保健', /医院|医药|医疗|药房|药店|快药|诊所|一心堂/],
+  ['衣着', /服装|服饰|衣服|女装|男装|童装|内衣|鞋|帽|优衣库|UNIQLO|ZARA|H&M|安踏|李宁|耐克|NIKE|阿迪达斯|ADIDAS|特步|森马|海澜之家/],
+  ['家庭设备及服务', /家电|家具|家居|家纺|日用|洗衣|保洁|家政|维修|照明|绿联|嘉立创|电子有限|数码/],
+  ['食品', /餐饮|餐厅|饭|面馆|小面|米粉|烧烤|烤鱼|火锅|小吃|食品|乳业|零食|卤|鸡排|奶茶|咖啡|茶饮|清饮|蜜雪|蛋糕|甜品|面包|Tart|肯德基|麦当劳|汉堡|老乡鸡|三快|美团|点评|拉扎斯|饿了么|外卖|小馆|酒家|凉茶|涼茶|食堂|馒|鸭|椰|捞派|瑞幸|星巴克|冰室|牛约堡|小朵颐|丰收日|超市|便利|全家|罗森|LAWSON|SEVEN|7-11|生鲜|永辉|盒马|物美|鲜果|水果|果业|蔬|老邻居|智购/],
+  ['教育文娱', /大学|学院|学校|教育|培训|考试|书店|学费|文具|办公用品|爱奇艺|腾讯视频|优酷|网易|游戏|电影|影城|影院|KTV|游泳|球馆|公园|华为软件|哔哩|娱乐|订阅|视频|音乐|云盘|健身|旅行|旅游|携程|程付通|华程|赫程|同程|飞猪|酒店|宾馆|民宿|景区|门票/],
 ];
 // Small vendors take payments through personal QR codes, so a bare personal name is a merchant, not a transfer.
 const PERSON = /^[王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤菅凌翁喻文欧俞柳鲍滕伍季屈童葛鲁佘傅齐康施牛洪祝左甘颜骆包邢申车关易苗常乔赖宁庄柯管聂岳殷温艾詹翟解饶舒应晏储符蒙冉臧郁毕祁靳栾邬宫阮尤][一-龥]{1,2}$/;
 const PROCESSOR = /财付通|支付宝|Alipay/;
 
-function spendCategory(r, imported) {
+const PLATFORMS = ['支付宝', '微信支付', '京东支付', '抖音支付'];
+// Native titles are fixed by the bank unless they carry a name the customer typed at checkout.
+const MERCHANT_TITLE = /^(?:信用卡)?消费 · (?!订阅 · )/;
+const normalizeKey = text => text?.normalize('NFKC').replace(/\s+/g, ' ').trim() || null;
+// The merchant a row belongs to. Null when only the payment platform is known, because grouping on it would lump unrelated spending together.
+export function merchantKey(r) {
+  if (!r.txn_type) return normalizeKey(r.title.replace(/^(?:信用卡)?消费 · /, ''));
+  if (r.merchant) return normalizeKey(r.merchant);
+  if (PLATFORMS.includes(r.platform) || PROCESSOR.test(r.counterparty || '')) return null;
+  return normalizeKey(r.counterparty || r.memo);
+}
+// Only merchant-like text may leave the bank: never personal names, masked values or anything that could be a phone or card number.
+// PERSON cannot list every surname, so any bare two or three Chinese characters count as a possible name, at the cost of some short brand names.
+export const sendableKey = key => Boolean(key) && key.length <= 60 && !/^[一-龥]{2,3}$/.test(key) && !key.includes('*') && !/\d{6}/.test(key);
+
+function ruleCategory(r, imported) {
+  if (!imported && !MERCHANT_TITLE.test(r.title)) return SPEND.find(([, re]) => re.test(r.title))?.[0];
   const text = imported ? [r.merchant, r.counterparty, r.memo].filter(Boolean).join(' ') : r.title;
-  for (const [name, re] of SPEND) if (re.test(text)) return name;
-  if (imported && PERSON.test(r.merchant || '')) return '个人收款码';
-  if (imported && !r.merchant) return ['支付宝', '微信支付', '京东支付', '抖音支付'].includes(r.platform) ? `${r.platform}支出` : '未识别商户';
-  return '其他消费';
+  // Hits in several categories mean the rules cannot tell, which is the same as no hit.
+  const hits = SPEND.filter(([, re]) => re.test(text));
+  return hits.length === 1 ? hits[0][0] : null;
+}
+function spendCategory(r, imported) {
+  const tag = ruleCategory(r, imported);
+  if (tag) return { tag, tag_source: 'rule' };
+  if (imported && PERSON.test(r.merchant || '')) return { tag: '个人收款码', tag_source: 'rule' };
+  if (imported && !r.merchant && PLATFORMS.includes(r.platform)) return { tag: `${r.platform}支出`, tag_source: 'rule' };
+  return r.model_tag ? { tag: r.model_tag, tag_source: 'model' } : { tag: OTHER_CATEGORY, tag_source: 'fallback' };
 }
 // Imported rows carry txn_type; native rows only have title and the transaction category.
-export function classifyRow(r) {
+function classifyAutomatically(r) {
   const imported = Boolean(r.txn_type), t = r.txn_type || '';
   if (r.category === 'opening' || r.title === '模拟开户资金') return { kind: 'opening', tag: '期初余额' };
   if (t.startsWith('本人')) return { kind: 'self', tag: KIND_LABEL.self };
   if (/理财/.test(t) || ['deposit', 'investment', 'redeem'].includes(r.category)) return { kind: 'investment', tag: KIND_LABEL.investment };
   if (['loan_draw', 'loan_repay', 'credit_repay'].includes(r.category)) return { kind: 'debt', tag: KIND_LABEL.debt };
-  if (t === '退款') return { kind: 'refund', tag: spendCategory(r, imported) };
+  if (t === '退款') return { kind: 'refund', ...spendCategory(r, imported) };
   if (t === '提现' || t === '存现' || (t === '充值' && (!r.merchant || r.merchant === '微信转账')) || (t === '转入' && !r.merchant && PROCESSOR.test(r.counterparty || ''))) return { kind: 'wallet', tag: KIND_LABEL.wallet };
-  if (r.amount > 0) return { kind: 'income', tag: t === '利息' ? '利息' : /工资/.test(r.title) ? '工资收入' : t === '转入' || /转账/.test(r.title) ? '转账收入' : '其他收入' };
-  if (/房租|房费|物业/.test(`${r.memo || ''} ${r.title}`)) return { kind: 'consumption', tag: '住房缴费' };
+  if (r.amount > 0) return { kind: 'income', tag: t === '利息' ? '利息' : t === '工资' || /工资/.test(r.title) ? '工资收入' : t === '转入' || /转账/.test(r.title) ? '转账收入' : '其他收入' };
+  if (/房租|房费|物业/.test(`${r.memo || ''} ${r.title}`)) return { kind: 'consumption', tag: '居住', tag_source: 'rule' };
   if (t === '转出' || (!imported && r.category === 'transfer') || /微信转账|红包/.test(r.merchant || '')) return { kind: 'transfer_out', tag: KIND_LABEL.transfer_out };
-  return { kind: 'consumption', tag: spendCategory(r, imported) };
+  return { kind: 'consumption', ...spendCategory(r, imported) };
+}
+// Only tag ever changes here. kind drives totals and risk features, so neither the model nor the customer can move it.
+export function classifyRow(r) {
+  const result = classifyAutomatically(r);
+  return r.user_tag && (result.kind === 'consumption' || result.kind === 'refund') ? { ...result, tag: r.user_tag, tag_source: 'user' } : result;
+}
+// Attaches the customer's own corrections and the shared merchant cache, so classification itself stays a pure function of the row.
+export function withCategoryTags(bank, userId, rows) {
+  const pairs = (sql, ...args) => new Map(bank.all(sql, ...args).map(row => Object.values(row)));
+  const entries = pairs('SELECT ledger_id,tag FROM ledger_category_overrides WHERE user_id=?', userId);
+  const merchants = pairs('SELECT merchant_key,tag FROM merchant_category_overrides WHERE user_id=?', userId);
+  const model = pairs("SELECT merchant_key,tag FROM merchant_categories WHERE status='classified'");
+  if (!entries.size && !merchants.size && !model.size) return rows;
+  return rows.map(r => {
+    const key = merchantKey(r), user_tag = entries.get(r.id) ?? merchants.get(key), model_tag = model.get(key);
+    return user_tag || model_tag ? { ...r, user_tag, model_tag } : r;
+  });
 }
 export function enrich(r) {
   const at = bj(r.created_at);
   return { ...r, ...classifyRow(r), bj_time: r.time_precision === 'day' ? at.slice(0, 10) : `${at.slice(0, 10)} ${at.slice(11, 16)}` };
 }
-export function ledgerFor(bank, userId) { return bank.all('SELECT l.* FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 10000', userId); }
+export function ledgerFor(bank, userId) { return withCategoryTags(bank, userId, bank.all('SELECT l.* FROM ledger l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC,l.id DESC LIMIT 10000', userId)); }
 const dateOf = r => r.bj_time.slice(0, 10);
 const merchantOf = r => r.merchant || (r.txn_type ? null : r.title);
 export const platformOf = r => r.platform || (r.txn_type ? '银行卡快捷支付' : '澄川银行');

@@ -7,10 +7,13 @@
 .bill-header.overview { display: block; padding: max(18px, env(safe-area-inset-top)) 14px 47px; }
 .bill-header.overview h1 { font-size: 25px; }
 .bill-tools { display: flex; gap: 4px; }
-.bill-month { position: relative; display: inline-flex; align-items: center; gap: 5px; font-size: 16px; padding: 3px 0; }
-.bill-month input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
-.bill-month input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
-.bill-month:focus-within { outline: 2px solid white; }
+.bill-header button.bill-month { position: static; display: inline-flex; align-items: center; gap: 5px; width: auto; min-height: 34px; font-size: 16px; padding: 3px 0; }
+.bill-month-picker { display: grid; gap: 14px; color: var(--text); }
+.bill-month-picker .bill-spread button { display: inline-grid; place-items: center; width: 40px; height: 40px; color: var(--text); }
+.bill-month-picker button:disabled { color: var(--text-3); opacity: .55; cursor: default; }
+.bill-month-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.bill-month-grid button { min-height: 44px; border-radius: 4px; background: var(--pill); color: var(--text); font-size: 15px; }
+.bill-month-grid button[aria-pressed=true] { background: var(--brand); color: white; }
 .bill-body { position: relative; display: grid; gap: 11px; padding: 13px 11px 20px; }
 .bill-body.overview { margin-top: -32px; padding-top: 0; }
 .bill-panel { background: var(--card); border: 1px solid #eeeff3; border-radius: 7px; padding: 13px 15px; min-width: 0; }
@@ -54,6 +57,9 @@
 .hidden-summary svg { position: absolute; left: 0; top: 10px; width: 22px; }
 .bill-group { display: block; width: 100%; text-align: left; padding: 12px 0 5px; }
 .bill-group .bill-spread { font-size: 14px; flex-wrap: wrap; }
+.bill-finding { padding: 10px 0; }
+.bill-finding > b { flex-shrink: 0; font-size: 13px; }
+.bill-finding small { margin-top: 3px; }
 .bill-bar { background: #e3e7ef; border-radius: 4px; overflow: hidden; display: block; height: 8px; margin-top: 5px; }
 .bill-bar i { display: block; height: 100%; background: var(--brand); }
 .bill-outline { border: 1px solid var(--accent-line); border-radius: 4px; padding: 4px 9px; font-size: 13px; color: var(--brand-deep) !important; }
@@ -73,6 +79,7 @@
 .bill-detail strong { font-size: 23px; color: var(--brand-deep); }
 .bill-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
 .bill-detail dd { margin: 0; text-align: right; }
+.bill-category-editor { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--accent-line); }
 .bill-evidence details { border-top: 1px solid var(--line); padding: 8px 0; }
 @media (max-width: 350px) {
   .bill-panel { padding-inline: 10px; }

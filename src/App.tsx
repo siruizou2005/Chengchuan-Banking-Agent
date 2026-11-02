@@ -194,7 +194,7 @@ export default function App() {
 }
 
 function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initialError: string }) {
-  const [register, setRegister] = useState(false), [phone, setPhone] = useState('13800138000'), [password, setPassword] = useState('Bank123456'), [error, setError] = useState(initialError), [busy, setBusy] = useState(false);
+  const [register, setRegister] = useState(false), [phone, setPhone] = useState('18662995523'), [password, setPassword] = useState('Bank123456'), [error, setError] = useState(initialError), [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(''), [emailCode, setEmailCode] = useState<(Delivery & { id: string }) | null>(null), [cooldown, setCooldown] = useState(0);
   useEffect(() => { if (!cooldown) return; const timer = setTimeout(() => setCooldown(cooldown - 1), 1000); return () => clearTimeout(timer); }, [cooldown]);
   async function sendCode() {
@@ -211,12 +211,12 @@ function Login({ onLogin, initialError }: { onLogin: () => Promise<void>; initia
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   }
-  const demos = [{ name: '林知夏', phone: '13800138000' }, { name: '陈屿', phone: '13900139000' }];
+  const demos = [{ name: '邹瑞', phone: '18662995523' }, { name: '万奇', phone: '15040147842' }];
   return <div className="app-shell bank-theme theme-home login-page">
     <header className="login-hero"><Brand light sub="手机银行" size={40} /><p className="login-slogan">存款 · 理财 · 贷款 · 生活缴费</p></header>
     <main className="login-body">
       <section className="card login-card">
-        <div className="tabs grow"><button role="tab" className={`tab${!register ? ' active' : ''}`} aria-selected={!register} onClick={() => { setRegister(false); setPhone('13800138000'); setPassword('Bank123456'); setError(''); }}>登录</button><button role="tab" className={`tab${register ? ' active' : ''}`} aria-selected={register} onClick={() => { setRegister(true); setPhone(''); setPassword(''); setError(''); }}>注册</button></div>
+        <div className="tabs grow"><button role="tab" className={`tab${!register ? ' active' : ''}`} aria-selected={!register} onClick={() => { setRegister(false); setPhone('18662995523'); setPassword('Bank123456'); setError(''); }}>登录</button><button role="tab" className={`tab${register ? ' active' : ''}`} aria-selected={register} onClick={() => { setRegister(true); setPhone(''); setPassword(''); setError(''); }}>注册</button></div>
         <form className="stack-form" onSubmit={login} data-testid="login-form">
           {register && <Field label="姓名"><input name="name" placeholder="请输入姓名" required minLength={2} maxLength={20} autoComplete="name" /></Field>}
           <Field label="手机号"><input name="phone" type="tel" autoComplete="username" placeholder="请输入11位手机号" value={phone} onChange={e => setPhone(e.target.value)} required pattern="1[0-9]{10}" /></Field>
