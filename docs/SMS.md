@@ -18,7 +18,7 @@
 ## 启用 Resend 邮件
 
 1. 在 Resend 创建 API Key，写入 `/etc/chengchuan-bank/env`：`RESEND_API_KEY=re_…`。
-2. 发件人：未验证域名时默认 `onboarding@resend.dev`，Resend 只允许发到 Resend 账户本人的邮箱；要发给其他人，需在 Resend 验证域名（如 `mail.example.com`，在 DNS 添加其给出的 SPF/DKIM 记录），并设置 `OTP_EMAIL_FROM=澄川银行 <no-reply@mail.siruizou.com>`。
+2. 发件人：未验证域名时默认 `onboarding@resend.dev`，Resend 只允许发到 Resend 账户本人的邮箱；要发给其他人，需在 Resend 验证域名（如 `mail.example.com`，在 DNS 添加其给出的 SPF/DKIM 记录），并设置 `OTP_EMAIL_FROM=澄川银行 <no-reply@mail.example.com>`。
 3. 重启服务。未配置密钥时不启用，所有验证码继续在页面显示。
 
 真实发送（邮件或短信）持久化频控（`otp_sends` 表）：同一地址 60 秒一次、每天 10 次，每日总量 `OTP_DAILY_LIMIT`（默认 90，Resend 免费版每天 100 封）。请求带 `Idempotency-Key`（验证 ID），重试不会重复发信；失败返回 503 `SMS_SEND_FAILED`，不回退成模拟，错误中不含验证码、地址或供应商响应。
