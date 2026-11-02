@@ -1,6 +1,6 @@
 # 金融 Agent 模块化记忆架构
 
-本文描述本次实际代码实现。运行环境为 Node.js 24、现有 Express 服务和 SQLite；没有新增运行时依赖、向量库或外部服务。旧版介绍见 `PERSONALIZATION_TECH_REPORT.md`，本文件取代其中关于检索结构的说明。
+本文描述本次实际代码实现。运行环境为 Node.js 24、现有 Express 服务和 SQLite；没有新增运行时依赖、向量库或外部服务。
 
 ## 1. 原系统与改造依据
 

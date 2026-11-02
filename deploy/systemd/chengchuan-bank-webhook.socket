@@ -1,8 +1,0 @@
-[Unit]
-Description=Chengchuan Bank GitHub webhook socket
-
-[Socket]
-ListenStream=127.0.0.1:8317
-
-[Install]
-WantedBy=sockets.target

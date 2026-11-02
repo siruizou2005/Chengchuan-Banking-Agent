@@ -1,5 +1,6 @@
+# systemd 服务模板。按需修改用户、路径、端口和域名；密钥（CHAT_API_KEY 等）放在 /etc/chengchuan-bank/env，权限 600。
 [Unit]
-Description=Chengchuan Bank Simulator
+Description=ChengChuan Bank Agent
 After=network.target
 
 [Service]
@@ -7,14 +8,13 @@ Type=simple
 User=bank-sim
 Group=bank-sim
 WorkingDirectory=/opt/chengchuan-bank/current
-ExecStart=/opt/chengchuan-bank/runtime/bin/node server/index.mjs --production
+ExecStart=/usr/bin/node server/index.mjs --production
 Environment=NODE_ENV=production
 Environment=PORT=8316
 Environment=BANK_DB=/var/lib/chengchuan-bank/bank.sqlite
-Environment=PUBLIC_ORIGIN=https://bank.siruizou.com
+Environment=PUBLIC_ORIGIN=https://bank.example.com
 Environment=TRUST_PROXY=true
 Environment=SESSION_SECURE=true
-# 聊天 API 凭据（CHAT_API_KEY / CHAT_BASE_URL / CHAT_MODEL）放在版本目录之外，随发布切换保留。
 EnvironmentFile=-/etc/chengchuan-bank/env
 Restart=on-failure
 RestartSec=3

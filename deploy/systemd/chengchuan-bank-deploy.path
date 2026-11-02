@@ -1,9 +1,0 @@
-[Unit]
-Description=Deploy Chengchuan Bank when a GitHub push is received
-
-[Path]
-PathModified=@HOME@/chengchuan-bank-deploy/request
-Unit=chengchuan-bank-deploy.service
-
-[Install]
-WantedBy=multi-user.target

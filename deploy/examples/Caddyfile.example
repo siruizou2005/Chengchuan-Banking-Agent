@@ -1,0 +1,25 @@
+# 澄川银行的 Caddy 站点配置模板。把 bank.example.com 换成你的域名，端口与 systemd 服务里的 PORT 一致。
+bank.example.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
+	}
+	# 语音转文字上传 WAV（最长60秒约1.9MB，服务端上限8MB）；飞书事件是加密的，长消息可能超过128KB；其余请求保持128KB。
+	@voice path /api/voice/transcribe
+	@feishu path /api/channels/feishu/events/*
+	@other not path /api/voice/transcribe /api/channels/feishu/events/*
+	request_body @voice {
+		max_size 8MB
+	}
+	request_body @feishu {
+		max_size 256KB
+	}
+	request_body @other {
+		max_size 128KB
+	}
+	reverse_proxy 127.0.0.1:8316
+}
